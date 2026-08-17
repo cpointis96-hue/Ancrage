@@ -1,0 +1,19 @@
+.DS_Store
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# JavaScript / TypeScript
+node_modules/
+dist/
+build/
+coverage/
+
+# Tests
+playwright-report/
+test-results/
+
+# Logs
+*.log
