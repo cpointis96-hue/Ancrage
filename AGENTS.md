@@ -1,5 +1,15 @@
 # Project Agent Instructions
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local Markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context domain documentation uses `CONTEXT.md` at the repository root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Current phase
 
 This project is currently in product discovery and architecture planning.
