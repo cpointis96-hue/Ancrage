@@ -20,12 +20,16 @@ Status: architecture reference; vendor and license gates remain explicit
 ## 2. Data and infrastructure
 
 - Neon PostgreSQL: metadata, state, configuration versions, contacts, audit entities, costs, and events;
-- R2/object storage: reports and required artifacts with lifecycle;
+- R2/object storage: temporary intake files, reports and required artifacts with explicit deletion after verified intake sync and lifecycle fallback;
 - encrypted local Mac archive: heavy crawl/export material, never the only source of truth;
 - Cloudflare: public delivery, API boundary, queues/workflows, and controlled asynchronous work as verified;
 - cockpit local on the operator Mac in MVP;
 - private signed URLs for reports and demos;
 - versioned `SiteSpec` and immutable build artifacts.
+
+### Offline-Mac intake synchronization
+
+The public service remains available while the Mac is off. `CloudIntakeInbox` uses only the existing Cloudflare/Neon stack: Neon for dossier metadata and sync state, R2 for authorized files. The local cockpit pulls pending dossiers through an authenticated backend, verifies schema/size/hash, writes atomically to encrypted local storage, acknowledges receipt, and then requests explicit R2 deletion. No AI provider participates in this path. The sync must be idempotent, resumable, auditable, and protected by an orphan-object lifecycle policy.
 
 ## 3. AI layer
 

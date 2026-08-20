@@ -3,6 +3,12 @@
 Type: workflow and transition reference
 Status: architecture reference
 
+## 0. Public intake lorsque le Mac est éteint
+
+Le site public reçoit les informations et fichiers sans dépendre d'un modèle IA ni du Mac opérateur. `Cloudflare` fournit l'API et l'asynchrone, `Neon` conserve les métadonnées et états, et `Cloudflare R2` conserve temporairement les fichiers autorisés, notamment les lots courants de 10 à 20 Mo.
+
+Le cockpit local propose « Synchroniser ». Le backend local télécharge les lots par curseur, vérifie leur schéma, taille et hash, les écrit dans une zone chiffrée et accuse réception. Après confirmation, le Control Plane supprime explicitement les objets R2 et marque le dossier `SYNCED_AND_PURGED`. Les erreurs restent récupérables et ne déclenchent jamais une suppression avant vérification.
+
 ## 1. Pipeline A — Audit and acquisition value
 
 `CITY_SELECTED` → `MATCHING` → `GMB_REPORT_READY` when available → `SEO_REPORT_IN_PROGRESS` → `FINAL_REPORT_READY`.

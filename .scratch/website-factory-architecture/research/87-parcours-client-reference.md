@@ -36,6 +36,8 @@ La ville doit être sélectionnée dans la liste. Une ville écrite librement et
 
 Le dossier de génération doit contenir les informations critiques et cinq photos obligatoires : façade, deux plats signatures, intérieur/terrasse et équipe/propriétaires/service. Une information manquante ou contradictoire ne doit jamais être inventée.
 
+Dans la branche où aucun site fiable et aucune fiche GMB ne sont confirmés, le parcours peut tout de même avancer vers la préparation du site lorsque le dossier minimal est suffisamment renseigné : nom de l'établissement, nom et prénom du contact ou propriétaire, informations métier essentielles, plats, prix et images autorisées. Les cinq photos obligatoires restent requises avant toute génération réelle.
+
 ### IF 4 — Audits et rapport progressif
 
 **IF** l'audit GMB est terminé, **THEN** le système affiche immédiatement sa restitution au prospect et montre une ligne d'avancement indiquant que l'audit SEO complet continue.
@@ -49,6 +51,8 @@ Dans la branche sans GMB, le rapport indique clairement la limite et fournit un 
 **IF** le rapport final est disponible et que le prospect clique sur « Préparer mon site », **THEN** une animation de préparation s'affiche et demande l'adresse e-mail.
 
 La génération réelle du site ne commence pas tant qu'une adresse valide n'est pas fournie. L'animation ne doit pas prétendre qu'un site est déjà créé. L'e-mail sert à éviter les démos orphelines et à envoyer ensuite le lien privé.
+
+Cette règle s'applique également à la branche sans site et sans GMB : dès que le dossier minimal et les cinq photos sont prêts, « Préparer mon site » est proposé ; le clic ouvre immédiatement la collecte de l'adresse e-mail, puis seulement le `WebsiteFactoryPipelineRun` peut démarrer.
 
 Après l'e-mail, le `WebsiteFactoryPipelineRun` peut utiliser les informations collectées : contenu métier, mots-clés, étude locale, concurrents directs, assets, traduction éventuelle, `SiteSpec`, rendu déterministe et QA.
 

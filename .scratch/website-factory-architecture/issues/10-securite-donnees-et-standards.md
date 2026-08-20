@@ -28,3 +28,9 @@ La stratégie de sauvegarde prévoit des versions immuables, une sauvegarde quot
 La contrainte financière est ajoutée aux gates : aucun fournisseur payant ne doit être activé sans budget explicite, suivi `CostEvent`, alerte et mécanisme d'arrêt ou de désactivation vérifié. Une limite d'alerte qui ne bloque pas réellement la consommation ne suffit pas à protéger le budget.
 
 Les uploads acceptent uniquement des types et tailles autorisés, sont scannés et stockés isolément avec URLs temporaires. Les métadonnées sensibles peuvent être supprimées selon la politique choisie. Aucun fichier reçu ne doit être exécuté.
+
+## Synchronisation cloud vers Mac
+
+La `CloudIntakeInbox` est un tampon persistant chiffré, pas un cache navigateur. Les objets possèdent une clé de dossier non devinable, une taille maximale, un type autorisé, un hash, une date d'expiration et un statut de synchronisation. Le téléchargement vers le Mac exige une session cockpit authentifiée, des tokens courts, un curseur idempotent et une vérification de hash avant accusé de réception.
+
+La suppression R2 est déclenchée uniquement après écriture locale atomique et validation du hash. Les erreurs, interruptions et divergences de hash conservent l'objet cloud et passent l'intake en `SYNC_RETRY` ou `SYNC_BLOCKED`; aucune suppression optimiste n'est autorisée. Un lifecycle de secours traite les objets orphelins après expiration.

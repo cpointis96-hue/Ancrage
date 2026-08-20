@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -40,3 +40,9 @@ Pour un MVP à faible coût, l'autocomplétion de villes doit privilégier un in
 ## Références stratégiques
 
 Le parcours complet est défini dans [87 — Parcours client de référence](../research/87-parcours-client-reference.md). Les règles SEO et la branche locale sans GMB sont consolidées dans [82 — Stratégie SEO Website Factory](../research/82-seo-strategy-website-factory.md).
+
+## Answer
+
+Après l'action « Ce n'est pas mon établissement », le parcours ouvre directement la branche d'aperçu local. Il demande uniquement l'adresse de l'établissement, sans redemander la ville déjà sélectionnée et sans exiger d'abord un lien Google. L'aperçu reste borné : site officiel éventuel, intentions et mots-clés locaux, concurrents directs et opportunités de SEO local. Il indique explicitement que la fiche GMB n'a pas été confirmée et conserve la possibilité de préparer le site sans ressaisie.
+
+Décision HITL : choix 2, confirmé le 20 août 2026.

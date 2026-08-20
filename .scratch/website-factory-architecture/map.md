@@ -15,6 +15,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Document de compréhension du parcours client** — la logique commerciale de référence, ses six règles `IF / THEN` et les étapes qui ne doivent pas être inversées sont résumées dans [87-parcours-client-reference.md](research/87-parcours-client-reference.md).
 - **Dossier numéroté de stratégie SEO et Website Factory** — les synthèses réutilisables et transmissibles aux agents sont regroupées dans [82-seo-strategy-website-factory.md](research/82-seo-strategy-website-factory.md), [83-catalogue-agents-seo-website-factory.md](research/83-catalogue-agents-seo-website-factory.md), [84-routage-providers-ia-openai-openrouter-omniroute-ollama-mlx.md](research/84-routage-providers-ia-openai-openrouter-omniroute-ollama-mlx.md), [85-pipeline-audit-vers-site-website-factory.md](research/85-pipeline-audit-vers-site-website-factory.md), [86-stack-seo-skills-et-cockpit.md](research/86-stack-seo-skills-et-cockpit.md) et [88-index-strategie-seo-website-factory.md](research/88-index-strategie-seo-website-factory.md). Elles consolident les tickets sans fermer artificiellement les vérifications externes restantes.
 - Une seule question HITL est discutée à la fois ; chaque question existe comme ticket Markdown modifiable et commentable.
+- Les choix techniques ou UX à faible risque et fortement déterminés par les invariants existants sont tranchés par l'agent ; une question HITL n'est posée que si la décision peut réellement modifier le produit, l'offre, la confidentialité ou la direction visuelle.
 - Les tickets `grilling` portent les choix du modèle commercial ou les préférences de l'utilisateur.
 - Les tickets `research` portent les faits externes, limites de fournisseurs, standards, prix et contraintes techniques.
 - Les tickets `prototype` seront utilisés lorsqu'une décision UX/UI ou comportementale sera mieux tranchée par un artefact concret.
@@ -25,7 +26,8 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - Pour le MVP, le restaurateur choisit une seule langue de publication pour sa démo et son site ; la langue de ses clients n'est pas gérée.
 - La démo existe avant paiement ; l'achat/enregistrement d'un domaine intervient seulement après validation et paiement.
 - Le cockpit opérateur peut rester local sur le Mac en MVP ; le service public doit continuer à fonctionner Mac éteint.
-- Le cloud reste la source de vérité ; le Control Plane doit rester déterministe et l'Agent Plane subordonné, probabiliste et validable.
+- Le Control Plane cloud reste la source de vérité pour l'état, la provenance, les hashes et les autorisations ; après synchronisation et purge R2, le contenu privé réside dans l'archive locale chiffrée sauvegardée. Le Control Plane reste déterministe et l'Agent Plane subordonné, probabiliste et validable.
+- **Intake cloud synchronisable hors ligne Mac** — lorsque le Mac est éteint, `Cloudflare`/`R2` reçoit temporairement les fichiers et `Neon` conserve les métadonnées ; le cockpit synchronise ensuite vers un stockage local chiffré, vérifie les hashes et déclenche la suppression R2 après accusé de réception, sans modèle IA ni provider supplémentaire.
 - Priorité de décision : coût fixe et coût marginal très faibles, traçabilité des sources et des coûts, récupérabilité des workflows, frontières permettant l'évolution sans complexité prématurée.
 - Compétences à consulter selon le ticket : `grilling`, `domain-modeling`, `research`, `prototype`.
 
@@ -67,6 +69,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - Budgets initiaux conservateurs, recalibrés sur les coûts observés ; aucune augmentation silencieuse.
 - Frontière d'approbation des sorties IA : brouillon, validation déterministe, revue agentique indépendante ou approbation humaine selon le risque.
 - **Boucle humaine minimale mais obligatoire** — le propriétaire ne voit que le livrable final et son `AcceptanceReport`, puis doit explicitement valider chaque démo avant présentation ; aucun livrable n'est présenté si un gate bloquant échoue, si une provenance critique manque ou si un droit est inconnu.
+- [**Comment automatiser la QA sans multiplier les agents inutilement ?**](issues/56-qa-independant-et-fail-closed.md) — seuls les problèmes critiques bloquent ; les `WARN` sont visibles dans l'`AcceptanceReport` et nécessitent la validation explicite du propriétaire.
 - **Images de test séparées de la production** — une démo peut utiliser des assets temporaires non vérifiés avec provenance, expiration et purge ; aucune conversion production ne passe avec un asset non autorisé.
 - **Guide photo restaurant** — collecte priorisée de façade, plats signatures, intérieur, équipe et expérience ; tri par vision, mais faits et droits séparés des scores visuels.
 - **Minimum visuel obligatoire** — cinq photos avant génération : façade, deux plats signatures, intérieur/terrasse et équipe/propriétaires/service ; le logo reste facultatif.
@@ -77,6 +80,10 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Pilote marché** — Sri Lanka en premier si l'accès commercial direct est confirmé ; réplication Australie puis France après mesure du workflow.
 - **Audit GBP initial** — faits, incohérences, opportunités et actions prioritaires dans un langage simple, sans garantie de classement.
 - **Concurrence MVP** — 5 concurrents directs issus de 3 intentions locales, avec séparation stricte entre faits, interprétations et suggestions.
+- [**Quel modèle et pipeline pour un audit SEO traçable ?**](issues/70-modele-pipeline-audit-seo.md) — audit séparé lié au `Prospect`, versions immuables, exports bruts conservés localement chiffrés, accès autorisé et transitions automatiques fail-closed.
+- [**Quels périmètres d'audit et quelles limites commerciales ?**](issues/71-perimetres-audit-et-prix.md) — audit standard gratuit une fois par établissement, limites prudentes, budgets hybrides, branche sans site/GMB autorisée avec dossier minimal, rapport et PDF accessibles 7 jours.
+- [**Quelles données peuvent être envoyées à un fournisseur cloud ?**](issues/51-politique-donnees-local-cloud.md) — cloud approuvé pour les données publiques/commerciales nécessaires, données personnelles limitées ou anonymisées, secrets et paiements bloqués ; intake cloud chiffré sans inférence obligatoire.
+- [**Comment identifier un établissement et son site officiel sans rapprochement fragile ?**](issues/67-identification-etablissement-et-sources.md) — après « Ce n'est pas mon établissement », ouvrir directement l'aperçu local et demander uniquement l'adresse ; ne pas redemander la ville ni exiger un lien Google.
 - **Catalogue à trois niveaux** — `Essential`, `Visibility`, `Managed`, structure commune et localisation des prix/limites ; montants finaux encore à tester.
 - **Conversion démo-production** — la démo validée devient la base d'une `ProductionSite`/`SiteVersion`, avec domaine et publication après paiement et validation.
 - **Pages locales conditionnelles** — contenu large possible en démo, indexation production réservée aux pages utiles, originales, prouvées et pertinentes.

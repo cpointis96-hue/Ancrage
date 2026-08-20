@@ -17,3 +17,9 @@ Comparer, à partir de documentations officielles et de pratiques de sécurité 
 Le cockpit reste local sur le Mac et le service public/cloud reste opérationnel lorsque le Mac est éteint. Le Mac est un worker opportuniste pour les modèles locaux, Lighthouse, Playwright, builds et corrections Codex. Il ne doit pas être une dépendance de disponibilité ni contenir les secrets cloud dans le navigateur.
 
 La connexion passe par un backend local authentifié vers une Admin API distante avec tokens courts et révocables.
+
+## Synchronisation de l'intake lorsque le Mac est éteint
+
+Le service public dépose les formulaires et fichiers dans une `CloudIntakeInbox` persistante : métadonnées dans `Neon`, objets de 10 à 20 Mo ou autres fichiers autorisés dans `Cloudflare R2`. Aucun modèle IA ni worker Mac n'est requis pour cette réception.
+
+Le cockpit local déclenche une synchronisation manuelle via le backend local authentifié. Le backend récupère un lot par curseur, vérifie l'identifiant de dossier, la version du schéma, la taille et le hash, écrit dans une zone locale chiffrée et idempotente, puis accuse réception. Le Control Plane ne supprime les objets R2 qu'après cet accusé de réception ; une relance reprend le même lot sans doublon. Une suppression lifecycle de secours traite les objets orphelins.
