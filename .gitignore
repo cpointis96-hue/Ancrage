@@ -4,6 +4,8 @@
 .env
 .env.*
 !.env.example
+# Secret local explicite : conserver hors Git même si les règles .env évoluent.
+.env.local
 
 # JavaScript / TypeScript
 node_modules/
