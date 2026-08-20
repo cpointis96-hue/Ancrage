@@ -23,3 +23,7 @@ Une seule petite base centrale mutualisée est préférable à une base par rest
 La base centrale doit être mutualisée, minimale et sans abonnement fixe obligatoire. Neon PostgreSQL devient le candidat privilégié pour conserver un vrai modèle relationnel, avec compute/serverless et facturation à l'usage lorsque le niveau gratuit ne suffit plus. Les médias, screenshots et gros artefacts restent dans du stockage objet.
 
 Le système doit configurer des plafonds, alertes et budgets internes. La limite de dépense Neon doit être vérifiée car la documentation API indique que le spending limit déclenche des notifications mais ne suspend pas nécessairement les compute.
+
+## Clarification de périmètre
+
+Pour l'intake public lorsque le Mac est éteint, aucune base ou plateforme cloud supplémentaire n'est souhaitée par défaut : `Cloudflare` reste la couche d'entrée, de stockage objet et d'asynchrone ; `Neon` reste la couche relationnelle minimale candidate. Les petits volumes seront mesurés, mais les quotas, coûts et limites actuels devront être vérifiés avant activation.

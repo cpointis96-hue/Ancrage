@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -36,3 +36,9 @@ Le système automatise donc la construction et la QA, mais pas la décision comm
 ## Risque à trancher
 
 Un système avec trop d'agents coûtera plus cher, sera plus lent et pourra créer un faux consensus. Le nombre d'agents doit rester inférieur au nombre de responsabilités réellement indépendantes.
+
+## Answer
+
+Les gates critiques bloquent la démo : vérité/provenance essentielle, droits, sécurité, rendu inutilisable, liens majeurs et dépassement dur non autorisé. Les problèmes mineurs produisent des `WARN` visibles dans l'`AcceptanceReport` et sont soumis à la validation explicite du propriétaire. Aucun `WARN` ne disparaît silencieusement et aucune démo n'est présentée avant cette validation.
+
+Décision de cadrage appliquée par l'agent, le 20 août 2026.
