@@ -28,6 +28,8 @@ Choisir le premier parcours à prototyper et les critères d'observation. Le pro
 ## Comments
 
 - Le premier prototype accepté est le parcours `landing page → nom + ville → enrichissement → formulaire progressif → démo`.
+- La base documentaire UX avant prototype est maintenant regroupée dans [`docs/ux/README.md`](../../../docs/ux/README.md). Elle couvre le cockpit opérateur et le site public, en conservant le parcours de référence du document 87. Le prototype reste requis pour valider la densité, les états et les transitions.
+- Un prototype jetable du vertical slice est disponible dans [`prototypes/ux-vertical-slice/`](../../../prototypes/ux-vertical-slice/). La syntaxe JavaScript, les étapes 1 à 6, les états `PARTIAL`, la synchronisation, la validation, le renvoi en correction et le téléchargement PDF sont vérifiés. Chromium a aussi validé le parcours public, l'erreur e-mail, le transfert cockpit, la synchronisation, la validation et l'absence de débordement horizontal à 390 px. Le backend et le rendu de production restent hors prototype.
 
 ## Prototype pointers
 
