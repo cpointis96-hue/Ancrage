@@ -20,9 +20,9 @@ Chaque ligne possède un statut textuel, une cause courte, l'âge et une action 
 
 ## Écran « Runs »
 
-La ligne d'un run affiche : établissement, type, état, étape courante, dernière activité, version et action disponible.
+La ligne d'un run affiche : nom de l'établissement, URL complète en `www...`, type, état, étape courante, dernière activité, version et action disponible. Une petite icône de lien ouvre directement la démo dans un nouvel onglet ; son libellé accessible précise l'établissement concerné.
 
-Le détail est organisé en onglets courts :
+Le titre du détail répète le nom et l'URL, avec la même petite icône de lien pour éviter de devoir revenir à la liste. Le détail est ensuite organisé en onglets courts :
 
 - **Vue** : état, progression réelle, résultat et prochaine action ;
 - **Étapes** : checkpoints et contributions ;
