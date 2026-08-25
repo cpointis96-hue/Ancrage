@@ -13,6 +13,8 @@ Depuis ce dossier, ouvrir l’un des fichiers directement dans un navigateur. Au
 
 Le site public de `Repère` reprend les qualités observées dans la référence [SSTR — Friction Reduction sur Awwwards](https://www.awwwards.com/sites/sstr-friction-reduction) : contraste profond, grande typographie, matière organique, cadrage fin, asymétrie contrôlée et lecture mobile dédiée. Son contenu est celui du point d’entrée Website Factory : nom de l’établissement, lieu, audit, explication du parcours et préparation de la suite — pas celui d’un site client généré.
 
+La typographie du site est `JetBrains Mono`, intégrée localement depuis le dépôt officiel [JetBrainsMono](https://github.com/JetBrains/JetBrainsMono). Le prototype utilise sa police variable et conserve un interlignage plus généreux pour préserver la lisibilité sur mobile.
+
 Le cockpit ne copie pas la page marketing. Il reprend seulement sa matière, son contraste et sa profondeur pour donner une identité au produit, tout en conservant une organisation d’outil : navigation latérale, file de projets, état de run, étapes explicites, validation et lien direct vers la démo.
 
 ## Limites assumées
