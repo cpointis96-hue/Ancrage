@@ -19,6 +19,7 @@ La génération des sites clients et les templates commerciaux restent hors pér
 6. [`05-direction-visuelle-et-systeme.md`](05-direction-visuelle-et-systeme.md)
 7. [`DESIGN.md`](DESIGN.md)
 8. [`06-handoff-et-criteres.md`](06-handoff-et-criteres.md)
+9. [`08-reference-visuelle-sstr-friction-reduction.md`](08-reference-visuelle-sstr-friction-reduction.md)
 
 ## Méthode d'exécution
 

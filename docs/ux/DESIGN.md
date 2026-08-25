@@ -2,14 +2,15 @@
 
 ## 1. Visual theme & atmosphere
 
-Deux expressions d'un même système :
+Trois expressions coordonnées d'un même système :
 
 - **Cockpit** — outil de travail macOS, calme, précis, dense sans être comprimé. Atmosphère de poste développeur : surfaces solides, séparateurs fins, hiérarchie par la structure et non par la décoration.
 - **Site public** — accueil clair, humain et pédagogique. Atmosphère plus ample, avec une touche de personnalité portée par la mascotte, sans transformer la page en spectacle.
+- **Sites clients** — univers premium, éditorial et immersif, inspiré de la référence SSTR : charbon, vert profond, matières organiques, visuel central et composition asymétrique maîtrisée. Cette surface sera conçue après les outils internes.
 
-Les deux surfaces partagent les mêmes règles de lisibilité et de statut, mais pas la même densité.
+Les trois surfaces partagent les mêmes exigences de lisibilité, de vitesse et de confiance, mais pas la même densité ni le même degré d'expression.
 
-Calibration : cockpit density 8/10, public density 4/10, variance 3/10, motion 2/10. La motion permanente est interdite.
+Calibration : cockpit density 8/10, public density 4/10, sites clients density 3/10, variance 3/10 pour le cockpit et 6/10 pour les sites clients, motion 2/10. La motion permanente est interdite.
 
 ## 2. Color palette & roles
 
@@ -22,6 +23,8 @@ Calibration : cockpit density 8/10, public density 4/10, variance 3/10, motion 2
 - **Accent soft** `#E2EEE8` — surface d'information positive.
 - **Warning** `#8D641D` — warning accompagné d'un libellé.
 - **Block** `#9A3F3F` — blocage ou erreur accompagné d'une explication.
+
+Pour les sites clients, les mêmes rôles peuvent être exprimés avec une base charbon `#202521`, un vert mousse profond `#303930` et un blanc chaud `#F2F0E8`. La palette reste limitée et chaque marché doit être validé avec les vraies photos et la lisibilité mobile.
 
 Une seule couleur d'accent de marque est active par surface. Aucun dégradé bleu-violet, halo néon ou noir pur.
 
@@ -74,6 +77,15 @@ Pas de serif générique dans le cockpit, pas d'Inter imposé, pas de capitales 
 - Le PDF reste accessible sur mobile sans masquer le CTA principal.
 - Le cockpit réduit d'abord la sidebar, puis empile la file et le détail.
 - Le texte doit rester utilisable à 200 % de zoom.
+
+## 9. Client-site art direction
+
+- le premier écran peut être plus spectaculaire que celui du site public ;
+- le visuel central doit venir du client ou d'un asset explicitement autorisé ;
+- la composition peut utiliser des cadres fins, des zones sombres et une asymétrie éditoriale ;
+- la réservation, le menu, les horaires, l'adresse et le téléphone restent immédiatement trouvables ;
+- toute animation est progressive, légère, interrompue en mode réduit et non nécessaire à la compréhension ;
+- une version mobile dédiée est obligatoire.
 
 ## 8. Anti-patterns — NEVER DO
 
