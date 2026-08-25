@@ -251,3 +251,34 @@ _Avoid_: relecture IA sans preuve, agent superviseur tout-puissant
 **Preuve avant paiement**:
 Principe commercial selon lequel le prospect peut voir une Demo personnalisée avant de décider d'acheter la mise en production.
 _Avoid_: free trial illimité, garantie de résultats SEO
+
+## Termes opératoires UX
+
+**Établissement** : activité locale analysée, par exemple un restaurant.
+
+**Dossier** : informations, sources, photos et coordonnées nécessaires à l'analyse ou à la génération.
+
+**Audit** : restitution factuelle et sourcée de l'état local, Google Business Profile et SEO.
+
+**Rapport** : présentation compréhensible d'un audit, avec faits, preuves, limites et priorités.
+
+**Run** : exécution versionnée d'un pipeline, avec progression, événements, checkpoints et résultat.
+
+**Agent** : rôle spécialisé produisant une contribution structurée ; il ne décide pas seul de l'état métier.
+
+**Provider** : moteur ou service d'exécution sélectionné par une politique de routage.
+
+**Configuration** : ensemble versionné d'un prompt, d'un schéma, d'un provider et de règles d'exécution.
+
+**Cockpit** : interface privée de l'opérateur pour observer, configurer, synchroniser, reprendre et valider.
+
+**Site public** : interface accessible au prospect pour obtenir la valeur de l'audit et demander une démo.
+
+**Validation opérateur** : décision explicite qui autorise la présentation d'une démo au prospect.
+
+**État bloquant** : état qui interdit la suite tant qu'une condition critique n'est pas satisfaite.
+
+## Frontières
+
+- Le **Control Plane** possède les états, autorisations, budgets, provenance et transitions.
+- Les agents fournissent des contributions ; ils ne redéfinissent pas le parcours commercial.

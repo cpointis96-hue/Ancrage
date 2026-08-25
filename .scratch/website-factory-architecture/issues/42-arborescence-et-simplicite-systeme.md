@@ -37,7 +37,7 @@ L'architecture s'organise autour d'un `SiteSpec` versionné, de templates déter
 
 L'édition client après production est limitée aux horaires, téléphone, adresse, prix, plats, photos, textes courts et offres. Les changements de structure, template, SEO avancé ou nouvelle langue passent par une génération contrôlée.
 
-Prototype : [cockpit-prototype.html](../prototypes/cockpit-prototype.html), variantes `?variant=a`, `?variant=b`, `?variant=c`.
+Référence actuelle : [`docs/ux/profiles/cockpit-ancrage-v1.md`](../../../docs/ux/profiles/cockpit-ancrage-v1.md) et [`prototypes/sstr-direction/cockpit.html`](../../../prototypes/sstr-direction/cockpit.html). Le prototype historique [`cockpit-prototype.html`](../prototypes/cockpit-prototype.html), avec ses variantes `?variant=a`, `?variant=b`, `?variant=c`, est conservé comme archive de décision.
 
 ## Exigence de cockpit ajoutée
 

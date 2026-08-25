@@ -17,7 +17,7 @@ Sources techniques directes : [82, stratégie SEO](../../.scratch/website-factor
 
 Contraintes et décisions détaillées utilisées : [67, identification](../../.scratch/website-factory-architecture/issues/67-identification-etablissement-et-sources.md), [19, complétude](../../.scratch/website-factory-architecture/issues/19-seuil-completude-dossier-restaurant.md), [20, enrichissement](../../.scratch/website-factory-architecture/issues/20-regles-enrichissement-et-scraping-initial.md), [60, e-mail](../../.scratch/website-factory-architecture/issues/60-moment-collecte-email-prospect.md), [70, modèle d'audit](../../.scratch/website-factory-architecture/issues/70-modele-pipeline-audit-seo.md), [71, périmètres](../../.scratch/website-factory-architecture/issues/71-perimetres-audit-et-prix.md), [77, progression](../../.scratch/website-factory-architecture/issues/77-progression-rapport-et-agents-paralleles.md) et [78, CTA mobile](../../.scratch/website-factory-architecture/issues/78-progression-reelle-cta-mobile.md).
 
-Écart local vérifié : les chemins demandés `research/`, `docs/ux/`, `docs/ux/profiles/` et `prototypes/sstr-direction/` n'existent pas à ce checkout. Les documents correspondants présents sont sous `.scratch/website-factory-architecture/`. Les seuls prototypes disponibles sont [`cockpit-prototype.html`](../../.scratch/website-factory-architecture/prototypes/cockpit-prototype.html) et [`templates-prototype.html`](../../.scratch/website-factory-architecture/prototypes/templates-prototype.html). Aucun prototype public Ancrage ni direction `JetBrains Mono` / branding Ancrage n'a été trouvé localement. Cette spec enregistre l'écart, elle ne le comble pas par invention.
+Les sources UX et visuelles sont désormais regroupées dans [`docs/ux/README.md`](../ux/README.md), [`docs/ux/03-site-public-architecture-ux.md`](../ux/03-site-public-architecture-ux.md), [`docs/ux/04-etats-et-regles-de-simplification.md`](../ux/04-etats-et-regles-de-simplification.md), [`docs/ux/05-direction-visuelle-et-systeme.md`](../ux/05-direction-visuelle-et-systeme.md) et [`docs/ux/DESIGN.md`](../ux/DESIGN.md). Le prototype visuel de référence est [`client-site.html`](../../prototypes/sstr-direction/client-site.html), avec ses assets locaux. Le prototype [`public-ancrage-v1-prototype.html`](../../.scratch/website-factory-architecture/prototypes/public-ancrage-v1-prototype.html) reste un artefact fonctionnel de comparaison des états et de la hiérarchie des CTA ; il ne remplace pas le template visuel Ancrage.
 
 ## 2. Objectif et promesse
 
@@ -249,7 +249,7 @@ Accessible via lien privé, sans compte ni paiement, après validation opérateu
 - Desktop : rapport en colonne de lecture avec navigation latérale ou sommaire seulement si elle ne masque pas les preuves ; les panneaux ne doivent pas devenir un dashboard générique.
 - Accessibilité : HTML sémantique, labels explicites, focus visible, clavier complet, contraste WCAG AA à vérifier, erreurs annoncées, `aria-live` réservé aux changements utiles, alternatives textuelles et aucune information portée uniquement par la couleur.
 - Performance : HTML léger, chargement progressif, images redimensionnées côté serveur, pas de dépendance IA pour le premier rendu de l'état.
-- Branding : la direction demandée est Ancrage avec JetBrains Mono, mais elle n'est pas matérialisée par un fichier local vérifiable. Le choix final de police, palette, rythme, logo et composants doit être fixé par le prototype public Ancrage avant production. Les prototypes présents utilisent `system-ui`, Georgia, des gradients et la marque `FACTORY`; ils sont des références de structure et d'états seulement, pas une validation visuelle.
+- Branding : la direction Ancrage est documentée dans [`docs/ux/DESIGN.md`](../ux/DESIGN.md) et matérialisée par [`prototypes/sstr-direction/client-site.html`](../../prototypes/sstr-direction/client-site.html), avec image et police JetBrains Mono locales. Le prototype fonctionnel `public-ancrage-v1-prototype.html` utilise une autre structure de test et ne doit pas être pris comme remplacement visuel. Les anciens prototypes `system-ui`, Georgia et `FACTORY` restent des références historiques de structure et d'états seulement.
 - La cohérence avec le cockpit reste limitée à la séparation décisionnelle, aux statuts `PASS/WARN/BLOCK`, à la provenance et au Control Plane. Le cockpit n'est pas spécifié ici.
 
 ## 11. Audit, progression, PDF et anti-abus
@@ -383,7 +383,7 @@ Chaque événement doit être idempotent, horodaté, corrélé à un run opaque,
 - le frontend public consulte un API Control Plane et ne porte pas la machine d'état ;
 - le rapport et la démo utilisent des liens privés distincts, même si une implémentation peut partager un service de token ;
 - les seuils de confiance sont exposés comme bandes et raisons, pas comme un chiffre marketing ;
-- le nom Ancrage et JetBrains Mono sont une direction fournie par la demande, non une direction actuellement présente dans le dépôt.
+- la direction visuelle Ancrage et JetBrains Mono sont maintenant présentes dans `docs/ux/` et `prototypes/sstr-direction/` ; leur intégration en production reste hors de cette spec.
 
 ### Questions réellement ouvertes
 
