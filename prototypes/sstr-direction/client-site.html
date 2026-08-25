@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
-  <title>Repère — votre présence locale, enfin lisible</title>
+  <title>Ancrage — votre présence locale, enfin lisible</title>
   <style>
     @font-face{font-family:"JetBrains Mono";src:url("assets/JetBrainsMono%5Bwght%5D.woff2") format("woff2");font-style:normal;font-weight:100 800;font-display:swap}
     :root{color-scheme:dark;--ink:#f3f2e9;--muted:#b8beb0;--line:#cad6c066;--deep:#172019;--deep-2:#26352a;--moss:#b6ca98;--paper:#e6e4d8;--black:#0d110e;font:15px/1.55 "JetBrains Mono",monospace}
@@ -16,15 +16,14 @@
 </head>
 <body>
   <div class="frame">
-    <header class="nav"><a class="brand" href="#top" aria-label="Repère, accueil"><span class="mascot-mark" aria-hidden="true">r</span>REPÈRE</a><nav class="nav-links" aria-label="Navigation principale"><a href="#how">Comment ça marche</a><a href="#deliver">Ce que vous recevez</a></nav><button class="menu-button" aria-label="Ouvrir le menu">MENU</button></header>
+    <header class="nav"><a class="brand" href="#top" aria-label="Ancrage, accueil"><span class="mascot-mark" aria-hidden="true">a</span>ANCRAGE</a><nav class="nav-links" aria-label="Navigation principale"><a href="#how">Comment ça marche</a><a href="#deliver">Ce que vous recevez</a></nav><button class="menu-button" aria-label="Ouvrir le menu">MENU</button></header>
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
           <div class="kicker">Votre présence locale, enfin lisible</div>
           <h1>Voyez ce que voient vos clients.</h1>
-          <p>Repère vous montre la visibilité de votre établissement et où agir en premier.</p>
+          <p>Ancrage vous montre la visibilité de votre établissement et où agir en premier.</p>
           <form class="audit-form" id="audit-form">
-            <label class="form-label" for="establishment">Commencez avec votre établissement</label>
             <div class="field-row"><input class="field" id="establishment" name="establishment" placeholder="Nom de l’établissement" required><input class="field" id="location" name="location" placeholder="Ville ou lieu" required></div>
             <button class="primary" type="submit">Voir mon audit <span aria-hidden="true">↘</span></button>
             <p class="form-note">Deux informations pour commencer. L’audit vous guidera ensuite pas à pas.</p>
@@ -36,7 +35,7 @@
       <section class="section" id="how"><div class="section-grid"><div><div class="small-label">Le parcours</div><h2>Clair dès le premier regard.</h2></div><div class="explain-list"><div class="explain"><div class="explain-index">01</div><div><strong>Vous indiquez votre établissement</strong><span>Nom et lieu suffisent pour commencer. Nous vous montrerons ensuite les sources trouvées.</span></div></div><div class="explain"><div class="explain-index">02</div><div><strong>Nous lisons votre présence</strong><span>Site, fiche locale et signaux publics sont réunis dans un audit progressif et compréhensible.</span></div></div><div class="explain"><div class="explain-index">03</div><div><strong>Vous savez quoi faire ensuite</strong><span>Les priorités sont expliquées sans jargon, avec la possibilité de préparer votre futur site.</span></div></div></div></div></section>
       <section class="section" id="deliver"><div class="promise"><div><div class="small-label">Ce que vous recevez</div><h2>Un point de départ qui ressemble à votre réalité.</h2></div><p>Pas de score magique isolé. Un audit lisible, des éléments vérifiables et un chemin concret pour passer de votre présence actuelle à une présence qui travaille pour vous.</p></div></section>
     </main>
-    <footer class="footer"><span><span class="mascot-mark" aria-hidden="true">r</span> REPÈRE</span><span>Prototype public — parcours et contenus à valider</span><a href="#top">Revenir au début ↑</a></footer>
+    <footer class="footer"><span><span class="mascot-mark" aria-hidden="true">a</span> ANCRAGE</span><span>Prototype public — parcours et contenus à valider</span><a href="#top">Revenir au début ↑</a></footer>
   </div>
   <script>
     const nav = document.querySelector('.nav');
