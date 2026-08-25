@@ -87,7 +87,7 @@ La session navigateur ne constitue pas la source de vérité. Une reprise rechar
 2. La saisie de ville propose des valeurs structurées avec pays et identifiant géographique. Une valeur libre seule est refusée.
 3. Après `Nom + ville sélectionnée`, le service crée un `Prospect` et un `EstablishmentMatch`, puis affiche une progression réelle fondée sur des `ProgressCheckpoint`.
 4. L'enrichissement recherche les sources autorisées, les candidats, le site éventuel, les coordonnées, horaires, menu, prix, photos et conflits. Il ne transforme pas une source publique en fait validé sans provenance.
-5. Une correspondance unique forte affiche la fiche et une ou deux images, puis continue. Plusieurs correspondances affichent deux ou trois candidats et attendent `C'est mon établissement`.
+5. Une correspondance unique forte affiche la fiche et une ou deux images, puis continue automatiquement après un court temps de lecture. Un lien secondaire `Ce n'est pas le bon établissement` ouvre la branche de correction, sans créer un second bouton concurrent. Plusieurs correspondances affichent deux ou trois candidats sélectionnables, puis un seul bouton contextuel `Continuer avec cet établissement` apparaît après sélection.
 6. Après identification suffisante, le formulaire progressif demande seulement les `RequiredInput` manquants ou contradictoires. Il collecte ensuite les cinq photos obligatoires : façade, deux plats signatures, intérieur ou terrasse, équipe, propriétaires ou service.
 7. Si la fiche existe, l'audit GMB est lancé avec les seules informations publiques autorisées. Si un domaine fiable existe, l'audit SEO borné peut être lancé. Les branches indépendantes peuvent tourner en parallèle après validation d'identité et de domaine.
 8. Dès `GMB_REPORT_READY`, l'interface montre les premières conclusions et indique honnêtement que l'audit SEO continue. Elle ne remplace pas le rapport GMB par un spinner.
@@ -95,7 +95,7 @@ La session navigateur ne constitue pas la source de vérité. Une reprise rechar
 10. Le CTA `Préparer mon site` ne démarre rien avant le clic. Au clic, l'interface peut montrer une préparation, puis demande un e-mail valide. Le consentement marketing est séparé et facultatif.
 11. Après e-mail valide, le système fige un snapshot de l'intake et des `AgentConfigurationVersion`, puis démarre le `WebsiteFactoryPipelineRun`. Il compose un `SiteSpec`, rend un artefact déterministe, exécute les gates et produit un `AcceptanceReport`.
 12. La démo reste invisible au prospect jusqu'à `READY_FOR_OWNER_REVIEW`, puis validation explicite de l'opérateur. Après validation, l'e-mail transactionnel envoie un lien privé `noindex`, expirant et révocable, accessible sept jours après présentation.
-13. La démo contient ses CTA de contact et un CTA d'achat ultérieur, mais le paiement et la production sont hors de ce slice.
+13. La démo contient ses CTA de contact. Un éventuel CTA de mise en production est unique, clairement secondaire par rapport à la découverte de la démo, et le paiement et la production restent hors de ce slice.
 
 ## 6. Branches et intake progressif
 
@@ -203,7 +203,13 @@ Affiche la promesse, le périmètre de l'audit, une limite honnête et le formul
 
 ### E1, recherche et identité
 
-Affiche l'établissement recherché, la ville/pays, la progression et la provenance résumée. Unique : bouton de contrôle `Ce n'est pas mon établissement`. Multiple : cartes comparables avec nom, adresse, téléphone, image si disponible et `C'est mon établissement`. Aucun : demande d'adresse uniquement.
+Affiche l'établissement recherché, la ville/pays, la progression et une provenance résumée. Cet écran ne présente jamais deux boutons d'identité côte à côte.
+
+- Correspondance unique : la fiche est une confirmation de lecture, pas un choix à valider. Le parcours continue automatiquement après affichage. `Ce n'est pas le bon établissement` est un lien secondaire placé sous le résumé, visuellement calme et éloigné de l'action de continuation.
+- Correspondances multiples : chaque fiche est une ligne ou une carte sélectionnable dans son ensemble, avec état radio explicite. Avant sélection, aucun bouton de confirmation n'est affiché. Après sélection, un seul bouton primaire apparaît en bas du bloc : `Continuer avec cet établissement`. La correction reste un lien secondaire `Je ne le vois pas` sous la liste, jamais un second bouton adjacent.
+- Aucune correspondance fiable : aucun faux choix n'est affiché. Le seul bouton primaire est `Continuer avec mon adresse`, après le champ d'adresse. Le texte explique que la fiche n'a pas été confirmée, sans conclure à son inexistence.
+
+La sélection d'une fiche produit un changement d'état visible, non une navigation ambiguë. Le bouton primaire est désactivé tant qu'aucun choix n'est sélectionné.
 
 ### E2, enrichissement et intake
 
@@ -211,28 +217,35 @@ Affiche les données trouvées avec badge de classification et source accessible
 
 ### E3, audit progressif
 
-Affiche une timeline de checkpoints réels. `GMB_REPORT_READY` montre le rapport GMB immédiatement et la continuation SEO. Un module sans source affiche une limite, pas une carte vide trompeuse. Chaque finding garde une preuve et une qualification.
+Affiche une barre de progression en cinq étapes, toujours dans le même ordre : `Identifier`, `Comprendre`, `Auditer`, `Préparer`, `Découvrir`. Chaque étape possède un état `terminée`, `en cours`, `à venir` ou `bloquée`, avec une phrase courte et la dernière mise à jour. La barre indique l'avancement réel des checkpoints, jamais un pourcentage estimé.
+
+`GMB_REPORT_READY` montre le rapport GMB immédiatement et la continuation SEO. Un module sans source affiche une limite, pas une carte vide trompeuse. Chaque finding garde une preuve et une qualification. La progression reste compacte sur mobile : libellé de l'étape courante, nombre d'étapes terminées et détail développable. Sur desktop, les cinq étapes peuvent être visibles en ligne, sans transformer la barre en tableau de bord.
 
 ### E4, rapport final
 
-Ordre : résumé actionnable, établissement et périmètre, GMB, SEO technique, contenu et intentions, concurrence bornée, opportunités, limites et sources. Actions : télécharger PDF, reprendre si incomplet, `Préparer mon site`. Le CTA est désactivé tant que le dossier requis n'est pas complet.
+Ordre : résumé actionnable, établissement et périmètre, GMB, SEO technique, contenu et intentions, concurrence bornée, opportunités, limites et sources. Une seule action primaire est visible : `Préparer mon site` lorsque le dossier est complet. `Télécharger le rapport PDF` est un lien secondaire placé près du titre du rapport. Si le rapport est partiel, l'action primaire devient `Compléter mon dossier` ; la reprise technique reste une action secondaire attachée au module en erreur. Aucun écran ne présente ces actions sous forme de deux boutons concurrents.
 
 ### E5, préparation et e-mail
 
-Après clic, montrer les étapes « snapshot », « préparation », « contrôle à venir », sans prétendre que le site existe. Le champ e-mail explique la livraison de la démo. Cases marketing séparées. Erreurs inline, pas de perte de rapport. Succès : état `EMAIL_CONFIRMED` puis progression du build.
+Après clic sur `Préparer mon site`, ouvrir une étape dédiée qui explique calmement : « Nous utiliserons cette adresse uniquement pour vous envoyer le lien de votre démo après vérification. » Montrer les étapes `préparer les informations`, `construire`, `contrôler`, sans prétendre que le site existe déjà. Le formulaire ne contient qu'un champ e-mail, une mention de confidentialité et, séparément, une case marketing facultative. Une seule action primaire `Lancer la préparation` est disponible après validation. Annuler ou revenir au rapport est un lien secondaire, pas un bouton concurrent. Erreurs inline, pas de perte de rapport. Succès : état `EMAIL_CONFIRMED` puis progression du build.
 
 ### E6, attente de génération
 
-Afficher les checkpoints confirmés, l'heure de dernière mise à jour et le délai cible configuré. États retry, partial et blocked visibles. Ne jamais afficher une animation comme preuve d'avancement.
+Afficher la même barre de progression, focalisée sur `Préparer` puis `Découvrir`, les checkpoints confirmés, l'heure de dernière mise à jour et le délai cible configuré. Le contenu explique ce qui vient d'être fait et ce qui reste à vérifier. États retry, partial et blocked visibles. Ne jamais afficher une animation comme preuve d'avancement. En cas de succès, le seul CTA primaire est `Découvrir ma démo` après envoi du lien ; en cas de blocage, le seul CTA primaire correspond à la prochaine action réelle, par exemple `Corriger les informations` ou `Réessayer`, jamais les deux simultanément.
 
 ### E7, démo
 
-Accessible via lien privé, sans compte ni paiement, après validation opérateur. Afficher expiration, identité du restaurant et CTA utiles. `noindex`, révocation serveur, quota et limitation de débit. Aucun mécanisme anti-copie qui casse clavier, sélection ou accessibilité.
+Accessible via lien privé, sans compte ni paiement, après validation opérateur. Le premier écran de la démo sert la découverte : identité du restaurant, aperçu du site et CTA de contact utiles. Un seul CTA de conversion `Mettre mon site en ligne` peut apparaître après la découverte, dans une zone dédiée et non en concurrence avec `Appeler`, `Écrire` ou `Itinéraire`. Les actions de contact sont regroupées selon les données réellement disponibles, sans répéter le même numéro ou la même destination. Afficher l'expiration sans alarme agressive. `noindex`, révocation serveur, quota et limitation de débit. Aucun mécanisme anti-copie qui casse clavier, sélection ou accessibilité.
 
 ## 10. Règles UI/UX et responsive
 
 - Mobile First : une seule colonne par défaut, largeur lisible, CTA principal persistant mais non obstructif, uploads utilisables au doigt, aucune table qui déborde.
 - Compréhension en une seconde : à chaque écran, un titre répond à « où suis-je ? », une phrase répond à « pourquoi ? », une action principale répond à « que faire ? ».
+- Hiérarchie des actions : une seule action primaire par écran et par état. Une action secondaire est un lien textuel, une option de liste ou une action dans le contexte du module. Deux boutons d'importance équivalente côte à côte sont interdits sur mobile et évités sur desktop.
+- Choix exclusifs : lorsqu'il faut choisir un établissement, sélectionner une ligne ou une carte, puis confirmer avec une seule action. Ne jamais juxtaposer `C'est mon établissement` et `Ce n'est pas mon établissement` comme deux choix visuels de même poids.
+- CTA et psychologie : le CTA décrit le prochain bénéfice concret, pas une opération interne. `Préparer mon site` signifie une intention ; `Lancer la préparation` confirme l'e-mail et déclenche réellement le travail ; `Découvrir ma démo` ouvre une valeur disponible. Ne pas employer `Continuer` seul lorsque l'étape peut être nommée.
+- Progression : la barre de progression est une boussole persistante, pas une décoration. Elle montre cinq étapes métier, l'étape courante et la prochaine action. Elle ne promet ni durée précise ni pourcentage artificiel. Un texte d'état ne doit pas répéter le libellé de la barre : la barre donne où, le texte donne pourquoi et quoi faire.
+- Barres d'action : sur mobile, le CTA primaire peut être placé dans une barre basse compacte avec respect de la safe area, uniquement quand une action est attendue. La barre ne contient jamais deux boutons concurrents et ne doit jamais masquer le dernier champ ou le dernier contenu.
 - Desktop : rapport en colonne de lecture avec navigation latérale ou sommaire seulement si elle ne masque pas les preuves ; les panneaux ne doivent pas devenir un dashboard générique.
 - Accessibilité : HTML sémantique, labels explicites, focus visible, clavier complet, contraste WCAG AA à vérifier, erreurs annoncées, `aria-live` réservé aux changements utiles, alternatives textuelles et aucune information portée uniquement par la couleur.
 - Performance : HTML léger, chargement progressif, images redimensionnées côté serveur, pas de dépendance IA pour le premier rendu de l'état.
@@ -313,6 +326,10 @@ Chaque événement doit être idempotent, horodaté, corrélé à un run opaque,
 - [ ] Aucun débordement horizontal à 320, 390, 768, 1024 et 1440 px.
 - [ ] Le parcours est utilisable au clavier et avec VoiceOver ou lecteur équivalent.
 - [ ] Les états loading, empty, partial, retry, error et blocked ont tous un message et une action.
+- [ ] Chaque écran présente au maximum une action primaire ; les actions secondaires ne sont pas des boutons concurrents.
+- [ ] Une sélection multiple utilise une ligne ou carte sélectionnable puis un seul bouton de confirmation, jamais deux boutons d'identité côte à côte.
+- [ ] La barre de progression affiche les cinq étapes métier, l'étape courante et la prochaine action sans pourcentage artificiel ni texte répété.
+- [ ] Le CTA visible exprime le bénéfice ou l'action réelle : `Préparer mon site`, `Lancer la préparation`, `Découvrir ma démo`.
 - [ ] Les contrastes, focus, labels et annonces d'erreur sont vérifiés.
 - [ ] La direction Ancrage/JetBrains Mono est validée par un prototype dédié avant implémentation.
 
