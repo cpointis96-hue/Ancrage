@@ -35,6 +35,8 @@ Le prototype ne doit pas ajouter de navigation, de bouton ou de données qui ne 
 
 La direction visuelle demandée à partir de la référence SSTR est testée séparément dans [`prototypes/sstr-direction/`](../../prototypes/sstr-direction/) : `client-site.html` pour le site client et `cockpit.html` pour le cockpit opérateur. Le premier assume une expérience éditoriale et immersive ; le second reprend seulement la matière et le contraste, en conservant une structure d’outil dense et actionnable.
 
+Le cockpit est désormais figé comme profil de référence dans [`profiles/cockpit-ancrage-v1.md`](profiles/cockpit-ancrage-v1.md). Ce profil décrit la base visuelle et comportementale validée, ainsi que les états et contrats qui restent à spécifier.
+
 ## Références obligatoires
 
 - `.scratch/website-factory-architecture/map.md`

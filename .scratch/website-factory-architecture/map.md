@@ -87,7 +87,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Catalogue à trois niveaux** — `Essential`, `Visibility`, `Managed`, structure commune et localisation des prix/limites ; montants finaux encore à tester.
 - **Conversion démo-production** — la démo validée devient la base d'une `ProductionSite`/`SiteVersion`, avec domaine et publication après paiement et validation.
 - **Pages locales conditionnelles** — contenu large possible en démo, indexation production réservée aux pages utiles, originales, prouvées et pertinentes.
-- **Arborescence structurée** — `SiteSpec`, templates déterministes, configuration éditable et versions restaurables ; prototype de cockpit encore requis.
+- **Arborescence structurée** — `SiteSpec`, templates déterministes, configuration éditable et versions restaurables ; un profil de cockpit Ancrage V1 et son prototype sont maintenant disponibles, mais les états métier, contrats et gates de validation restent à spécifier.
 - **Conservation provisoire** — 7 jours public, purge rapide des médias non retenus, archivage interne limité et logs conservés pour audit ; durées légales encore à rechercher.
 - **Langues de lancement** — anglais pour Sri Lanka/Australie, singhalais ensuite pour Sri Lanka, français ensuite pour France ; autres langues extensibles mais non promises au MVP.
 - **Démo standard** — 6 à 8 pages utiles, pages supplémentaires conditionnées par les données et la valeur réelle.
@@ -138,7 +138,7 @@ La direction produit est décidée. Il reste uniquement des validations ou des p
 ### Bloqueurs avant `to-spec`
 
 - **Prototype templates** : différé ; reprendre avec l'agent UI, hors chemin critique de l'architecture.
-- **Prototype cockpit** : valider l'arborescence et l'écran de validation finale.
+- **Prototype cockpit** : le profil visuel/comportemental Ancrage V1 est disponible ; valider encore l'arborescence complète, les états métier et l'écran de validation finale.
 - **Prototype parcours public** : vérifier l'enchaînement nom/ville → enrichissement → formulaire → cinq photos → email → génération.
 - **Recherche fournisseurs** : confirmer Neon, Cloudflare, stockage objet, queues/workflows, domaine et paiement avec coûts et limites actuels.
 - **Sécurité et données** : finaliser registre des traitements, politique de conservation, suppression, uploads, SSRF, prompt injection, backups et restore par marché.

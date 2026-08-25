@@ -33,11 +33,11 @@ Définir la carte des dossiers, modules, surfaces et responsabilités avant impl
 
 ## Decision provisoire
 
-L'architecture s'organise autour d'un `SiteSpec` versionné, de templates déterministes, de contenus/offres configurables et d'un cockpit court orienté tâches. L'opérateur peut modifier les offres, textes, règles et paramètres activables sans éditer le code ; chaque version est restaurable. Le prototype d'arborescence reste à réaliser avant `to-spec`.
+L'architecture s'organise autour d'un `SiteSpec` versionné, de templates déterministes, de contenus/offres configurables et d'un cockpit court orienté tâches. L'opérateur peut modifier les offres, textes, règles et paramètres activables sans éditer le code ; chaque version est restaurable. Le prototype cockpit Ancrage V1 est maintenant disponible ; sa spec métier complète reste à réaliser avant `to-spec`.
 
 L'édition client après production est limitée aux horaires, téléphone, adresse, prix, plats, photos, textes courts et offres. Les changements de structure, template, SEO avancé ou nouvelle langue passent par une génération contrôlée.
 
-Prototype : [cockpit-prototype.html](../prototypes/cockpit-prototype.html), variantes `?variant=a`, `?variant=b`, `?variant=c`.
+Prototype de référence : [`docs/ux/profiles/cockpit-ancrage-v1.md`](../../../docs/ux/profiles/cockpit-ancrage-v1.md) et [`prototypes/sstr-direction/cockpit.html`](../../../prototypes/sstr-direction/cockpit.html). Les anciens prototypes `?variant=a`, `?variant=b`, `?variant=c` restent historiques.
 
 ## Exigence de cockpit ajoutée
 
