@@ -31,6 +31,10 @@ architecture UX → wireframes → prototype comportemental → revue macOS/mobi
 
 Le prototype ne doit pas ajouter de navigation, de bouton ou de données qui ne sont pas justifiés ici.
 
+## Prototypes visuels SSTR
+
+La direction visuelle demandée à partir de la référence SSTR est testée séparément dans [`prototypes/sstr-direction/`](../../prototypes/sstr-direction/) : `client-site.html` pour le site client et `cockpit.html` pour le cockpit opérateur. Le premier assume une expérience éditoriale et immersive ; le second reprend seulement la matière et le contraste, en conservant une structure d’outil dense et actionnable.
+
 ## Références obligatoires
 
 - `.scratch/website-factory-architecture/map.md`
