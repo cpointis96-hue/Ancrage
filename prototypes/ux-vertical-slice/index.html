@@ -55,6 +55,7 @@
     const demoSites=[['Le Jardin des Épices','www.lejardindesepices.example'],['Atelier du Port','www.atelierduport.example'],['Café Central','www.cafecentral.example']];
     document.querySelectorAll('.queue-item').forEach((item,index)=>{const url=document.createElement('span');url.className='site-url';url.innerHTML=`${demoSites[index][1]} <a class="site-link" href="https://${demoSites[index][1]}" target="_blank" rel="noreferrer" aria-label="Ouvrir la démo de ${demoSites[index][0]}">↗</a>`;item.insertBefore(url,item.querySelector('.meta'));});
     const detailTitle=document.querySelector('.detail .title');const detailUrl=document.createElement('span');detailUrl.className='site-url';detailUrl.innerHTML='www.lejardindesepices.example <a class="site-link" href="https://www.lejardindesepices.example" target="_blank" rel="noreferrer" aria-label="Ouvrir la démo de Le Jardin des Épices">↗</a>';detailTitle.after(detailUrl);
+    const studioLink=document.createElement('a');studioLink.href='cockpit-operator-v2.html';studioLink.textContent='Ouvrir le cockpit V2 dans Ship Studio';studioLink.style.cssText='position:fixed;top:68px;right:18px;z-index:10;padding:8px 10px;border:1px solid #b9d5c7;border-radius:7px;background:#fff;color:#326b58;text-decoration:none;font-size:12px';document.body.append(studioLink);
   </script>
 </body>
 </html>
