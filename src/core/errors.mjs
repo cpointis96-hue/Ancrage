@@ -31,3 +31,7 @@ export class ValidationError extends AppError {
     super(message, { code: 'VALIDATION_ERROR', status: 400, details });
   }
 }
+
+export class WorkflowValidationError extends ValidationError {
+  constructor(message = 'Workflow invalide.', details = null) { super(message, details); this.code = 'WORKFLOW_INVALID'; }
+}

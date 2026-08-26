@@ -1,0 +1,2 @@
+const paths = { folder: '<path d="M2.5 5.5h5l1.5 1.7h8.5v9.3h-15z"/><path d="M2.5 5.5V4h5l1.5 1.5"/>', runs: '<path d="M4 10a6 6 0 1 1 1.8 4.3"/><path d="M4 6v4h4"/>', providers: '<rect x="3" y="5" width="14" height="10" rx="1.5"/><path d="M6 9h8M6 12h5"/>', config: '<path d="M3 6h14M3 10h14M3 14h14"/><circle cx="7" cy="6" r="1.5"/><circle cx="12" cy="10" r="1.5"/><circle cx="9" cy="14" r="1.5"/>' };
+export function icon(name) { return `<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">${paths[name] ?? ''}</svg>`; }

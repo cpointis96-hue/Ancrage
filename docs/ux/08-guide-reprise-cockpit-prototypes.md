@@ -1,5 +1,7 @@
 # Guide de reprise - prototypes cockpit Ancrage
 
+> La fondation locale opérable est désormais dans `app/`, `src/` et `test/e2e/`. Le fichier `prototypes/ux-vertical-slice/cockpit-operator-v2.html` reste la référence visuelle historique préservée, pas la source des données de production.
+
 Status: handoff de travail, prototype UX avant production
 
 ## Objectif
