@@ -63,6 +63,8 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.equal(runResponse.status, 201);
     const run = JSON.parse(await runResponse.text());
     assert.equal(run.status, 'SUCCEEDED');
+    const events = await request(`${base}/api/runs/${run.id}/events`, { headers: { origin: base } });
+    assert.deepEqual(JSON.parse(await events.text()).map(event => event.type).filter(type => ['RUN_STARTED', 'RUN_FINISHED'].includes(type)), ['RUN_STARTED', 'RUN_FINISHED']);
 
     const artifacts = await request(`${base}/api/runs/${run.id}/artifacts`, { headers: { origin: base } });
     assert.deepEqual(JSON.parse(await artifacts.text()).map(item => item.kind).sort(), ['report', 'site']);

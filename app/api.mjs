@@ -24,6 +24,7 @@ export const api = {
   providers: () => call('/providers'),
   resumeRun: id => call(`/runs/${id}/resume`, { method: 'POST' }),
   run: id => call(`/runs/${id}`),
+  events: id => call(`/runs/${id}/events`),
   runs: () => call('/runs'),
   savePrompt: (id, markdown, expectedHash) => call(`/prompts/${id}/draft`, { method: 'PUT', body: JSON.stringify({ markdown, expectedHash }) }),
   saveSecret: (id, secret) => call(`/providers/${id}/secret`, { method: 'PUT', body: JSON.stringify({ secret }) }),

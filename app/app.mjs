@@ -13,10 +13,12 @@ const views = [
 const state = {
   view: 'inbox',
   selected: {},
+  runTab: 'overview',
   dossierTab: 'identity',
   configurationTab: 'workflows',
   internetQuery: '',
   internetResult: null,
+  internetConfigOpen: false,
 };
 
 const $ = selector => document.querySelector(selector);
@@ -24,6 +26,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&'
 const list = $('#list');
 const detail = $('#detail');
 let toastTimer;
+let renderQueue = Promise.resolve();
 
 function notify(message) {
   clearTimeout(toastTimer);
@@ -40,7 +43,6 @@ function renderNav() {
         <span class="nav-icon">${icon(view.icon)}</span><span class="nav-label">${view.label}</span>
       </button>`).join('');
   }
-  document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => go(button.dataset.view)));
 }
 
 function badge(value) {
@@ -205,6 +207,7 @@ async function renderRuns() {
   const artifacts = await api.artifacts(run.id).catch(() => []);
   const site = artifacts.find(item => item.kind === 'site');
   const report = artifacts.find(item => item.kind === 'report');
+  const events = state.runTab === 'journal' ? await api.events(run.id).catch(() => []) : [];
   const checkpoint = [...run.steps].reverse().find(step => step.status === 'SUCCEEDED');
   const failedAttempt = [...run.attempts].reverse().find(attempt => attempt.status === 'FAILED');
   const runActions = [];
@@ -216,21 +219,24 @@ async function renderRuns() {
   if (run.operatorDecision?.decision === 'CHANGES_REQUESTED' && dossier) runActions.push('<button class="btn primary" type="button" data-rerun-dossier>Relancer après correction</button>');
   if (run.operatorDecision?.decision === 'APPROVED' && site) runActions.push(`<a class="btn primary" href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site</a>`);
   if (dossier) runActions.push(iconControl('Ouvrir le dossier', 'folder', `data-open-dossier="${dossier.id}"`));
-  detail.innerHTML = `<div class="detail-inner">
-    <header class="inspect-head"><div><div class="eyebrow">Run · ${esc(run.id)}</div><h2>${esc(dossier?.name ?? run.workflowId)}</h2><p>${esc(run.workflowId)}</p></div><div class="detail-actions">${runActions.join('')}</div></header>
-    <section class="facts">
+  const runTabs = [['overview', 'Vue'], ['steps', 'Étapes'], ['proofs', 'Preuves'], ['versions', 'Versions'], ['journal', 'Journal']];
+  const progress = `<section class="panel"><div class="section-label">Progression</div>${run.snapshot.steps.map(snapshot => {
+    const step = run.steps.find(item => item.id === snapshot.id);
+    return `<div class="step-row"><span><strong>${esc(snapshot.id)}</strong>${failedAttempt?.stepId === snapshot.id ? `<small>Échec précédent · ${esc(failedAttempt.errorCode)}</small>` : ''}</span>${badge(step?.status ?? 'EN ATTENTE')}</div>`;
+  }).join('')}</section>`;
+  const runBody = state.runTab === 'steps' ? progress : state.runTab === 'proofs' ? `<section class="panel"><div class="section-label">Artefacts</div>${artifacts.length ? `<div class="artifact-links">${site ? `<a href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site ${icon('external')}</a>` : ''}${report ? `<a href="${esc(report.href)}" target="_blank" rel="noopener">Voir le rapport ${icon('external')}</a>` : ''}</div>` : '<p class="muted">Aucun artefact disponible pour ce run.</p>'}</section><section class="panel"><div class="section-label">Dossier source</div><p>${dossier ? `${esc(dossier.name)} · ${esc(dossier.city)} · ${dossier.assetCount} média` : 'Dossier introuvable.'}</p></section>` : state.runTab === 'versions' ? `<section class="panel"><div class="section-label">Configuration du run</div><div class="grid"><div><small>Workflow</small><strong>${esc(run.workflowId)}</strong></div><div><small>Version workflow</small><strong>${esc(run.snapshot.workflowVersion)}</strong></div>${run.snapshot.steps.map(step => `<div><small>${esc(step.id)} · prompt</small><strong>${esc(step.promptRef ?? 'Aucun')}</strong></div><div><small>${esc(step.id)} · contrat</small><strong>${esc(step.contractRef ?? 'Aucun')}</strong></div>`).join('')}</div></section>` : state.runTab === 'journal' ? `<section class="panel"><div class="section-label">Journal</div>${events.length ? events.map(event => `<div class="event-row"><span>${formatDate(event.at)}</span><strong>${esc(event.type)}</strong><small>${esc(event.stepId ?? event.decision ?? '')}</small></div>`).join('') : '<p class="muted">Aucun événement enregistré.</p>'}</section>` : `<section class="preview-card"><div class="preview-matter" aria-hidden="true"></div><div class="preview-copy"><span>Site démo</span><strong>${esc(dossier?.name ?? run.workflowId)}</strong><small>${esc(run.workflowId)} · ${run.status === 'SUCCEEDED' ? 'Aperçu prêt' : 'Aperçu en préparation'}</small></div></section><section class="facts">
       <div class="fact"><small>État</small><strong>${badge(run.status)}</strong></div>
       <div class="fact"><small>Checkpoint fiable</small><strong>${esc(checkpoint?.id ?? 'Aucun')}</strong></div>
       <div class="fact"><small>Tentatives</small><strong>${run.attempts.length}</strong></div>
       <div class="fact"><small>Décision</small><strong>${run.operatorDecision ? badge(run.operatorDecision.decision) : 'À prendre'}</strong></div>
-    </section>
-    <section class="panel"><div class="section-label">Progression</div>${run.snapshot.steps.map(snapshot => {
-      const step = run.steps.find(item => item.id === snapshot.id);
-      return `<div class="step-row"><span><strong>${esc(snapshot.id)}</strong>${failedAttempt?.stepId === snapshot.id ? `<small>Échec précédent · ${esc(failedAttempt.errorCode)}</small>` : ''}</span>${badge(step?.status ?? 'EN ATTENTE')}</div>`;
-    }).join('')}</section>
-    <section class="panel"><div class="section-label">Artefacts</div>${artifacts.length ? `<div class="artifact-links">${site ? `<a href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site ${icon('external')}</a>` : ''}${report ? `<a href="${esc(report.href)}" target="_blank" rel="noopener">Voir le rapport ${icon('external')}</a>` : ''}</div>` : '<p class="muted">Aucun artefact disponible pour ce run.</p>'}</section>
+    </section>${progress}`;
+  detail.innerHTML = `<div class="detail-inner">
+    <header class="inspect-head"><div><div class="eyebrow">Run · ${esc(run.id)}</div><h2>${esc(dossier?.name ?? run.workflowId)}</h2><p>${esc(run.workflowId)}</p></div><div class="detail-actions">${runActions.join('')}</div></header>
+    <nav class="tabs" aria-label="Sections du run">${runTabs.map(([id, label]) => `<button class="${state.runTab === id ? 'active' : ''}" type="button" data-run-tab="${id}">${label}</button>`).join('')}</nav>
+    ${runBody}
   </div>`;
-  bindAll('[data-run-select]', button => { state.selected.runs = button.dataset.runSelect; render(); });
+  bindAll('[data-run-tab]', button => { state.runTab = button.dataset.runTab; render(); });
+  bindAll('[data-run-select]', button => { state.selected.runs = button.dataset.runSelect; state.runTab = 'overview'; render(); });
   $('[data-run-search]')?.addEventListener('input', event => {
     const query = event.currentTarget.value.trim().toLowerCase();
     document.querySelectorAll('[data-search-value]').forEach(row => { row.hidden = !row.dataset.searchValue.includes(query); });
@@ -312,7 +318,8 @@ async function renderConfiguration() {
   if (state.configurationTab === 'workflows') {
     const workflow = workflows.find(item => item.id === selectedId);
     const action = workflow.id === 'client-site-simulation' ? `<button class="btn primary" type="button" data-test-workflow>Lancer un test</button>${iconControl('Tester une interruption', 'test', 'data-test-workflow-fault')}` : '<button class="btn primary" type="button" data-open-internet>Ouvrir Internet</button>';
-    detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Configuration · workflow</div><h2>${esc(workflow.id)}</h2><p>Le fichier local est utilisé par les futurs runs.</p></div><div class="detail-actions">${action}</div></header><section class="panel"><div class="section-label">Étapes dans l’ordre</div>${workflow.steps.map((step, index) => `<div class="workflow-step"><b>${String(index + 1).padStart(2, '0')}</b><span><strong>${esc(step.id)}</strong><small>${esc(step.kind)} · ${esc(step.implementation)}</small></span><span>${step.timeoutMs} ms</span></div>`).join('')}</section></div>`;
+    const contracts = workflow.steps.filter(step => step.contractRef);
+    detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Configuration · workflow</div><h2>${esc(workflow.id)}</h2><p>Le fichier local est utilisé par les futurs runs.</p></div><div class="detail-actions">${action}</div></header><section class="panel"><div class="section-label">Étapes dans l’ordre</div>${workflow.steps.map((step, index) => `<div class="workflow-step"><b>${String(index + 1).padStart(2, '0')}</b><span><strong>${esc(step.id)}</strong><small>${esc(step.kind)} · ${esc(step.implementation)}</small><small>Entrées : ${esc((step.inputRefs ?? []).join(' · ') || 'Aucune')} · sorties : ${esc((step.outputRefs ?? []).join(' · ') || 'Aucune')}</small></span><span>${step.timeoutMs} ms</span></div>`).join('')}</section><section class="panel"><div class="section-label">Contrats de données</div>${contracts.length ? contracts.map(step => `<div class="contract-row"><strong>${esc(step.id)}</strong><span>${esc(step.contractRef)}</span></div>`).join('') : '<p class="muted">Aucun contrat déclaré dans ce workflow.</p>'}</section></div>`;
     $('[data-test-workflow]')?.addEventListener('click', async event => {
       const result = await perform(event.currentTarget, () => api.startSimulation({ name: 'Maison Sillage', city: 'Pattaya' }), 'Simulation créée.');
       if (result.ok) await go('runs', result.value.id);
@@ -354,37 +361,33 @@ function providerErrorLabel(code) {
 
 async function renderProviders() {
   const providers = await api.providers();
-  const selected = providers.find(item => item.id === state.selected.providers) ?? providers[0];
-  state.selected.providers = selected?.id;
-  list.innerHTML = listHeader('Providers') + providers.map(provider => `
-    <button class="list-row ${provider.id === selected?.id ? 'active' : ''}" type="button" data-provider-select="${provider.id}">
-      <span class="row-top"><strong>${esc(provider.name)}</strong>${badge(provider.health)}</span>
-      <span class="row-meta">${provider.configured ? 'Clé enregistrée' : 'Clé absente'}${provider.enabled ? ' · actif' : ''}</span>
-    </button>`).join('');
-  if (!selected) {
+  list.innerHTML = listHeader('Providers') + '<div class="section-label">Connexions</div><p class="list-hint">Les clés restent dans le trousseau local.</p>';
+  if (!providers.length) {
     detail.innerHTML = emptyState('Aucun provider', 'Le registre local est vide.');
     return;
   }
-  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><div class="eyebrow">Provider · ${esc(selected.kind)}</div><h2>${esc(selected.name)}</h2><p>${selected.configured ? 'Clé présente dans le trousseau local' : 'Aucune clé enregistrée'}</p></div><div class="detail-actions"><button class="connection-toggle ${selected.enabled ? 'on' : ''}" type="button" aria-label="${selected.enabled ? 'Désactiver' : 'Activer'} ${esc(selected.name)}" aria-pressed="${selected.enabled}" data-toggle-provider><span></span></button></div></header><section class="panel"><div class="provider-form"><label class="field"><span>Clé API</span><input type="password" autocomplete="new-password" placeholder="Clé non affichée" data-provider-secret></label><div class="provider-actions"><button class="btn primary" type="button" data-save-provider>Enregistrer</button><button class="btn" type="button" data-test-provider>Tester la connexion</button>${selected.configured ? iconControl('Supprimer la clé', 'trash', 'data-delete-provider') : ''}</div></div></section><section class="facts"><div class="fact"><small>État</small><strong>${badge(selected.health)}</strong></div><div class="fact"><small>Activation</small><strong>${selected.enabled ? 'Active' : 'Inactive'}</strong></div><div class="fact"><small>Dernier test</small><strong>${formatDate(selected.lastCheckedAt)}</strong></div><div class="fact"><small>Capacités</small><strong>${esc(selected.capabilities.join(' · '))}</strong></div></section>${selected.lastErrorCode ? `<div class="notice block">${esc(providerErrorLabel(selected.lastErrorCode))}</div>` : ''}</div>`;
-  bindAll('[data-provider-select]', button => { state.selected.providers = button.dataset.providerSelect; render(); });
-  $('[data-save-provider]')?.addEventListener('click', async event => {
-    const input = $('[data-provider-secret]');
+  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2><p>Connexions IA et domaines utilisées par les workflows.</p></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong><small>${provider.configured ? 'Clé enregistrée' : 'Non configuré'} · ${provider.enabled ? 'actif' : 'inactif'}</small></div><div class="provider-key"><input type="password" autocomplete="new-password" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" data-provider-secret="${esc(provider.id)}"><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button></div><button class="icon-control compact-icon" type="button" aria-label="Tester la connexion ${esc(provider.name)}" title="Tester" data-test-provider="${esc(provider.id)}">${icon('test')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button>${provider.configured ? iconControl(`Supprimer la clé ${provider.name}`, 'trash', `data-delete-provider="${esc(provider.id)}"`) : ''}</div>`).join('')}</section><p class="provider-footnote"><span class="state-dot pass" aria-hidden="true"></span>Les clés ne sont jamais renvoyées au navigateur.</p></div>`;
+  bindAll('[data-save-provider]', async button => {
+    const id = button.dataset.saveProvider;
+    const input = document.querySelector(`[data-provider-secret="${id}"]`);
     if (!input.value.trim()) { notify('Saisissez une clé.'); input.focus(); return; }
-    const result = await perform(event.currentTarget, () => api.saveSecret(selected.id, input.value), 'Clé enregistrée dans le trousseau local.');
+    const result = await perform(button, () => api.saveSecret(id, input.value), 'Clé enregistrée dans le trousseau local.');
     input.value = '';
     if (result.ok) await render();
   });
-  $('[data-test-provider]')?.addEventListener('click', async event => {
-    const result = await perform(event.currentTarget, () => api.testProvider(selected.id));
+  bindAll('[data-test-provider]', async button => {
+    const result = await perform(button, () => api.testProvider(button.dataset.testProvider));
     if (result.ok) { notify(result.value.health === 'healthy' ? 'Connexion vérifiée.' : providerErrorLabel(result.value.lastErrorCode)); await render(); }
   });
-  $('[data-toggle-provider]')?.addEventListener('click', async event => {
-    const result = await perform(event.currentTarget, () => api.setEnabled(selected.id, !selected.enabled), selected.enabled ? 'Provider désactivé.' : 'Provider activé.');
+  bindAll('[data-toggle-provider]', async button => {
+    const provider = providers.find(item => item.id === button.dataset.toggleProvider);
+    const result = await perform(button, () => api.setEnabled(provider.id, !provider.enabled), provider.enabled ? 'Provider désactivé.' : 'Provider activé.');
     if (result.ok) await render();
   });
-  $('[data-delete-provider]')?.addEventListener('click', async event => {
-    if (!window.confirm(`Supprimer la clé ${selected.name} du trousseau local ?`)) return;
-    const result = await perform(event.currentTarget, () => api.deleteSecret(selected.id), 'Clé supprimée.');
+  bindAll('[data-delete-provider]', async button => {
+    const provider = providers.find(item => item.id === button.dataset.deleteProvider);
+    if (!window.confirm(`Supprimer la clé ${provider.name} du trousseau local ?`)) return;
+    const result = await perform(button, () => api.deleteSecret(provider.id), 'Clé supprimée.');
     if (result.ok) await render();
   });
 }
@@ -392,10 +395,10 @@ async function renderProviders() {
 async function renderInternet() {
   const providers = (await api.providers()).filter(provider => provider.kind === 'domain');
   const active = providers.filter(provider => provider.enabled && provider.health === 'healthy');
-  list.innerHTML = listHeader('Internet') + '<div class="section-label">Registrars</div>' + providers.map(provider => `
-    <button class="list-row" type="button" data-internet-provider="${provider.id}"><span class="row-top"><strong>${esc(provider.name)}</strong>${badge(provider.health)}</span><span class="row-meta">${provider.enabled ? 'Actif' : 'Inactif'}</span></button>`).join('');
+  list.innerHTML = listHeader('Internet') + '<div class="section-label">Recherche de domaines</div><p class="list-hint">Un mot-clé ou une expression, puis Entrée.</p>';
   const result = state.internetResult;
-  detail.innerHTML = `<div class="detail-inner internet-page"><header class="inspect-head"><div><h2>Internet</h2><p>Recherche locale de candidats, puis vérification par les registrars actifs.</p></div></header><form class="internet-search" data-internet-form><label><span class="sr-only">Nom de domaine</span><input name="query" autocomplete="off" placeholder="restaurant pattaya" value="${esc(state.internetQuery)}"></label><button class="icon-control primary" type="button" data-internet-submit aria-label="Rechercher" title="Rechercher">${icon('search')}</button></form>${active.length ? '' : '<div class="notice warn">Aucun registrar actif : aucun prix ni disponibilité ne sera inventé.</div>'}<section class="panel"><div class="section-label">Résultats</div>${result?.candidates?.length ? result.candidates.map(candidate => `<div class="domain-row"><strong>${esc(candidate.domain)}</strong><span>${candidate.availability === 'unknown' ? 'Disponibilité à vérifier' : esc(candidate.availability)}</span><small>${esc(candidate.source)}</small></div>`).join('') : '<p class="muted">Saisissez une expression pour générer un premier candidat.</p>'}</section></div>`;
+  const registrarConfig = state.internetConfigOpen ? `<section class="internet-config-panel"><div class="section-label">Registrars</div>${providers.map(provider => `<button class="connection-row" type="button" data-internet-provider="${esc(provider.id)}"><strong>${esc(provider.name)}</strong><span>${badge(provider.health)}</span><small>${provider.enabled ? 'Actif' : 'Inactif'} · ouvrir Providers pour configurer</small></button>`).join('')}</section>` : '';
+  detail.innerHTML = `<div class="detail-inner internet-page"><header class="inspect-head"><div><h2>Internet</h2><p>Recherche locale de candidats, puis vérification par les registrars actifs.</p></div><div class="detail-actions">${iconControl(state.internetConfigOpen ? 'Fermer les connexions Internet' : 'Afficher les connexions Internet', 'config', 'data-toggle-internet-config')}</div></header><form class="internet-search" data-internet-form><label><span class="sr-only">Nom de domaine</span><input name="query" autocomplete="off" placeholder="restaurant pattaya" value="${esc(state.internetQuery)}"></label><button class="icon-control primary" type="submit" aria-label="Rechercher" title="Rechercher" data-internet-submit>${icon('search')}</button></form>${active.length ? '' : '<div class="notice warn">Aucun registrar actif : aucun prix ni disponibilité ne sera inventé.</div>'}${registrarConfig}<section class="panel"><div class="section-label">Résultats</div>${result?.candidates?.length ? result.candidates.map(candidate => `<div class="domain-row"><strong>${esc(candidate.domain)}</strong><span>${candidate.availability === 'unknown' ? 'Disponibilité à vérifier' : esc(candidate.availability)}</span><small>${esc(candidate.source)}</small></div>`).join('') : '<p class="muted">Saisissez une expression pour générer un premier candidat.</p>'}</section></div>`;
   const submitInternet = async event => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -407,11 +410,10 @@ async function renderInternet() {
     if (result.ok) { state.internetResult = result.value; await render(); }
   };
   $('[data-internet-form]')?.addEventListener('submit', submitInternet);
-  $('[data-internet-submit]')?.addEventListener('click', () => submitInternet({ preventDefault() {}, currentTarget: $('[data-internet-form]') }));
-  bindAll('[data-internet-provider]', button => go('providers', button.dataset.internetProvider));
+  $('[data-toggle-internet-config]')?.addEventListener('click', () => { state.internetConfigOpen = !state.internetConfigOpen; render(); });
 }
 
-async function render() {
+async function renderNow() {
   renderNav();
   document.body.dataset.view = state.view;
   loading();
@@ -426,6 +428,22 @@ async function render() {
     showError(error);
   }
 }
+
+function render() {
+  const next = renderQueue.then(renderNow);
+  renderQueue = next.catch(() => {});
+  return next;
+}
+
+$('#app').addEventListener('click', event => {
+  const provider = event.target.closest('[data-internet-provider]');
+  if (provider) {
+    go('providers', provider.dataset.internetProvider);
+    return;
+  }
+  const button = event.target.closest('[data-view]');
+  if (button) go(button.dataset.view);
+});
 
 $('#brand').addEventListener('click', () => go('inbox'));
 render();

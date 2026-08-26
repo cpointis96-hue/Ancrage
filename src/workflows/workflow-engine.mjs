@@ -18,6 +18,10 @@ export function createWorkflowEngine({ store, promptRegistry, implementations = 
   async function get(id) { const run = await store.readJson(`${runPath(id)}/run-manifest.json`, null); if (!run) throw new NotFoundError(`Run introuvable : ${id}`); const operatorDecision = await store.readJson(`${runPath(id)}/operator-decision.json`, null); return { ...run, operatorDecision }; }
   async function list() { const index = await store.readJson('runs/index.json', []); return Promise.all(index.map(get)); }
   async function event(id, type, data = {}) { return store.appendJsonLine(`${runPath(id)}/events.jsonl`, { at: clock().toISOString(), type, ...data }); }
+  async function events(id) {
+    const text = await store.readText(`${runPath(id)}/events.jsonl`, '');
+    return text.split('\n').filter(Boolean).map(line => JSON.parse(line));
+  }
   async function addIndex(id) { const current = await store.readJson('runs/index.json', []); if (!current.includes(id)) await store.writeJson('runs/index.json', [...current, id].sort(), { expectedHash: (await store.readText('runs/index.json', null)) === null ? null : store.hashText(await store.readText('runs/index.json')) }); }
   async function start(workflowId, input = {}) {
     const definition = await loadDefinition(store, workflowId); const id = idFactory('run');
@@ -57,5 +61,5 @@ export function createWorkflowEngine({ store, promptRegistry, implementations = 
     await event(id, 'OPERATOR_DECISION_RECORDED', { decision });
     return get(id);
   }
-  return { decide, get, list, resume, start };
+  return { decide, events, get, list, resume, start };
 }

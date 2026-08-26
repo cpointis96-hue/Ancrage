@@ -46,6 +46,7 @@ export function createRouter({ artifacts = null, dossiers = null, providers, pro
         if (parts.length === 5 && parts[3] === 'artifacts' && method === 'GET' && artifacts) { const artifact = await artifacts.read(id(parts[2]), id(parts[4])); return sendContent(response, 200, artifact.value, artifact.contentType, { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:" }); }
         if (parts.length === 4 && parts[3] === 'decision' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await runs.decide(id(parts[2]), body.decision)); }
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await runs.get(id(parts[2])));
+        if (parts.length === 4 && parts[3] === 'events' && method === 'GET') return sendJson(response, 200, await runs.events(id(parts[2])));
         if (parts.length === 4 && parts[3] === 'resume' && method === 'POST') {
           const runId = id(parts[2]);
           const run = await runs.get(runId);
