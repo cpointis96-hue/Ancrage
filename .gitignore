@@ -12,6 +12,8 @@ node_modules/
 dist/
 build/
 coverage/
+.ancrage/
+.worktrees/
 
 # Tests
 playwright-report/

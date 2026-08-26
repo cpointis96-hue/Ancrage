@@ -270,6 +270,15 @@ _Avoid_: free trial illimité, garantie de résultats SEO
 
 **Configuration** : ensemble versionné d'un prompt, d'un schéma, d'un provider et de règles d'exécution.
 
+**ConfigurationDraft** : copie de travail modifiable d'une configuration, sans effet sur les runs tant qu'elle n'est pas activée.
+_Avoid_: configuration active modifiée en place, sauvegarde implicite
+
+**ConfigurationSnapshot** : version immuable et hashée de toutes les configurations gelées pour une exécution ou activées pour les futurs runs.
+_Avoid_: dernière configuration globale, fichier mutable utilisé directement
+
+**LocalBridge** : frontière privée entre le cockpit et les capacités du Mac, notamment fichiers autorisés, trousseau, outils et moteur local.
+_Avoid_: accès navigateur direct au disque, shell exposé
+
 **Cockpit** : interface privée de l'opérateur pour observer, configurer, synchroniser, reprendre et valider.
 
 **Registre système** : surface du cockpit dédiée à une catégorie de configuration ou de contrôle réellement utilisée par le Control Plane, par exemple les providers, les modèles, les outils, le routage, les budgets, les profils CLI ou la synchronisation.
