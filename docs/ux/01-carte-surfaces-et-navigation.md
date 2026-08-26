@@ -11,7 +11,7 @@ La sidebar comporte au maximum six entrées visibles :
 1. **À traiter** — synchronisations, blocages, validations et alertes nécessitant une action.
 2. **Runs** — audits, générations, reprises et historique filtrable.
 3. **Dossiers** — prospects, établissements, sources, photos et état de complétude.
-4. **Configuration** — agents, providers, prompts, schémas et politiques versionnés.
+4. **Configuration** — étapes, rôles, prompts, contrats et politiques versionnés. Cette surface remplace le catalogue « Agents » comme entrée principale.
 5. **Qualité** — rapports QA, preuves, warnings et validations opérateur.
 6. **Système** — synchronisation locale, sauvegarde, logs techniques et accès.
 

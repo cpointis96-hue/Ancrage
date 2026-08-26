@@ -12,11 +12,13 @@ Le parcours complet E0 à E7 est disponible dans [`parcours-client-e0-e7.html`](
 
 Le cockpit approfondi est disponible dans [`cockpit-operator-e0-e7.html`](cockpit-operator-e0-e7.html). Il reste un prototype en mémoire : il sert à vérifier la navigation opérateur, les états, les onglets d'inspection et les paramètres de configuration avant la spécification de production.
 
-La V2 réorganisée est disponible dans [`cockpit-operator-v2.html`](cockpit-operator-v2.html). Elle sépare le catalogue des agents des registres système et donne accès aux rôles, workflows, instructions, contrats, outils, exécution, budgets, versions et runs.
+La version de travail V1, issue de la refonte V2, est disponible dans [`cockpit-operator-v2.html`](cockpit-operator-v2.html). Elle conserve le design du cockpit V2, mais remplace le catalogue d'agents par une Configuration centrée sur les étapes S0 à S10, les cinq rôles IA, les prompts, les contrats et le routage.
 
 La partie Système est intégrée dans [`cockpit-operator-v2.html`](cockpit-operator-v2.html), qui devient le cockpit unique pour la revue globale. Elle contient les six onglets du cockpit et les registres Système avec une interface de connexion provider compacte.
 
 Le sélecteur en haut permet de passer du site public au cockpit. Le bouton « Voir le cockpit opérateur » apparaît à la fin du parcours public.
+
+Dans `Runs`, ouvre une étape pour voir son déclencheur, son implémentation, ses entrées, ses sorties, les étapes suivantes et la reprise. L'icône circulaire permet de préparer une relance depuis le dernier checkpoint. Dans `Configuration > Prompts`, chaque prompt est rattaché à son étape, éditable, testable et versionnable.
 
 ## Parcours à essayer
 

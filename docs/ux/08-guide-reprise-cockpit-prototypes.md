@@ -44,46 +44,45 @@ Dans l’inspecteur d’une démo, le prototype montre déjà :
 - tableau de consommation et de debug ;
 - actions d’ouverture, contexte local et validation.
 
-### Page « Agents »
+### Page « Configuration »
 
-Le V2 possède une page Agents avec sélection d’un rôle et onglets d’inspection :
+La page précédemment appelée « Agents » devient « Configuration ». Elle garde l'accès aux rôles, mais l'étape opérable est l'unité principale :
 
-- Rôle ;
-- Workflow ;
-- Instructions et prompt versionné ;
-- Contrat d’entrée et de sortie ;
-- Outils autorisés ;
-- Exécution et routage ;
-- Budget ;
-- Versions ;
-- Runs récents.
+- **Étapes** : S0 à S10, dépendances, implémentation, entrées, sorties et reprise ;
+- **Rôles** : les cinq contributions IA réellement conservées ;
+- **Prompts** : étape propriétaire, modèle autorisé, édition, test et version ;
+- **Contrats** : schémas et fichiers réutilisables entre étapes ;
+- **Routage & outils** : scripts, APIs, CLI, modèles et approbations ;
+- **Versions** : configurations activables pour les futurs runs.
+
+Les anciens sous-onglets Workflow, Instructions, Contrat, Outils, Exécution, Budget et Runs sont fusionnés dans ces vues. Ils restent accessibles par leur contenu, sans répéter la même configuration dans neuf onglets.
 
 Cette page est la référence pour la densité d’inspection : les paramètres avancés sont dans le détail, pas tous dans la liste.
 
 ## Menu à construire page par page
 
 1. **À traiter** : démos et décisions urgentes. Base déjà créée, à renforcer si un test révèle un trou.
-2. **Runs** : toutes les exécutions, état, étape, checkpoints, logs, versions de configuration, tokens et coût par étape.
+2. **Runs** : toutes les exécutions, état, étape, checkpoints, logs, versions de configuration, tokens et coût par étape. Chaque étape est dépliable et expose son déclencheur, son implémentation, ses entrées, ses sorties exactes, ses dépendances, ses tentatives et son action de relance.
 3. **Dossiers** : identité, sources, photos, droits, complétude, données manquantes, provenance et synchronisation.
-4. **Agents** : base déjà créée. À compléter avec les états vide, brouillon, erreur, version inactive et test contrôlé.
+4. **Configuration** : étapes, rôles, prompts, contrats et versions ; les tests contrôlés restent accessibles depuis les prompts et les rôles.
 5. **Qualité** : contrôles PASS/WARN/BLOCK, preuves, liens, responsive, accessibilité, secrets absents, décision de validation.
 6. **Système** : providers, modèles, outils/MCP, politiques de routage, budgets, profils CLI, synchronisation et permissions.
 
 ## Ordre de reprise dans la prochaine conversation
 
-Commencer par **Runs**, car c’est la page qui relie les démos visibles dans « À traiter » aux étapes et aux consommations demandées. Ensuite construire **Qualité**, puis **Dossiers**, puis compléter **Système**. Ne pas passer à une implémentation de production.
+Commencer par **Runs**, car c’est la page qui relie les démos visibles dans « À traiter » aux étapes et aux consommations demandées. La version de travail couvre ensuite Configuration, Qualité, Dossiers et Système. Ne pas passer à une implémentation de production.
 
 ### Reprise effectuée — page « Runs »
 
-La page Runs est maintenant prototypée dans `prototypes/ux-vertical-slice/cockpit-operator-v2.html` : quatre fixtures locales couvrent `ACTIF`, `PASS`, `WARN` et `BLOCK`, avec étape active, progression, checkpoints, configuration/version, provider, tokens et coût. L’inspecteur propose les onglets Vue d’ensemble, Étapes, Consommation et Logs ; les actions Reprendre, Inspecter le budget et Contexte local produisent un retour visible sans mutation durable.
+La page Runs est maintenant prototypée dans `prototypes/ux-vertical-slice/cockpit-operator-v2.html` : quatre données de démonstration couvrent `ACTIF`, `PASS`, `WARN` et `BLOCK`, avec étape active, progression, checkpoints, configuration/version, provider, tokens et coût. L’inspecteur propose Vue, Étapes, Preuves, Coût, Versions et Journal ; chaque étape est dépliable et sa relance est accessible par une icône dédiée.
 
 Validation observée : navigation Runs sans erreur JavaScript, inspection de `RUN-024` et `RUN-023`, inspection de `RUN-022` en mobile, absence de débordement horizontal global à 390 px, tableau défilable dans son propre conteneur et console sans erreur ni warning.
 
-Décisions restantes : définir les fixtures et statuts finaux de la page Qualité, puis raccorder les actions entre Runs, Dossiers et Qualité dans le prototype avant toute donnée réelle.
+Décisions restantes : raccorder les actions du prototype à un Control Plane réel et remplacer les données de démonstration par les contrats persistants.
 
 ### Reprise effectuée — page « Qualité »
 
-La page Qualité est maintenant prototypée dans `prototypes/ux-vertical-slice/cockpit-operator-v2.html` : trois fixtures locales couvrent `PASS`, `WARN` et `BLOCK`, avec contrôles de liens, responsive, accessibilité, secrets absents et provenance. L’inspecteur expose Résumé, Preuves et Contrôles ; les actions de validation et d’ouverture du rapport produisent un retour visible sans mutation durable.
+La page Qualité est maintenant prototypée dans `prototypes/ux-vertical-slice/cockpit-operator-v2.html` : trois données de démonstration couvrent `PASS`, `WARN` et `BLOCK`, avec contrôles de liens, responsive, accessibilité, secrets absents et provenance.
 
 Validation observée : navigation Qualité sans erreur JavaScript, inspection de `Maison Rive` et `Bistro Sillage`, action Rapport QA visible, absence de débordement horizontal global à 390 px et console sans erreur ni warning.
 
@@ -97,9 +96,9 @@ Validation observée : navigation Dossiers sans erreur JavaScript, inspection d�
 
 Décisions restantes : compléter les états Agents demandés, puis finaliser Système avant la revue croisée des pages.
 
-### Reprise effectuée — page « Agents »
+### Reprise effectuée — page « Configuration »
 
-La page Agents couvre maintenant les états `VIDE`, `BROUILLON`, `ERREUR`, `INACTIF` et `ACTIF`, avec une version inactive visible dans l’onglet Versions. Le test contrôlé, l’activation, la préparation d’un brouillon, la simulation de coût et l’ouverture du diff produisent des retours locaux observables ; aucune exécution réelle n’est lancée.
+La page Configuration expose les étapes S0 à S10, cinq rôles IA, les prompts propriétaires et les contrats de fichiers. Les prompts sont éditables dans le cockpit, testables sur des entrées isolées et versionnables sans modifier un run déjà lancé. Les crawlers, resolvers, composers et validateurs restent des scripts ou contrôles.
 
 Validation observée : inspection de `PhotoRightsVerifier`, `SchemaContractValidator`, `LegacySEOReviewer` et `Copywriter`, test contrôlé visible, état `INACTIF` visible dans Versions, viewport mobile à 390 px sans débordement global et console sans erreur ni warning.
 
@@ -131,7 +130,7 @@ Validation observée : V3 ouverte dans Helium, navigation des sept registres, in
 
 ### Revue croisée finale — cockpit V2
 
-Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Agents`, `Qualité`, `Système`) ont été parcourues sur desktop et à 390 px. Les six surfaces se rendent, aucune ne provoque de débordement horizontal global et la console finale reste sans erreur ni warning.
+Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Configuration`, `Qualité`, `Système`) sont couvertes par le prototype. La validation syntaxique du JavaScript et l’absence de débordement horizontal global restent les contrôles reproductibles ; la validation navigateur doit être rejouée dans un runtime équipé.
 
 Écart conservé pour la suite : les données, preuves, coûts, providers et actions restent des fixtures locales ; aucune mutation durable ni intégration réelle n’est validée par ce prototype.
 
