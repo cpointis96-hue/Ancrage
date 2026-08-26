@@ -45,7 +45,9 @@ Pas de serif générique dans le cockpit, pas d'Inter imposé, pas de capitales 
 - **Actions icon-only par défaut** : toute action secondaire dont le symbole est immédiatement évident utilise une petite icône intégrée au contexte, sans bouton textuel. Elle conserve une cible interactive d'au moins 44 px, un `aria-label` précis et un tooltip au survol ou au focus. Les actions principales, destructives, ambiguës ou à conséquence importante gardent un libellé visible.
 - **Panneaux** : surfaces solides séparées par une ligne ; les cartes ne servent que lorsqu'elles matérialisent une hiérarchie réelle.
 - **Champs** : label au-dessus, aide courte sous le champ, erreur précise sous le champ.
-- **Statuts** : texte + forme ou icône ; jamais couleur seule.
+- **Statuts du cockpit** : pastille verte, orange ou rouge, avec le statut conservé dans `aria-label` et `title`. Ne pas afficher PASS, WARN ou BLOCK en texte sauf demande explicite.
+- **En-têtes du cockpit** : un seul titre visible et les actions nécessaires. Aucun eyebrow, kicker, sous-titre ou fil d'Ariane ne répète le titre ou le module.
+- **Copie visible** : la demande utilisateur est une allow-list. Aucun modèle, compteur, version, environnement, provenance, aide ou métadonnée n'est ajouté sans demande explicite ou nécessité opérationnelle directe.
 - **Chargement** : message indiquant l'étape ; squelette uniquement lorsqu'il reflète la géométrie réelle.
 - **Vide** : cause et action qui permet de remplir la vue.
 - **Erreur** : cause, conséquence et récupération possible.
@@ -76,6 +78,8 @@ Pas de serif générique dans le cockpit, pas d'Inter imposé, pas de capitales 
 - Le clavier mobile ne masque jamais le champ actif.
 - Le PDF reste accessible sur mobile sans masquer le CTA principal.
 - Le cockpit réduit d'abord la sidebar, puis empile la file et le détail.
+- Les actions d'en-tête restent entièrement visibles et utilisables sur ordinateur, tablette et à 390 px, quelle que soit la longueur du libellé.
+- Les lignes de contrôle et tableaux se replient dans leur panneau sans texte coupé ni débordement horizontal.
 - Le texte doit rester utilisable à 200 % de zoom.
 
 ## 9. Client-site art direction
@@ -95,6 +99,8 @@ Pas de serif générique dans le cockpit, pas d'Inter imposé, pas de capitales 
 - Pas de badge « AI Powered ».
 - Pas de flèche décorative sur tous les boutons.
 - Pas de sidebar longue remplie de réglages rares.
+- Pas de microcopie décorative, de compteur non décisionnel, de version, d'environnement ou de provenance de prototype dans le cockpit.
+- Pas de titre répété entre eyebrow, panneau, page et inspecteur.
 - Pas de bouton sans conséquence réelle.
 - Pas de statut indiqué par la couleur seule.
 - Pas de mascotte en animation permanente.

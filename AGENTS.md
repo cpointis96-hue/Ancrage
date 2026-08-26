@@ -10,6 +10,10 @@ Issues and specs live as local Markdown files under `.scratch/<feature-slug>/`. 
 
 Single-context domain documentation uses `CONTEXT.md` at the repository root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
 
+### UI scope lock
+
+For any UI or visible-copy change, read `.agents/skills/scope-locked-ui/SKILL.md`. Treat the user's request as an allow-list and do not add unsolicited copy, metadata, or redundant chrome.
+
 ## Current phase
 
 This project is currently in product discovery and architecture planning.
