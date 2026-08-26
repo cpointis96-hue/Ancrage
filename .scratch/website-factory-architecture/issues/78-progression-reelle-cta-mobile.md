@@ -26,6 +26,12 @@ L'audit GMB est affiché dès qu'il est prêt, tandis qu'une ligne d'avancement 
 
 Avant le lancement, une dernière question simple permet au prospect d'ajouter librement une information utile qui n'aurait pas été collectée — par exemple l'histoire du restaurant ou un élément différenciant. La réponse est facultative ; aucune liste de catégories ni étape complexe n'est ajoutée.
 
+## Decision
+
+La variante C, « Encre profonde », est retenue comme base de structure pour le parcours public : barre d'étapes persistante, lecture verticale, hiérarchie calme, état courant clairement visible et une seule action primaire par écran.
+
+Cette décision ne remplace pas le template visuel de référence. Les images, la présence héroïque, l'identité éditoriale et la composition du site restent la source de vérité. La prochaine passe doit intégrer la structure C dans ce template, sans repartir sur une nouvelle direction graphique.
+
 ## Prototype attendu
 
 Trois variantes mobiles du rapport avec barre d'étapes, état en cours, état partiel, erreur récupérable et CTA au-dessus de la ligne de flottaison. Tester lisibilité, compréhension et clic sans supposer des statistiques universelles de regard.

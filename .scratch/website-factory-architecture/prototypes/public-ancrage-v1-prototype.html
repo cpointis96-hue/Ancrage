@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Ancrage public V1</title>
+  <style>
+    :root {
+      --ink: #17201d;
+      --muted: #6d7771;
+      --line: #d9ded8;
+      --paper: #f6f5f0;
+      --surface: #fffefa;
+      --accent: #b85b35;
+      --accent-soft: #f2dfd4;
+      --deep: #1d322a;
+      --good: #3c7455;
+      --warn: #9a681d;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+    .prototype-bar { position: fixed; z-index: 10; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 7px 10px; border: 1px solid #263b32; border-radius: 999px; background: #13221c; color: #eff7f1; box-shadow: 0 8px 24px #13221c22; font-size: 12px; }
+    .prototype-bar label { color: #aebdb3; }
+    .prototype-bar select { border: 0; border-radius: 999px; padding: 5px 8px; background: #294538; color: white; }
+    .shell { min-height: 100vh; padding: 72px 24px 128px; }
+    .frame { width: min(1120px, 100%); margin: 0 auto; }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .brand { font: 700 17px/1 var(--mono); letter-spacing: -.08em; }
+    .eyebrow { color: var(--muted); font: 11px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .quiet-link { display: inline-block; color: var(--muted); font-size: 13px; text-decoration: underline; text-decoration-color: #bdc5be; text-underline-offset: 4px; }
+    .quiet-link:hover, .quiet-link:focus-visible { color: var(--ink); text-decoration-color: var(--accent); }
+    .progress { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 30px 0 56px; }
+    .progress-item { position: relative; padding-top: 13px; color: #a0a9a2; font: 11px var(--mono); }
+    .progress-item::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--line); }
+    .progress-item.done, .progress-item.current { color: var(--ink); }
+    .progress-item.done::before { background: var(--good); }
+    .progress-item.current::before { background: var(--accent); }
+    h1, h2, p { margin-top: 0; }
+    h1 { max-width: 740px; margin-bottom: 18px; font-size: clamp(36px, 6vw, 72px); line-height: .98; letter-spacing: -.065em; }
+    h2 { margin-bottom: 9px; font-size: clamp(24px, 3vw, 36px); line-height: 1.08; letter-spacing: -.045em; }
+    .lede { max-width: 570px; color: var(--muted); font-size: 17px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); gap: clamp(28px, 7vw, 96px); align-items: start; }
+    .panel { border: 1px solid var(--line); background: var(--surface); }
+    .panel-pad { padding: clamp(20px, 4vw, 36px); }
+    .primary { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; border: 1px solid var(--deep); border-radius: 4px; padding: 10px 16px; background: var(--deep); color: white; font-weight: 650; text-decoration: none; }
+    .primary:hover, .primary:focus-visible { background: #29493b; }
+    .primary:disabled { cursor: not-allowed; opacity: .42; }
+    .choice-list { display: grid; gap: 8px; margin: 24px 0; }
+    .choice { display: grid; grid-template-columns: 20px 1fr; gap: 12px; align-items: start; width: 100%; border: 1px solid var(--line); padding: 15px; text-align: left; background: var(--surface); color: var(--ink); }
+    .choice[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); background: #fffaf5; }
+    .choice strong { display: block; }
+    .choice small { display: block; margin-top: 2px; color: var(--muted); }
+    .radio { width: 18px; height: 18px; border: 1px solid #a8b1aa; border-radius: 50%; }
+    .choice[aria-checked="true"] .radio { border: 5px solid var(--accent); }
+    .meta-list { display: grid; gap: 0; margin: 0; }
+    .meta-list div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .meta-list div:last-child { border-bottom: 0; }
+    .meta-list dt { color: var(--muted); }
+    .meta-list dd { margin: 0; text-align: right; font-weight: 650; }
+    .status { display: inline-block; color: var(--good); font: 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    .report-block { padding: 18px 0; border-bottom: 1px solid var(--line); }
+    .report-block:last-child { border-bottom: 0; }
+    .report-block p { margin-bottom: 0; color: var(--muted); }
+    .action-row { display: flex; align-items: center; gap: 18px; margin-top: 28px; }
+    .field { display: grid; gap: 8px; margin: 24px 0; }
+    .field label { font-weight: 650; }
+    .field input { width: 100%; border: 1px solid #aeb8b0; border-radius: 3px; padding: 13px 14px; background: white; color: var(--ink); }
+    .field input:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
+    .helper { color: var(--muted); font-size: 13px; }
+    .stage-copy { margin-top: 26px; max-width: 640px; color: var(--muted); }
+    .stage-copy strong { color: var(--ink); }
+    .side-note { position: sticky; top: 88px; }
+    .side-note .eyebrow { margin-bottom: 14px; }
+    .side-note p { color: var(--muted); }
+    .variant-a .hero { padding: 22px 0 4px; }
+    .variant-a .hero .panel { margin-top: 8px; }
+    .variant-b { background: #eef2ed; }
+    .variant-b .frame { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 42px; }
+    .variant-b .brand-row { grid-column: 1 / -1; }
+    .variant-b .progress { display: block; margin: 0; }
+    .variant-b .progress-item { margin: 0 0 20px; padding: 0 0 0 16px; }
+    .variant-b .progress-item::before { top: 0; bottom: 0; left: 0; right: auto; width: 2px; height: auto; }
+    .variant-b .progress-item.current::after { content: ""; position: absolute; top: 0; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .variant-b .main { min-width: 0; }
+    .variant-b h1 { font-size: clamp(32px, 4vw, 56px); }
+    .variant-b .panel { box-shadow: 8px 8px 0 #dce4dc; }
+    .variant-c { background: var(--deep); color: #f0f5ef; }
+    .variant-c .brand-row { border-color: #41594d; }
+    .variant-c .eyebrow, .variant-c .lede, .variant-c .helper, .variant-c .side-note p, .variant-c .stage-copy, .variant-c .quiet-link { color: #adc0b3; }
+    .variant-c .progress-item { color: #748d7e; }
+    .variant-c .progress-item::before { background: #40564b; }
+    .variant-c .progress-item.done::before { background: #8db395; }
+    .variant-c .progress-item.current::before { background: #db956f; }
+    .variant-c .panel { border-color: #496256; background: #263e33; }
+    .variant-c .panel-pad { padding: clamp(20px, 4vw, 42px); }
+    .variant-c .primary { border-color: #e0a481; background: #e0a481; color: var(--ink); }
+    .variant-c .primary:hover, .variant-c .primary:focus-visible { background: #f0bd9d; }
+    .variant-c .choice { border-color: #496256; background: #20362d; color: #f0f5ef; }
+    .variant-c .choice[aria-checked="true"] { border-color: #e0a481; background: #2e493b; box-shadow: inset 3px 0 0 #e0a481; }
+    .variant-c .choice small, .variant-c .report-block p, .variant-c .meta-list dt { color: #adc0b3; }
+    .variant-c .meta-list div, .variant-c .report-block { border-color: #496256; }
+    .variant-c .field input { border-color: #6d8a79; background: #eff5ef; }
+    .variant-c .status { color: #a8d0ae; }
+    .bottom-switcher { position: fixed; z-index: 10; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 8px 12px; border-radius: 999px; background: #101612; color: white; box-shadow: 0 10px 30px #0003; }
+    .bottom-switcher button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent; color: white; font-size: 20px; }
+    .bottom-switcher button:hover, .bottom-switcher button:focus-visible { background: #2d4438; }
+    .bottom-switcher strong { min-width: 180px; text-align: center; font: 11px var(--mono); }
+    @media (max-width: 760px) {
+      .prototype-bar { width: calc(100% - 24px); justify-content: space-between; }
+      .shell { padding: 78px 18px 116px; }
+      .brand-row { padding-bottom: 18px; }
+      .progress { gap: 3px; margin: 24px 0 38px; }
+      .progress-item { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .layout, .variant-b .frame { display: block; }
+      .side-note { position: static; margin-top: 24px; }
+      .variant-b .progress { display: grid; margin: 24px 0 38px; }
+      .variant-b .progress-item { margin: 0; padding: 13px 0 0; }
+      .variant-b .progress-item::before { top: 0; left: 0; right: 0; bottom: auto; width: auto; height: 2px; }
+      .variant-b .progress-item.current::after { display: none; }
+      .action-row { align-items: stretch; flex-direction: column; gap: 12px; }
+      .action-row .primary { width: 100%; }
+      .bottom-switcher strong { min-width: 130px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-bar" aria-label="Contrôles du prototype">
+    <label for="stage">Prototype</label>
+    <select id="stage">
+      <option value="landing">01 · Entrée</option>
+      <option value="match">02 · Choix de l'établissement</option>
+      <option value="report">03 · Rapport final</option>
+      <option value="email">04 · Préparation</option>
+      <option value="building">05 · Construction</option>
+      <option value="demo">06 · Démo</option>
+    </select>
+  </div>
+  <main id="app"></main>
+  <div class="bottom-switcher" aria-label="Variantes de design">
+    <button id="previous" type="button" aria-label="Variante précédente">‹</button>
+    <strong id="variant-label"></strong>
+    <button id="next" type="button" aria-label="Variante suivante">›</button>
+  </div>
+  <script>
+    const variants = [
+      { key: "A", name: "Page éditoriale", className: "variant-a" },
+      { key: "B", name: "Repère latéral", className: "variant-b" },
+      { key: "C", name: "Encre profonde", className: "variant-c" }
+    ];
+
+    const stages = {
+      landing: {
+        current: 0,
+        title: "Comprendre ce que votre présence locale peut améliorer.",
+        lede: "Un diagnostic clair d'abord. Une démo de votre site ensuite. Aucun compte, aucun paiement pour commencer.",
+        main: `<div class="field"><label for="name">Nom de l'établissement</label><input id="name" placeholder="Ex. Ocean Spice" /></div><div class="field"><label for="city">Ville</label><input id="city" placeholder="Commencez à saisir une ville" /></div><p class="helper">La ville devra être choisie dans la liste pour éviter les homonymes.</p><div class="action-row"><button class="primary" type="button">Voir mon diagnostic</button></div>`,
+        side: `<div class="eyebrow">Ce qui vous attend</div><p>Une recherche de votre établissement, un rapport local sourcé et, si le dossier est prêt, une démo personnalisée à découvrir avant toute décision.</p>`
+      },
+      match: {
+        current: 1,
+        title: "Nous avons trouvé plusieurs établissements proches.",
+        lede: "Choisissez celui qui correspond. Nous ne lancerons pas l'audit sur une identité incertaine.",
+        main: `<div class="choice-list" role="radiogroup" aria-label="Établissements trouvés"><button class="choice" role="radio" aria-checked="false" type="button"><span class="radio"></span><span><strong>Ocean Spice</strong><small>Galle Road, Mirissa · +94 77 000 0000</small></span></button><button class="choice" role="radio" aria-checked="false" type="button"><span class="radio"></span><span><strong>Ocean Spice Restaurant</strong><small>Beach Road, Weligama · +94 76 000 0000</small></span></button></div><div class="action-row"><button class="primary" id="confirm" type="button" disabled>Continuer avec cet établissement</button></div><a class="quiet-link" href="#">Je ne le vois pas</a>`,
+        side: `<div class="eyebrow">Pourquoi cette étape</div><p>Le nom et la ville ne suffisent pas toujours. Cette confirmation protège votre rapport et évite d'attribuer les informations d'un autre établissement.</p>`
+      },
+      report: {
+        current: 2,
+        title: "Voici ce que votre présence locale raconte aujourd'hui.",
+        lede: "Les faits, les possibilités et les limites sont séparés pour que vous sachiez quoi regarder.",
+        main: `<div class="panel"><div class="panel-pad"><div class="report-block"><span class="status">Audit GMB · prêt</span><h2>Votre établissement est identifiable.</h2><p>Les informations publiques principales sont cohérentes. Deux possibilités simples peuvent améliorer la clarté pour vos visiteurs.</p></div><div class="report-block"><span class="status">Audit SEO · prêt</span><h2>Votre site peut mieux guider une visite.</h2><p>Le menu, les horaires et l'accès doivent être visibles depuis les recherches locales prioritaires.</p></div><div class="report-block"><span class="eyebrow">Périmètre</span><p>Rapport standard · sources datées · analyse bornée · aucune garantie de classement</p></div><div class="action-row"><button class="primary" type="button">Préparer mon site</button></div><a class="quiet-link" href="#">Télécharger le rapport PDF</a></div></div>`,
+        side: `<div class="eyebrow">Progression réelle</div><dl class="meta-list"><div><dt>Établissement</dt><dd>Confirmé</dd></div><div><dt>Audit GMB</dt><dd>Prêt</dd></div><div><dt>Audit SEO</dt><dd>Prêt</dd></div><div><dt>Rapport</dt><dd>Disponible 7 jours</dd></div></dl>`
+      },
+      email: {
+        current: 3,
+        title: "Préparer la démo de votre site.",
+        lede: "Nous construisons à partir des informations vérifiées. Cette adresse servira uniquement à vous envoyer le lien après contrôle.",
+        main: `<div class="panel"><div class="panel-pad"><div class="field"><label for="email">Votre adresse e-mail</label><input id="email" type="email" placeholder="vous@votre-restaurant.com" /></div><p class="helper">Vous pourrez vous désinscrire des messages marketing séparément. Cette adresse est nécessaire pour lancer la préparation et recevoir votre démo.</p><div class="action-row"><button class="primary" type="button">Lancer la préparation</button></div><a class="quiet-link" href="#">Revenir au rapport</a></div></div>`,
+        side: `<div class="eyebrow">Ce qui va se passer</div><dl class="meta-list"><div><dt>Informations</dt><dd>Vérifiées</dd></div><div><dt>Photos</dt><dd>5 requises</dd></div><div><dt>Génération</dt><dd>Après votre e-mail</dd></div><div><dt>Vérification</dt><dd>Par notre équipe</dd></div></dl>`
+      },
+      building: {
+        current: 3,
+        title: "Votre site est en préparation.",
+        lede: "Nous avons reçu votre demande. La démo sera accessible après les contrôles et la validation de notre équipe.",
+        main: `<div class="panel"><div class="panel-pad"><div class="report-block"><span class="status">En cours</span><h2>Les informations sont en cours d'assemblage.</h2><p>Le contenu, les images et la structure sont préparés à partir des éléments vérifiés.</p></div><div class="report-block"><span class="eyebrow">Prochaine étape</span><p>Contrôle qualité puis validation avant tout envoi.</p></div></div></div>`,
+        side: `<div class="eyebrow">Progression</div><dl class="meta-list"><div><dt>Préparer</dt><dd>En cours</dd></div><div><dt>Contrôler</dt><dd>À venir</dd></div><div><dt>Découvrir</dt><dd>À venir</dd></div></dl>`
+      },
+      demo: {
+        current: 4,
+        title: "Votre démo est prête à découvrir.",
+        lede: "Explorez votre site personnalisé. Il reste privé et gratuit pendant 7 jours après sa présentation.",
+        main: `<div class="panel"><div class="panel-pad"><div class="eyebrow">Ocean Spice · Mirissa</div><h2>Une présence claire pour être trouvé et choisi.</h2><p class="stage-copy">Un accueil, votre menu, vos horaires, votre adresse et les moyens de vous contacter, réunis dans une expérience simple.</p><div class="action-row"><button class="primary" type="button">Découvrir ma démo</button></div></div></div>`,
+        side: `<div class="eyebrow">Accès privé</div><dl class="meta-list"><div><dt>Expiration</dt><dd>Dans 7 jours</dd></div><div><dt>Compte</dt><dd>Non requis</dd></div><div><dt>Paiement</dt><dd>Non requis</dd></div></dl><p style="margin-top:18px">Après votre découverte, une seule proposition pourra vous accompagner vers la mise en ligne.</p>`
+      }
+    };
+
+    function selectedVariant() {
+      const key = new URLSearchParams(location.search).get("variant") || "A";
+      return variants.find(v => v.key === key.toUpperCase()) || variants[0];
+    }
+
+    function selectedStage() {
+      const key = new URLSearchParams(location.search).get("stage") || "landing";
+      return stages[key] ? key : "landing";
+    }
+
+    function setUrl(variant, stage) {
+      const params = new URLSearchParams({ variant, stage });
+      history.replaceState({}, "", `${location.pathname}?${params}`);
+      render();
+    }
+
+    function progress(current) {
+      return ["Identifier", "Comprendre", "Auditer", "Préparer", "Découvrir"].map((label, index) => `<div class="progress-item ${index < current ? "done" : ""} ${index === current ? "current" : ""}">${label}</div>`).join("");
+    }
+
+    function render() {
+      const variant = selectedVariant();
+      const stageKey = selectedStage();
+      const stage = stages[stageKey];
+      document.body.className = variant.className;
+      document.getElementById("stage").value = stageKey;
+      document.getElementById("variant-label").textContent = `${variant.key} · ${variant.name}`;
+      document.getElementById("app").innerHTML = `<main class="shell"><div class="frame"><header class="brand-row"><span class="brand">ANCRAGE</span><span class="eyebrow">prototype public V1</span></header><div class="progress" aria-label="Progression du parcours">${progress(stage.current)}</div><div class="layout"><section class="main"><div class="eyebrow">${stageKey === "demo" ? "Votre résultat" : "Votre parcours"}</div><div class="hero"><h1>${stage.title}</h1><p class="lede">${stage.lede}</p></div>${stage.main}<p class="stage-copy"><strong>Ce prototype répond à une question :</strong> quelle structure rend le prochain geste évident, sans multiplier les boutons ni interrompre la confiance ?</p></section><aside class="panel panel-pad side-note">${stage.side}</aside></div></div></main>`;
+      document.querySelectorAll(".choice").forEach(choice => choice.addEventListener("click", () => {
+        document.querySelectorAll(".choice").forEach(item => item.setAttribute("aria-checked", "false"));
+        choice.setAttribute("aria-checked", "true");
+        const confirm = document.getElementById("confirm");
+        if (confirm) confirm.disabled = false;
+      }));
+    }
+
+    document.getElementById("stage").addEventListener("change", event => setUrl(selectedVariant().key, event.target.value));
+    document.getElementById("previous").addEventListener("click", () => {
+      const index = variants.findIndex(v => v.key === selectedVariant().key);
+      setUrl(variants[(index + variants.length - 1) % variants.length].key, selectedStage());
+    });
+    document.getElementById("next").addEventListener("click", () => {
+      const index = variants.findIndex(v => v.key === selectedVariant().key);
+      setUrl(variants[(index + 1) % variants.length].key, selectedStage());
+    });
+    document.addEventListener("keydown", event => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+      if (event.key === "ArrowLeft") document.getElementById("previous").click();
+      if (event.key === "ArrowRight") document.getElementById("next").click();
+    });
+    render();
+  </script>
+</body>
+</html>
