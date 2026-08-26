@@ -10,7 +10,7 @@
 @media(max-width:850px){.nav .nav-icon{display:inline-flex}.nav .nav-label{display:none}}
 @media(max-width:620px){.side{display:grid;grid-template-columns:52px repeat(6,minmax(0,1fr));height:58px;gap:0;padding:6px 5px;align-items:center}.brand{grid-column:1;grid-row:1;font-size:0;letter-spacing:0;min-width:0;padding:0 5px;text-align:center}.brand:before{content:none}.brand:after{content:'a';font-size:22px;line-height:1;color:#b8ce98}.brand small{display:none}.side .nav{display:contents;overflow:visible}.side .nav button{justify-content:center;gap:0;padding:8px 4px;min-width:0}.nav .nav-label{display:none}.nav .nav-icon{display:inline-flex}.side .foot,.side .group{display:none}}
 .provider-page{max-width:760px;container-type:inline-size}.provider-head{padding:2px 0 17px;border-bottom:1px solid #2d392f}.provider-head h2{font-size:24px;letter-spacing:-.07em;margin:5px 0 4px}.connection-list{margin-top:16px;border-top:1px solid #415143}.connection-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:11px;min-height:54px;border-bottom:1px solid #2d392f}.connection-name{min-width:0}.connection-name strong{font-size:12px}.connection-toggle{position:relative;width:30px;height:18px;padding:0;border:1px solid #5e685f;border-radius:999px;background:transparent}.connection-toggle span{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:#8c968e;transition:.14s ease}.connection-toggle.on{border-color:#e8ede5;background:#e8ede5}.connection-toggle.on span{left:15px;background:#111811}.connection-toggle:focus-visible,.add-button:focus-visible,.add-connection input:focus-visible,.add-connection select:focus-visible{outline:2px solid #b8ce98;outline-offset:2px}.add-connection{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr) 34px;gap:7px;align-items:center;margin-top:22px;padding:8px;border:1px solid #415143;background:#141d15;border-radius:3px}.add-provider-select,.add-key{min-width:0}.add-connection label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.add-connection select,.add-connection input{display:block;min-width:0;width:100%;height:34px;border:1px solid #415143;border-radius:2px;background:#0f160f;color:#e9eee4;padding:0 9px}.add-connection input::placeholder{color:#6f7d72}.add-button{position:relative;width:34px;height:34px;border:1px solid #58675a;border-radius:50%;background:#243226}.add-button:before,.add-button:after{content:"";position:absolute;left:10px;top:15px;width:12px;height:1px;background:#e9eee4}.add-button:after{transform:rotate(90deg)}.provider-footnote{display:flex;align-items:center;gap:7px;color:#87968a;font-size:10px;margin:13px 0}.tiny-dot,.state-dot{display:block;flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#b8ce98}.state-dot.attention{background:#e4c178}.state-dot.partial{background:#cdbbe0}@container(max-width:430px){.add-connection{grid-template-columns:minmax(0,1fr) 34px}.add-provider-select{grid-column:1/-1}.add-key{grid-column:1}.add-button{grid-column:2}.provider-footnote{align-items:flex-start}}
-</style></head><body><div class="app"><aside class="side"><button class="brand" type="button" title="Accueil Ancrage" aria-label="Accueil Ancrage">ANCRAGE<small>COCKPIT · V2 · SHIP STUDIO</small></button><div class="group">Opérations</div><nav class="nav" id="ops"></nav><div class="group">Contrôle</div><nav class="nav" id="control"></nav><div class="foot">Preview local<br><span class="ok">Prêt · source éditable</span></div></aside><section class="list" id="list"></section><main class="detail" id="detail"></main></div><script>
+</style></head><body><div class="app"><aside class="side"><button class="brand" type="button" title="Accueil Ancrage" aria-label="Accueil Ancrage">ANCRAGE<small>COCKPIT · V2 · SHIP STUDIO</small></button><div class="group">Opérations</div><nav class="nav" id="ops"></nav><div class="group">Contrôle</div><nav class="nav" id="control"></nav><div class="foot">Preview local<br><span class="ok">Prêt · source éditable</span></div></aside><button class="panel-resizer panel-resizer-side" type="button" aria-label="Redimensionner la barre latérale" aria-orientation="vertical" aria-valuemin="72" aria-valuemax="260" aria-valuenow="190" title="Glisser pour redimensionner, double-cliquer pour réduire ou développer"></button><section class="list" id="list"></section><button class="panel-resizer panel-resizer-list" type="button" aria-label="Redimensionner la liste" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="520" aria-valuenow="310" title="Glisser pour redimensionner"></button><main class="detail" id="detail"></main></div><script>
 const agents=[['GMBObserver','Contribution déterministe','Audit local','ACTIF','local'],['EstablishmentMatcher','Agent de rapprochement','Identité','ACTIF','local-small'],['CrawlOrchestrator','Worker CLI contrôlé','Crawl','ACTIF','local CLI'],['TechnicalSEOAnalyzer','Analyse déterministe','Audit technique','ACTIF','local'],['ContentSEOAnalyzer','Agent spécialisé','Audit contenu','ACTIF','local-small'],['AuditReportComposer','Composer déterministe','Rapport','ACTIF','local'],['ReportExplainer','Agent de reformulation','Présentation','ACTIF','local-small'],['Copywriter','Agent de rédaction','Contenu','BROUILLON','local-small'],['SEOAcceptanceReviewer','Reviewer indépendant','QA','ACTIF','local'],['PhotoRightsVerifier','Vérificateur de droits','Médias','VIDE','—'],['SchemaContractValidator','Validateur de contrat','QA','ERREUR','local'],['LegacySEOReviewer','Reviewer historique','QA','INACTIF','local']];
 const sys=[['ProviderConnection','Providers','ready'],['ModelProfile','Modèles','ready'],['Outils & MCP','Outils & MCP','attention'],['AIRoutingPolicy','Routage IA','ready'],['Budgets','Budgets','attention'],['Profils CLI','Profils CLI','ready'],['Synchronisation','Synchronisation','partial']];
 const nav=[['inbox','À traiter'],['runs','Runs'],['dossiers','Dossiers'],['agents','Agents'],['quality','Qualité'],['system','Système']];let current='inbox',selected=0,tab='role';const $=s=>document.querySelector(s);const providerConnections=[{name:'OpenAI',active:true},{name:'Anthropic',active:false},{name:'OpenRouter',active:true}];nav.forEach(([id,label])=>{const b=document.createElement('button');b.dataset.id=id;b.setAttribute('aria-label',label);b.innerHTML=`<span>${id==='inbox'?'◉':id==='runs'?'↻':id==='dossiers'?'□':id==='agents'?'◈':id==='quality'?'✓':'⌁'}</span> <span>${label}</span>`;b.onclick=()=>{current=id;selected=0;tab=id==='agents'?'role':'overview';render()};(id==='inbox'||id==='runs'||id==='dossiers'?$('#ops'):$('#control')).append(b)});function badge(s){return `<span class="status ${s==='ACTIF'||s==='PASS'?'pass':s==='BROUILLON'||s==='INACTIF'?'purple':s==='WARN'||s==='PARTIAL'||s==='VIDE'?'warn':'block'}">${s}</span>`}function stateDot(s){const labels={ready:'Disponible',attention:'Attention',partial:'Partiel'};return `<span class="state-dot ${s}" role="img" aria-label="${labels[s]||s}"></span>`}function render(){document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.id===current));current==='agents'?agentsPage():current==='runs'?runsPage():current==='dossiers'?dossiersPage():current==='quality'?qualityPage():current==='system'?systemPage():operationPage()}
@@ -61,6 +61,101 @@ body.agents-view #list .section-label{display:none}body.runs-view #list .head>.s
 </script>
 <style>.dossier-links .chip{background:#141d15;border-radius:3px;color:#b8ce98}</style>
 <style>
+@media(min-width:621px){
+  .app{--side-width:172px;--list-width:310px;grid-template-columns:var(--side-width) 10px var(--list-width) 10px minmax(0,1fr);gap:0;background:#111811}
+  .panel-resizer{position:relative;z-index:4;border:0;padding:0;background:transparent;cursor:col-resize;touch-action:none}
+  .panel-resizer::after{content:'';position:absolute;top:0;bottom:0;left:50%;width:1px;transform:translateX(-.5px);background:#415143;transition:background-color .14s ease}
+  .panel-resizer:hover::after,.panel-resizer:focus-visible::after,.panel-resizer.is-dragging::after{background:#b8ce98}
+  .panel-resizer:focus-visible{outline:2px solid #b8ce98;outline-offset:-2px}
+  .side{padding-inline:12px;overflow:hidden}
+  .side .brand{display:flex;align-items:center}
+  .side .brand::before{content:none}
+  .side .brand small,.side .foot{display:none!important}
+  .side .nav-label,.side .brand small,.side .group,.side .foot{transition:opacity .14s ease}
+  .app[data-side-collapsed='true'] .side .nav-label,.app[data-side-collapsed='true'] .side .group{display:none}
+  .app[data-side-collapsed='true'] .side{padding-inline:6px}
+  .app[data-side-collapsed='true'] .side .brand{display:grid;place-items:center;width:44px;height:44px;min-height:44px;margin:0 auto 18px;padding:0}
+  .app[data-side-collapsed='true'] .side .brand-word{display:none}
+  .app[data-side-collapsed='true'] .side .nav button{justify-content:center;width:44px;min-height:44px;margin-inline:auto;padding:0}
+  .brand-mark{display:block;width:18px;height:18px;color:#b8ce98}
+  .brand-mark path{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .brand-word{margin-left:7px}
+  .app:not([data-side-collapsed='true']) .side .nav-label{display:inline}
+  .app:not([data-side-collapsed='true']) .side .brand{font-size:19px}
+  .app:not([data-side-collapsed='true']) .side .brand::after{content:none}
+  .app:not([data-side-collapsed='true']) .side .group{display:block}
+}
+ .head>.status{display:none}
+body.operations-view #detail #qualityNotice+.section-label{display:none}
+@media(max-width:620px){.panel-resizer{display:none}}
+</style>
+<script>
+(() => {
+  const app=document.querySelector('.app');
+  const brand=document.querySelector('.brand');
+  const sideHandle=document.querySelector('.panel-resizer-side');
+  const listHandle=document.querySelector('.panel-resizer-list');
+  if(!app||!sideHandle||!listHandle)return;
+  if(brand)brand.innerHTML='<svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM10 6.5v9M4.5 10.5a5.5 5.5 0 0 0 11 0M10 15.5l-2.4-2.4M10 15.5l2.4-2.4"/></svg><span class="brand-word">ANCRAGE</span>';
+  const widths={side:172,list:window.innerWidth<=850?260:310};
+  const limits={side:[56,240],list:[220,520]};
+  const apply=(name,value)=>{
+    const [min,max]=limits[name];
+    widths[name]=Math.min(max,Math.max(min,Math.round(value)));
+    if(name==='side'&&widths.side<140)widths.side=56;
+    app.style.setProperty(`--${name}-width`,`${widths[name]}px`);
+    const handle=name==='side'?sideHandle:listHandle;
+    handle.setAttribute('aria-valuemin',min);
+    handle.setAttribute('aria-valuemax',max);
+    handle.setAttribute('aria-valuenow',widths[name]);
+    if(name==='side')app.dataset.sideCollapsed=String(widths.side<140);
+  };
+  apply('side',widths.side);apply('list',widths.list);
+  const connect=(handle,name)=>{
+    let startX=0,startWidth=0;
+    handle.addEventListener('pointerdown',event=>{
+      if(window.innerWidth<=620)return;
+      startX=event.clientX;startWidth=widths[name];
+      handle.classList.add('is-dragging');handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener('pointermove',event=>{
+      if(!handle.hasPointerCapture(event.pointerId))return;
+      apply(name,startWidth+event.clientX-startX);
+    });
+    const finish=event=>{if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);handle.classList.remove('is-dragging')};
+    handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);
+    handle.addEventListener('dblclick',()=>{if(name==='side')apply('side',widths.side<140?172:56)});
+    handle.addEventListener('keydown',event=>{
+      const step=event.shiftKey?24:8;
+      if(event.key==='ArrowLeft'){event.preventDefault();apply(name,widths[name]-step)}
+      if(event.key==='ArrowRight'){event.preventDefault();apply(name,widths[name]+step)}
+      if(name==='side'&&(event.key==='Home'||event.key==='End')){event.preventDefault();apply('side',event.key==='Home'?56:172)}
+    });
+  };
+  connect(sideHandle,'side');connect(listHandle,'list');
+})();
+</script>
+<script>
+(() => {
+  const stripPrototypeMeta = () => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      node.nodeValue = node.nodeValue
+        .replace(/\s*·\s*prototype\s+local\b/gi, '')
+        .replace(/\bprototype\s+local\b/gi, '')
+        .replace(/\bfixtures?\s+locales?\s*:\s*/gi, '')
+        .replace(/\bfixtures?\s+locales?\b/gi, '');
+    }
+    document.querySelectorAll('.fact').forEach(fact => {
+      if (/\bfixture\b/i.test(fact.textContent)) fact.remove();
+    });
+  };
+  new MutationObserver(stripPrototypeMeta).observe(document.body, { childList: true, subtree: true });
+  stripPrototypeMeta();
+})();
+</script>
+<style>
 .rowtop>.status,.table .status,.fact .status,.route .status{display:inline-block;width:8px;height:8px;padding:0;border:0;border-radius:50%;font-size:0;line-height:0;flex:0 0 8px}.rowtop>.status.pass,.table .status.pass,.fact .status.pass,.route .status.pass{background:#b8ce98}.rowtop>.status.warn,.table .status.warn,.fact .status.warn,.route .status.warn{background:#e4c178}.rowtop>.status.block,.table .status.block,.fact .status.block,.route .status.block{background:#efaaa0}.rowtop>.status.purple,.table .status.purple,.fact .status.purple,.route .status.purple{background:#cdbbe0}.dossier-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.dossier-links .chip{cursor:pointer;text-decoration:none}.dossier-section{border-top:1px solid #2d392f;padding-top:13px;margin-top:18px}.dossier-section h3{font-size:13px;margin:0 0 8px}.dossier-line{display:grid;grid-template-columns:minmax(90px,140px) 1fr auto;gap:9px;align-items:center;padding:9px 0;border-bottom:1px solid #ffffff0d}.dossier-line small{color:#87968a}.dossier-line a{color:#b8ce98}.dossier-section .notice{margin-top:10px}@media(max-width:620px){.dossier-line{grid-template-columns:1fr auto}.dossier-line small{grid-column:1/-1}.dossier-links .chip{min-height:38px;display:inline-flex;align-items:center}}
 </style><script>
 (function(){function dossiersPage(){const d=[{site:'Atelier Noma',url:'www.ateliernoma.fr',state:'PASS',identity:'Identité confirmée',sources:'14 sources datées',photos:'8 médias · droits confirmés',sync:'Synchronisé il y a 18 min'},{site:'Maison Rive',url:'www.maisonrive.fr',state:'WARN',identity:'Correspondance à confirmer',sources:'9 sources datées',photos:'3 médias · droits à vérifier',sync:'Reçu il y a 2 min'},{site:'Bistro Sillage',url:'www.bistrosillage.fr',state:'BLOCK',identity:'Établissement non confirmé',sources:'4 sources · date manquante',photos:'Aucun média exploitable',sync:'Hors ligne · import hier'}];const x=d[selected]||d[0];const link=(label,msg)=>`<button class="chip" type="button" onclick="dossierAction('${msg}')">${label} ↗</button>`;$('#list').innerHTML=`<div class="head"><div class="h1">Dossiers</div><span class="status pass">${d.length} dossiers</span></div><input class="search" placeholder="Rechercher un dossier"><div class="section-label">Dossiers suivis</div>${d.map((a,i)=>`<button class="row ${i===selected?'active':''}" onclick="selected=${i};dossiersPage()"><div class="rowtop"><strong>${a.site}</strong>${badge(a.state)}</div></button>`).join('')}`;$('#detail').innerHTML=`<div class="detail-inner"><header class="inspect-head"><div><h2>${x.site}</h2><a class="muted" href="https://${x.url}" target="_blank" rel="noreferrer">${x.url} ↗</a></div><div class="actions"><button class="btn primary" onclick="dossierAction('${x.state==='PASS'?'Dossier synchronisé':'Synchronisation préparée'}')">${x.state==='PASS'?'Ouvrir la source':'Synchroniser'}</button><button class="btn" onclick="dossierAction('Contexte local ouvert')">Contexte local</button></div></header><div class="dossier-section"><h3>Identité</h3><div class="dossier-line"><small>État</small><strong>${x.identity}</strong>${badge(x.state)}</div><div class="dossier-line"><small>Domaine</small><strong>${x.url}</strong><span></span></div><div class="dossier-links">${link('Dossier local','Dossier local ouvert')}${link('Fiche cloud','Lien cloud préparé')}</div></div><div class="dossier-section"><h3>Sources & médias</h3><div class="dossier-line"><small>Sources</small><strong>${x.sources}</strong>${badge(x.state==='BLOCK'?'PARTIAL':'PASS')}</div><div class="dossier-line"><small>Photos</small><strong>${x.photos}</strong>${badge(x.state==='PASS'?'PASS':x.state)}</div><div class="dossier-links">${link('Sources locales','Sources locales ouvertes')}${link('Médias locaux','Dossier médias ouvert')}${link('Photos cloud','Lien photos cloud préparé')}</div></div><div class="dossier-section"><h3>Synchronisation</h3><div class="dossier-line"><small>Dernier événement</small><strong>${x.sync}</strong>${badge(x.state==='PASS'?'PASS':'WARN')}</div><div class="dossier-line"><small>Provenance</small><strong>${x.state==='PASS'?'Hash concordant':'Contrôle à poursuivre'}</strong>${badge(x.state==='PASS'?'PASS':x.state)}</div><div class="dossier-links">${link('Journal local','Journal local ouvert')}${link('Intake cloud','Intake cloud ouvert')}</div></div><div class="notice">Les fichiers restent masqués dans cette maquette ; les liens indiquent où ouvrir les ressources autorisées.</div></div>`}window.dossiersPage=dossiersPage})();
@@ -75,4 +170,38 @@ body.agents-view #list .section-label{display:none}body.runs-view #list .head>.s
 </style><button id="annotation-launcher" type="button" aria-controls="annotation-widget">Annoter la page</button><aside id="annotation-widget" hidden aria-label="Inspecteur de maquette"><div class="annotation-top"><strong>Inspecteur de maquette</strong><button class="annotation-close" type="button" aria-label="Fermer">×</button></div><div class="annotation-body"><p>Choisis une zone, puis décris ce que tu veux changer.</p><button id="annotation-pick" type="button">Cibler une zone</button><div id="annotation-target" class="empty">Aucune zone sélectionnée</div><textarea id="annotation-note" placeholder="Ex. Réduire cette case de 20 %, garder le texte…"></textarea><div class="annotation-actions"><button id="annotation-copy" class="primary" type="button">Copier la demande</button><button id="annotation-reset" type="button">Effacer</button></div><div id="annotation-status" role="status" aria-live="polite"></div></div></aside><script>
 (function(){const w=document.querySelector('#annotation-widget'),l=document.querySelector('#annotation-launcher'),p=document.querySelector('#annotation-pick'),t=document.querySelector('#annotation-target'),n=document.querySelector('#annotation-note'),c=document.querySelector('#annotation-copy'),r=document.querySelector('#annotation-reset'),s=document.querySelector('#annotation-status');let picking=false,selected=null;function label(e){return(e.getAttribute('aria-label')||e.innerText||e.value||e.placeholder||e.tagName||'zone').replace(/\s+/g,' ').trim().slice(0,150)}function meaningful(e){return e.closest('button,input,textarea,select,table,.panel,.row,.connection-row,.field,.facts,.notice,h1,h2,h3,p')||e}function clear(){document.querySelectorAll('.annotation-focus').forEach(e=>e.classList.remove('annotation-focus'))}function show(){w.hidden=false;l.hidden=true}l.addEventListener('click',show);w.querySelector('.annotation-close').addEventListener('click',function(){w.hidden=true;l.hidden=false;picking=false;document.body.classList.remove('annotation-picking');clear()});p.addEventListener('click',function(){show();picking=!picking;document.body.classList.toggle('annotation-picking',picking);p.textContent=picking?'Clique sur une zone…':'Cibler une zone';s.textContent=picking?'Le prochain clic sera capturé.':'Sélection annulée.'});document.addEventListener('click',function(e){if(!picking||e.target.closest('#annotation-widget')||e.target.closest('#annotation-launcher'))return;e.preventDefault();e.stopPropagation();clear();selected=meaningful(e.target);selected.classList.add('annotation-focus');t.className='';t.innerHTML='<b>'+label(selected)+'</b><span>'+selected.tagName.toLowerCase()+' · zone ciblée</span>';picking=false;document.body.classList.remove('annotation-picking');p.textContent='Cibler une zone';s.textContent='Zone prête à décrire.'},true);c.addEventListener('click',async function(){const q='Zone ciblée : '+(selected?label(selected):'aucune')+'\nDemande : '+(n.value.trim()||'À préciser');try{await navigator.clipboard.writeText(q);s.textContent='Demande copiée. Colle-la-moi directement.'}catch(e){n.value=q;n.select();s.textContent='Sélectionne le texte pour le copier.'}});r.addEventListener('click',function(){clear();selected=null;t.className='empty';t.textContent='Aucune zone sélectionnée';n.value='';s.textContent='Inspecteur réinitialisé.'});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&picking){picking=false;document.body.classList.remove('annotation-picking');p.textContent='Cibler une zone';s.textContent='Sélection annulée.'}})})();
 </script>
+</script><style>
+body.dossiers-view .detail-inner{max-width:780px}
+body.dossiers-view .inspect-head{padding-bottom:14px}
+body.dossiers-view .inspect-head h2{font-size:23px;font-weight:600;letter-spacing:-.055em;margin:2px 0 3px}
+.dossier-sheet{padding-top:3px}
+.dossier-section{margin-top:15px;padding-top:10px;border-color:#2d392f}
+.dossier-section:first-child{margin-top:11px}
+.dossier-section h3{color:#cbd5c7;font-size:12px;font-weight:550;letter-spacing:0;margin:0 0 3px}
+.dossier-line{grid-template-columns:132px minmax(0,1fr) 10px;gap:12px;min-height:37px;padding:8px 0;border-color:#ffffff0d}
+.dossier-line small{font-size:10px;color:#91a093}
+.dossier-value{min-width:0;color:#cbd5c7;font-size:12px;font-weight:450;line-height:1.35}
+.dossier-line .status{display:block;width:8px;height:8px;margin-top:4px;padding:0;border:0;border-radius:50%;font-size:0;line-height:0}
+.dossier-line .status.pass{background:#b8ce98}.dossier-line .status.warn{background:#e4c178;transform:rotate(45deg);border-radius:1px}.dossier-line .status.block{background:#efaaa0;border-radius:2px}
+body.dossiers-view #list .row{padding-block:10px}body.dossiers-view #list .row strong{font-size:12px;font-weight:550}
+@media(max-width:620px){body.dossiers-view .detail-inner{max-width:none}.dossier-line{grid-template-columns:minmax(94px,120px) minmax(0,1fr) 10px;gap:8px}.dossier-section{margin-top:13px}}
+</style><script>
+(() => {
+  const dossiers = [
+    {site:'Atelier Noma',url:'www.ateliernoma.fr',state:'pass',identity:'Identité confirmée',sources:'14 sources datées',media:'8 médias, droits confirmés',sync:'Synchronisé il y a 18 min',provenance:'Hash concordant'},
+    {site:'Maison Rive',url:'www.maisonrive.fr',state:'warn',identity:'Correspondance à confirmer',sources:'9 sources datées',media:'3 médias, droits à vérifier',sync:'Reçu il y a 2 min',provenance:'Contrôle à poursuivre'},
+    {site:'Bistro Sillage',url:'www.bistrosillage.fr',state:'block',identity:'Établissement non confirmé',sources:'4 sources, une date manquante',media:'Aucun média exploitable',sync:'Hors ligne, import hier',provenance:'Reprise manuelle requise'}
+  ];
+  const stateLabel = {pass:'Conforme',warn:'À vérifier',block:'Bloqué'};
+  const dot = state => `<span class="status ${state}" role="img" aria-label="${stateLabel[state]}"></span>`;
+  const folderIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l2 2h9v9h-17z"/><path d="M3.5 6.5v-2h6l2 2"/></svg>';
+  const cloudIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a3.5 3.5 0 0 0 .6-6.95A5.5 5.5 0 0 0 7.5 9.8 4.35 4.35 0 0 0 7 18.5z"/></svg>';
+  const line = (label, value, state) => `<div class="dossier-line"><small>${label}</small><span class="dossier-value">${value}</span>${dot(state)}</div>`;
+  window.dossiersPage = function () {
+    const dossier = dossiers[selected] || dossiers[0];
+    document.body.classList.add('dossiers-view');
+    $('#list').innerHTML = `<div class="head"><div class="h1">Dossiers</div></div><input class="search" placeholder="Rechercher un dossier"><div class="section-label">Dossiers suivis</div>${dossiers.map((item,index) => `<button class="row ${index===selected?'active':''}" onclick="selected=${index};dossiersPage()"><div class="rowtop"><strong>${item.site}</strong>${dot(item.state)}</div></button>`).join('')}`;
+    $('#detail').innerHTML = `<div class="detail-inner dossier-sheet"><header class="inspect-head"><div><h2>${dossier.site}</h2><a class="muted" href="https://${dossier.url}" target="_blank" rel="noreferrer">${dossier.url} ↗</a></div><div class="actions"><button class="btn dossier-top-icon" type="button" aria-label="Ouvrir le dossier local" title="Dossier local" onclick="dossierAction('Dossier local ouvert')">${folderIcon}</button><button class="btn dossier-top-icon" type="button" aria-label="Ouvrir le dossier cloud" title="Dossier cloud" onclick="dossierAction('Dossier cloud ouvert')">${cloudIcon}</button></div></header><section class="dossier-section"><h3>Identité</h3>${line('État',dossier.identity,dossier.state)}${line('Domaine',dossier.url,'pass')}</section><section class="dossier-section"><h3>Sources & médias</h3>${line('Sources',dossier.sources,dossier.state==='block'?'warn':'pass')}${line('Médias',dossier.media,dossier.state)}</section><section class="dossier-section"><h3>Synchronisation</h3>${line('Dernière mise à jour',dossier.sync,dossier.state==='pass'?'pass':'warn')}${line('Provenance',dossier.provenance,dossier.state)}</section></div>`;
+  };
+})();
 </script><script>(function(){const icons={inbox:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v9h-11zM2.5 9h3l1 1.5h3L10.5 9h3"/></svg>`,runs:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5a5 5 0 1 1-.2 5.8"/><path d="M3 2.8v2.7h2.7M8 5v3l2 1"/></svg>`,dossiers:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h4l1.2 1.5h5.8v6.5h-11zM2.5 4.5v-1h3l1.2 1.5"/></svg>`,agents:`<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5" r="2"/><circle cx="4" cy="11" r="1.7"/><circle cx="12" cy="11" r="1.7"/><path d="M6.7 6.5 4.9 9.5M9.3 6.5l1.8 3M5.7 11h4.6"/></svg>`,quality:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/><circle cx="8" cy="8" r="6"/></svg>`,system:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 9 4l1.8.3.5 1.7 1.5 1-.6 1.7.6 1.7-1.5 1-.5 1.7L9 12l-1 1.5L7 12l-1.8-.3-.5-1.7-1.5-1 .6-1.7-.6-1.7 1.5-1 .5-1.7L7 4z"/><circle cx="8" cy="8" r="2"/></svg>`};document.querySelectorAll('.nav button').forEach(b=>{const id=b.dataset.id;const label=nav.find(x=>x[0]===id)[1];b.innerHTML=`<span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>`});$('.brand').onclick=()=>{current='inbox';selected=0;tab='overview';render()}})();</script></body></html>
