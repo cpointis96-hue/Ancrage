@@ -83,6 +83,17 @@ export function createAtomicStore(rootDir) {
     }
   }
 
+  async function readBuffer(relativePath, fallback = null) {
+    const filePath = resolveSafe(relativePath);
+    try {
+      await assertSafeExisting(filePath);
+      return await readFile(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return fallback;
+      throw error;
+    }
+  }
+
   async function checkWritePrecondition(relativePath, nextValue, options) {
     const current = await readText(relativePath, null);
     if (options.immutable && current !== null) {
@@ -130,6 +141,34 @@ export function createAtomicStore(rootDir) {
     };
   }
 
+  async function writeBuffer(relativePath, value, options = {}) {
+    if (!Buffer.isBuffer(value)) throw new TypeError('value must be a Buffer');
+    const filePath = resolveSafe(relativePath);
+    await ensureSafeParent(filePath);
+    const current = await readBuffer(relativePath, null);
+    const hash = `${SHA256_PREFIX}${createHash('sha256').update(value).digest('hex')}`;
+    const currentHash = current === null ? null : `${SHA256_PREFIX}${createHash('sha256').update(current).digest('hex')}`;
+    if (options.immutable && current !== null) throw new ConflictError('Cette version immuable existe déjà.');
+    if (options.expectedHash === null && current !== null) throw new ConflictError('La ressource existe déjà.', { currentHash });
+    if (typeof options.expectedHash === 'string' && currentHash !== options.expectedHash) throw new ConflictError(undefined, { currentHash });
+    const tempPath = `${filePath}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
+    const handle = await open(tempPath, 'wx', 0o600);
+    try {
+      await handle.writeFile(value);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(tempPath, filePath);
+    const directoryHandle = await open(path.dirname(filePath), 'r');
+    try {
+      await directoryHandle.sync();
+    } finally {
+      await directoryHandle.close();
+    }
+    return { hash, previousHash: currentHash, path: relativePath };
+  }
+
   async function readJson(relativePath, fallback = null) {
     const text = await readText(relativePath, null);
     return text === null ? fallback : JSON.parse(text);
@@ -156,11 +195,13 @@ export function createAtomicStore(rootDir) {
   return {
     appendJsonLine,
     hashText,
+    readBuffer,
     readJson,
     readText,
     resolveSafe,
     root,
     writeJson,
+    writeBuffer,
     writeText,
   };
 }

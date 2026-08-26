@@ -40,5 +40,40 @@ test('expose la simulation client via l’API et permet la reprise', async () =>
   try {
     const start = await request(`${base}/api/simulations/client-site`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ profile: { name: 'Maison Sillage' }, fault: 'site-build' }) }); assert.equal(start.status, 201); const failed = JSON.parse(await start.text()); assert.equal(failed.status, 'FAILED');
     const resumed = await request(`${base}/api/simulations/client-site/${failed.id}/resume`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{}' }); assert.equal(resumed.status, 200); assert.equal(JSON.parse(await resumed.text()).status, 'SUCCEEDED');
+    const second = await request(`${base}/api/simulations/client-site`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ profile: { name: 'Maison Générique' }, fault: 'site-build' }) }); const secondFailed = JSON.parse(await second.text());
+    const genericResume = await request(`${base}/api/runs/${secondFailed.id}/resume`, { method: 'POST', headers: { origin: base } }); assert.equal(genericResume.status, 200); assert.equal(JSON.parse(await genericResume.text()).status, 'SUCCEEDED');
+  } finally { await api.close(); }
+});
+
+test('reçoit un intake, crée le dossier, exécute son run et sert ses artefacts', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
+  let opened = null;
+  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), opener: async target => { opened = target; } });
+  const api = createLocalServer({ app });
+  const address = await api.listen();
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    const intake = await request(`${base}/api/intake/dossiers`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Le Rivage', city: 'Nantes', story: 'Texte client', menu: [{ name: 'Bar grillé', price: 22 }] }) });
+    assert.equal(intake.status, 201);
+    const dossier = JSON.parse(await intake.text());
+    const listed = await request(`${base}/api/dossiers`, { headers: { origin: base } });
+    assert.equal(JSON.parse(await listed.text())[0].id, dossier.id);
+
+    const runResponse = await request(`${base}/api/dossiers/${dossier.id}/runs`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(runResponse.status, 201);
+    const run = JSON.parse(await runResponse.text());
+    assert.equal(run.status, 'SUCCEEDED');
+
+    const artifacts = await request(`${base}/api/runs/${run.id}/artifacts`, { headers: { origin: base } });
+    assert.deepEqual(JSON.parse(await artifacts.text()).map(item => item.kind).sort(), ['report', 'site']);
+    const site = await request(`${base}/api/runs/${run.id}/artifacts/site`, { headers: { origin: base } });
+    assert.equal(site.status, 200);
+    assert.match(await site.text(), /Le Rivage/);
+
+    const decision = await request(`${base}/api/runs/${run.id}/decision`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'APPROVED' }) });
+    assert.equal(JSON.parse(await decision.text()).operatorDecision.decision, 'APPROVED');
+    const open = await request(`${base}/api/dossiers/${dossier.id}/open`, { method: 'POST', headers: { origin: base } });
+    assert.equal(open.status, 200);
+    assert.equal(opened, path.join(root, 'dossiers', dossier.id));
   } finally { await api.close(); }
 });

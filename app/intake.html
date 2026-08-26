@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Préparer mon dossier · Ancrage</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/intake.css">
+</head>
+<body class="intake-body">
+  <main class="intake-shell">
+    <a class="intake-brand" href="/">ANCRAGE</a>
+    <header class="intake-head">
+      <p class="eyebrow">Votre établissement</p>
+      <h1>Préparons votre dossier.</h1>
+      <p>Ces informations seront conservées localement pour construire et contrôler votre site.</p>
+    </header>
+    <form id="intake-form" class="intake-form">
+      <div class="intake-grid">
+        <label class="field"><span>Nom de l’établissement</span><input name="name" required autocomplete="organization"></label>
+        <label class="field"><span>Ville</span><input name="city" required autocomplete="address-level2"></label>
+        <label class="field"><span>Pays</span><input name="country" autocomplete="country-name"></label>
+        <label class="field"><span>Adresse</span><input name="address" autocomplete="street-address"></label>
+      </div>
+      <label class="field"><span>Votre histoire</span><textarea name="story" placeholder="L’histoire du lieu, votre cuisine, ce que vos clients viennent chercher…"></textarea></label>
+      <label class="field"><span>Menu</span><textarea name="menu" class="menu-input" placeholder="Khao soi | 14&#10;Curry du jour | 12"></textarea><small>Un plat par ligne, puis le prix après « | ».</small></label>
+      <div class="intake-grid media-fields">
+        <label class="field"><span>E-mail de contact</span><input name="contact" type="email" autocomplete="email"></label>
+        <label class="field file-field"><span>Une image</span><input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp"><small>JPEG, PNG ou WebP · 700 Ko maximum</small></label>
+      </div>
+      <div id="photo-preview" class="photo-preview" hidden></div>
+      <div class="intake-submit"><button class="btn primary" type="submit">Enregistrer mon dossier</button><span id="intake-status" role="status" aria-live="polite"></span></div>
+    </form>
+    <section id="intake-success" class="intake-success" tabindex="-1" hidden>
+      <p class="eyebrow">Dossier reçu</p>
+      <h2>Les informations sont enregistrées.</h2>
+      <p>Le dossier est maintenant visible dans le cockpit et peut lancer son workflow sans ressaisie.</p>
+      <a class="btn primary" href="/">Ouvrir le cockpit</a>
+    </section>
+  </main>
+  <script type="module" src="/intake.mjs"></script>
+</body>
+</html>

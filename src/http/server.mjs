@@ -7,7 +7,7 @@ export function createLocalServer({ app, host = '127.0.0.1', port = 0, staticRoo
   server = http.createServer(async (request, response) => {
     const origin = request.headers.origin;
     const address = server.address(); const expectedOrigin = `http://${host}:${address?.port ?? port}`;
-    const headers = { 'Content-Security-Policy': "default-src 'self'; object-src 'none'; base-uri 'none'", 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' };
+    const headers = { 'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' };
     if (origin && origin !== expectedOrigin) { response.writeHead(403, headers); response.end('Forbidden'); return; }
     if ((request.url ?? '').startsWith('/api/')) { for (const [name, value] of Object.entries(headers)) response.setHeader(name, value); return router(request, response, new URL(request.url, expectedOrigin)); }
     if (staticRoot) return serveStatic(request, response, staticRoot, headers);

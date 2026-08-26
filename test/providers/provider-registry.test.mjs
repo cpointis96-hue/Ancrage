@@ -40,3 +40,12 @@ test('échec du provider reste expurgé et désactivé', async () => {
   assert.equal(result.enabled, false);
   assert.equal(result.lastErrorCode, 'CONNECTION_FAILED');
 });
+
+test('ne déclare jamais saine une connexion sans adaptateur réel', async () => {
+  const { registry } = await setup();
+  await registry.saveSecret('openai', 'secret');
+  const result = await registry.testConnection('openai');
+  assert.equal(result.health, 'unhealthy');
+  assert.equal(result.lastErrorCode, 'ADAPTER_NOT_CONFIGURED');
+  await assert.rejects(() => registry.setEnabled('openai', true));
+});

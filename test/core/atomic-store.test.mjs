@@ -33,6 +33,15 @@ test('écrit et relit du texte avec un hash stable', async () => {
   assert.equal(written.hash, store.hashText('version 1'));
 });
 
+test('écrit et relit un fichier binaire atomiquement', async () => {
+  const value = Buffer.from([0, 1, 2, 255]);
+  const written = await store.writeBuffer('dossiers/dossier-test/assets/photo.bin', value, { expectedHash: null });
+
+  assert.match(written.hash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(await store.readBuffer('dossiers/dossier-test/assets/photo.bin'), value);
+  await assert.rejects(() => store.writeBuffer('dossiers/dossier-test/assets/photo.bin', value, { expectedHash: null }), ConflictError);
+});
+
 test('détecte une écriture concurrente avec expectedHash', async () => {
   await store.writeText('config/prompts/a.md', 'version 1');
 

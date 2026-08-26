@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createId } from '../core/ids.mjs';
-import { NotFoundError, ValidationError } from '../core/errors.mjs';
+import { ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
 import { validateWorkflowDefinition } from './workflow-validator.mjs';
 import { defaultImplementations } from './implementations.mjs';
 
@@ -15,7 +15,7 @@ async function loadDefinition(store, id) {
 }
 
 export function createWorkflowEngine({ store, promptRegistry, implementations = defaultImplementations, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
-  async function get(id) { const run = await store.readJson(`${runPath(id)}/run-manifest.json`, null); if (!run) throw new NotFoundError(`Run introuvable : ${id}`); return run; }
+  async function get(id) { const run = await store.readJson(`${runPath(id)}/run-manifest.json`, null); if (!run) throw new NotFoundError(`Run introuvable : ${id}`); const operatorDecision = await store.readJson(`${runPath(id)}/operator-decision.json`, null); return { ...run, operatorDecision }; }
   async function list() { const index = await store.readJson('runs/index.json', []); return Promise.all(index.map(get)); }
   async function event(id, type, data = {}) { return store.appendJsonLine(`${runPath(id)}/events.jsonl`, { at: clock().toISOString(), type, ...data }); }
   async function addIndex(id) { const current = await store.readJson('runs/index.json', []); if (!current.includes(id)) await store.writeJson('runs/index.json', [...current, id].sort(), { expectedHash: (await store.readText('runs/index.json', null)) === null ? null : store.hashText(await store.readText('runs/index.json')) }); }
@@ -46,5 +46,16 @@ export function createWorkflowEngine({ store, promptRegistry, implementations = 
     if (run.status === 'RUNNING') run.status = 'SUCCEEDED'; run.updatedAt = clock().toISOString(); await event(run.id, 'RUN_FINISHED', { status: run.status }); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run); return run;
   }
   async function resume(id) { const run = await get(id); const definition = await loadDefinition(store, run.workflowId); return run.status === 'SUCCEEDED' ? run : execute(run, definition); }
-  return { get, list, resume, start };
+  async function decide(id, decision) {
+    const run = await get(id);
+    if (run.status !== 'SUCCEEDED') throw new ConflictError('Le run doit être terminé avant la décision opérateur.');
+    if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.');
+    const relativePath = `${runPath(id)}/operator-decision.json`;
+    const current = await store.readText(relativePath, null);
+    const record = { decision, decidedAt: clock().toISOString() };
+    await store.writeJson(relativePath, record, { expectedHash: current === null ? null : store.hashText(current) });
+    await event(id, 'OPERATOR_DECISION_RECORDED', { decision });
+    return get(id);
+  }
+  return { decide, get, list, resume, start };
 }

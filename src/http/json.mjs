@@ -8,3 +8,8 @@ export async function readJsonBody(request, maxBytes = 1024 * 1024) {
 }
 
 export function sendJson(response, status, value, headers = {}) { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); response.end(JSON.stringify(value)); }
+
+export function sendContent(response, status, value, contentType, headers = {}) {
+  response.writeHead(status, { 'Content-Type': contentType, ...headers });
+  response.end(value);
+}

@@ -1,13 +1,27 @@
-import { readJsonBody, sendJson } from './json.mjs';
+import { readJsonBody, sendContent, sendJson } from './json.mjs';
 import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ providers, prompts, workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
+      await ready;
       if (parts[0] !== 'api') throw new NotFoundError();
+      if (parts[1] === 'intake' && parts[2] === 'dossiers' && parts.length === 3 && method === 'POST' && dossiers) {
+        const body = await readJsonBody(request);
+        return sendJson(response, 201, await dossiers.create(body, { source: 'local-public-intake' }));
+      }
+      if (parts[1] === 'dossiers' && dossiers) {
+        if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await dossiers.list());
+        if (parts.length === 2 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await dossiers.create(body, { source: 'local-operator' })); }
+        const dossierId = id(parts[2]);
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await dossiers.get(dossierId));
+        if (parts[3] === 'open' && parts.length === 4 && method === 'POST') return sendJson(response, 200, await dossiers.open(dossierId));
+        if (parts[3] === 'runs' && parts.length === 4 && method === 'POST' && simulation) { const body = await readJsonBody(request); return sendJson(response, 201, await simulation.startDossier(dossierId, { fault: body.fault ?? null })); }
+        if (parts[3] === 'assets' && parts.length === 5 && method === 'GET') { const asset = await dossiers.readAsset(dossierId, decodeURIComponent(parts[4])); return sendContent(response, 200, asset.value, asset.type, { 'Content-Disposition': `inline; filename="${asset.name}"` }); }
+      }
       if (parts[1] === 'providers') {
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await providers.list());
         const providerId = id(parts[2]);
@@ -28,8 +42,16 @@ export function createRouter({ providers, prompts, workflows, runs, simulation =
       if (parts[1] === 'runs') {
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await runs.list());
         if (parts.length === 2 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await runs.start(body.workflowId, body.input ?? {})); }
+        if (parts.length === 4 && parts[3] === 'artifacts' && method === 'GET' && artifacts) return sendJson(response, 200, await artifacts.list(id(parts[2])));
+        if (parts.length === 5 && parts[3] === 'artifacts' && method === 'GET' && artifacts) { const artifact = await artifacts.read(id(parts[2]), id(parts[4])); return sendContent(response, 200, artifact.value, artifact.contentType, { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:" }); }
+        if (parts.length === 4 && parts[3] === 'decision' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await runs.decide(id(parts[2]), body.decision)); }
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await runs.get(id(parts[2])));
-        if (parts.length === 4 && parts[3] === 'resume' && method === 'POST') return sendJson(response, 200, await runs.resume(id(parts[2])));
+        if (parts.length === 4 && parts[3] === 'resume' && method === 'POST') {
+          const runId = id(parts[2]);
+          const run = await runs.get(runId);
+          const resumed = run.workflowId === simulation?.workflowId ? await simulation.resume(runId) : await runs.resume(runId);
+          return sendJson(response, 200, resumed);
+        }
       }
       if (parts[1] === 'internet' && parts[2] === 'search' && method === 'POST') { if (!internet) throw new AppError('Recherche Internet non configurée.', { code: 'INTERNET_NOT_CONFIGURED', status: 503 }); const body = await readJsonBody(request); return sendJson(response, 200, await internet(body)); }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {
