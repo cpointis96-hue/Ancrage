@@ -115,7 +115,7 @@ Décisions restantes : réaliser la revue croisée finale des six entrées du me
 
 ### Reprise effectuée — spécialisation des registres Système V3
 
-La V3 est disponible dans [`prototypes/ux-vertical-slice/cockpit-operator-v3.html`](../../prototypes/ux-vertical-slice/cockpit-operator-v3.html). Elle conserve la V2 comme comparaison et corrige le défaut de page générique répétée : chaque registre possède maintenant une décision, des champs et des modules adaptés.
+La partie Système est désormais intégrée dans [`prototypes/ux-vertical-slice/cockpit-operator-v2.html`](../../prototypes/ux-vertical-slice/cockpit-operator-v2.html), qui devient le cockpit unique de revue. Les anciennes variantes séparées ne sont plus la source de vérité.
 
 - `ProviderConnection` V1 : liste compacte de providers, activation individuelle et ajout direct `provider + clé API`. Les détails d’endpoint, capacités et versions sont retirés de cette surface tant qu’ils ne soutiennent pas une action opérateur réelle. Le prototype masque la clé et ne la persiste pas.
 - `ModelProfile` : identifiant exact, classe de capacité, contexte, usages autorisés et agents associés.

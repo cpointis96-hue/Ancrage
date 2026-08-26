@@ -14,7 +14,7 @@ Le cockpit approfondi est disponible dans [`cockpit-operator-e0-e7.html`](cockpi
 
 La V2 réorganisée est disponible dans [`cockpit-operator-v2.html`](cockpit-operator-v2.html). Elle sépare le catalogue des agents des registres système et donne accès aux rôles, workflows, instructions, contrats, outils, exécution, budgets, versions et runs.
 
-La V3 spécialisée est disponible dans [`cockpit-operator-v3.html`](cockpit-operator-v3.html). Elle conserve la V2 pour comparaison et approfondit l’espace Système avec des pages propres aux connexions providers, profils de modèles, outils/MCP, routage, budgets, profils CLI et synchronisation.
+La partie Système est intégrée dans [`cockpit-operator-v2.html`](cockpit-operator-v2.html), qui devient le cockpit unique pour la revue globale. Elle contient les six onglets du cockpit et les registres Système avec une interface de connexion provider compacte.
 
 Le sélecteur en haut permet de passer du site public au cockpit. Le bouton « Voir le cockpit opérateur » apparaît à la fin du parcours public.
 

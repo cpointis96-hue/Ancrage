@@ -272,6 +272,12 @@ _Avoid_: free trial illimité, garantie de résultats SEO
 
 **Cockpit** : interface privée de l'opérateur pour observer, configurer, synchroniser, reprendre et valider.
 
+**Registre système** : surface du cockpit dédiée à une catégorie de configuration ou de contrôle réellement utilisée par le Control Plane, par exemple les providers, les modèles, les outils, le routage, les budgets, les profils CLI ou la synchronisation.
+
+**État d'interface** : représentation visuelle courte d'un état calculé par le système. Une pastille peut signaler l'état, mais les mots `ACTIF`, `WARN` et `PARTIAL` ne sont pas des concepts métier à afficher partout ; ils doivent rester des états détaillés dans les vues qui les expliquent.
+
+**Libellé de maquette** : texte provisoire utilisé pour explorer une hiérarchie ou une intention d'interface. Il ne devient pas un terme produit sans correspondre à un objet, une action ou une preuve réelle.
+
 **Site public** : interface accessible au prospect pour obtenir la valeur de l'audit et demander une démo.
 
 **Validation opérateur** : décision explicite qui autorise la présentation d'une démo au prospect.
