@@ -61,16 +61,16 @@ Cette page est la référence pour la densité d’inspection : les paramètres 
 
 ## Menu à construire page par page
 
-1. **À traiter** : démos et décisions urgentes. Base déjà créée, à renforcer si un test révèle un trou.
+1. **À traiter** : décisions opérateur et contrôles qualité utiles jusqu’à la validation finale du site avant envoi au client.
 2. **Runs** : toutes les exécutions, état, étape, checkpoints, logs, versions de configuration, tokens et coût par étape. Chaque étape est dépliable et expose son déclencheur, son implémentation, ses entrées, ses sorties exactes, ses dépendances, ses tentatives et son action de relance.
 3. **Dossiers** : identité, sources, photos, droits, complétude, données manquantes, provenance et synchronisation.
 4. **Configuration** : étapes, rôles, prompts, contrats et versions ; les tests contrôlés restent accessibles depuis les prompts et les rôles.
-5. **Qualité** : contrôles PASS/WARN/BLOCK, preuves, liens, responsive, accessibilité, secrets absents, décision de validation.
-6. **Système** : providers, modèles, outils/MCP, politiques de routage, budgets, profils CLI, synchronisation et permissions.
+5. **Providers** : clés API, enregistrement et états des providers de modèles disponibles.
+6. **Internet** : recherche de domaines et connexions registrar.
 
 ## Ordre de reprise dans la prochaine conversation
 
-Commencer par **Runs**, car c’est la page qui relie les démos visibles dans « À traiter » aux étapes et aux consommations demandées. La version de travail couvre ensuite Configuration, Qualité, Dossiers et Système. Ne pas passer à une implémentation de production.
+Commencer par **Runs**, car c’est la page qui relie les démos visibles dans « À traiter » aux étapes et aux consommations demandées. La version de travail couvre ensuite Configuration, Dossiers, Providers et Internet. Ne pas passer à une implémentation de production.
 
 ### Reprise effectuée — page « Runs »
 
@@ -80,13 +80,13 @@ Validation observée : navigation Runs sans erreur JavaScript, inspection de `RU
 
 Décisions restantes : raccorder les actions du prototype à un Control Plane réel et remplacer les données de démonstration par les contrats persistants.
 
-### Reprise effectuée — page « Qualité »
+### Reprise effectuée — fusion « À traiter » / « Qualité »
 
-La page Qualité est maintenant prototypée dans `prototypes/ux-vertical-slice/cockpit-operator-v2.html` : trois données de démonstration couvrent `PASS`, `WARN` et `BLOCK`, avec contrôles de liens, responsive, accessibilité, secrets absents et provenance.
+Les décisions opérateur et les contrôles qualité sont maintenant réunis dans « À traiter ». Chaque dossier expose son action suivante ; un site au statut `PASS` affiche l’action finale « Valider le site » avant l’envoi au client.
 
-Validation observée : navigation Qualité sans erreur JavaScript, inspection de `Maison Rive` et `Bistro Sillage`, action Rapport QA visible, absence de débordement horizontal global à 390 px et console sans erreur ni warning.
+Validation statique à rejouer : navigation sans erreur JavaScript, contrôles utiles visibles dans le détail et absence de débordement horizontal global à 390 px.
 
-Décisions restantes : définir le contrat de preuve réel et les seuils de validation, puis construire la page Dossiers.
+Décisions restantes : définir le contrat de preuve réel et les seuils de validation.
 
 ### Reprise effectuée — page « Dossiers »
 
@@ -130,13 +130,13 @@ Validation observée : V3 ouverte dans Helium, navigation des sept registres, in
 
 ### Revue croisée finale — cockpit V2
 
-Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Configuration`, `Qualité`, `Système`) sont couvertes par le prototype. La validation syntaxique du JavaScript et l’absence de débordement horizontal global restent les contrôles reproductibles ; la validation navigateur doit être rejouée dans un runtime équipé.
+Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Configuration`, `Providers`, `Internet`) sont couvertes par le prototype. La validation syntaxique du JavaScript et l’absence de débordement horizontal global restent les contrôles reproductibles ; la validation navigateur doit être rejouée dans un runtime équipé.
 
 Écart conservé pour la suite : les données, preuves, coûts, providers et actions restent des fixtures locales ; aucune mutation durable ni intégration réelle n’est validée par ce prototype.
 
 ### Ajustement de navigation
 
-Les six entrées du menu utilisent désormais des icônes SVG distinctes et cohérentes avec le thème : file, runs, dossiers, agents, qualité et système. En lecture mobile, le libellé reste visible à côté de l’icône. Le bouton « a » / ANCRAGE est l’accès explicite à l’accueil « À traiter », avec `title` et `aria-label` « Accueil Ancrage ».
+Les six entrées du menu utilisent des icônes SVG distinctes et cohérentes avec le thème : file, runs, dossiers, configuration, providers et internet. En lecture mobile, le libellé reste visible à côté de l’icône. Le bouton « a » / ANCRAGE est l’accès explicite à l’accueil « À traiter », avec `title` et `aria-label` « Accueil Ancrage ».
 
 ## Règles d’interface
 
