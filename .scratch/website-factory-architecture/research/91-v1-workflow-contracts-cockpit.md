@@ -16,6 +16,12 @@ Le parcours commercial reste celui de `87-parcours-client-reference.md`. Le cock
 
 La surface précédemment appelée `Agents` devient `Configuration`. Elle conserve l'accès aux rôles, mais place l'étape et son prompt au centre, car c'est la question opérateur utile : « qu'est-ce qui s'exécute, avec quelles données et quel résultat ? »
 
+## Règle d'actions et d'iconographie
+
+Le cockpit privilégie les actions icon-only lorsqu'elles peuvent être représentées par un symbole immédiatement évident et intégré au contexte. Les actions secondaires de ligne ou d'inspecteur — ouvrir, copier, dupliquer, tester, modifier, consulter le journal ou relancer — utilisent donc une petite icône discrète plutôt qu'un bouton contenant du texte, avec une cible interactive d'au moins 44 px, un `aria-label` précis et un tooltip au survol ou au focus.
+
+Cette règle ne s'applique pas aux actions principales, destructives, ambiguës ou à conséquence importante : leur libellé reste visible. Une icône seule ne doit jamais masquer la nature d'une décision opérateur, notamment `rejouer`, `reprendre`, `corriger puis tester` ou `bloqué`.
+
 ## Workflow de bout en bout
 
 | ID | Étape et déclencheur | Exécution retenue | Entrées | Sorties persistées | Réutilisée par |
@@ -96,3 +102,10 @@ Une reprise :
 
 Le cockpit doit distinguer `rejouer`, `reprendre`, `corriger puis tester` et `bloqué`. Une icône seule ne porte jamais cette décision.
 
+## Capacité déterministe `Internet`
+
+La surface `Internet` s'inscrit dans le même contrat d'étape que les autres outils du cockpit. Elle ne constitue pas un agent et ne consomme aucun token IA.
+
+Son workflow est décrit dans [92 — Workflow recherche domaines Internet](../issues/92-workflow-recherche-domaines-internet.md) : candidats, disponibilité, devis indépendants par registrar, provenance datée, ranking explicable, affichage partiel et achat externalisé. La configuration des connexions réutilise le registre sécurisé existant ; elle ne crée pas un second système de clés.
+
+La recherche peut précéder le paiement. L'enregistrement ou le transfert reste hors du backend V1 et exige une action humaine explicite chez le registrar.

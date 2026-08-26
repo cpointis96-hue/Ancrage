@@ -105,6 +105,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Provenance compréhensible** — sources détaillées au cockpit, résumé sourcé côté audit client, séparation faits/hypothèses/suggestions.
 - **Uploads isolés** — types/taille limités, scan, stockage séparé, URLs temporaires, suppression des métadonnées si nécessaire, aucune exécution.
 - **Critère `to-spec`** — parcours, domaine, QA, coûts, sécurité, offres, langues, stack et frontières humaines décidés ; seuls les détails d'implémentation restent ouverts.
+- **Capacité `Internet`** — le workflow de recherche de domaines, ses quatre connexions registrars, ses états, sa provenance, son ranking déterministe et sa frontière d'achat externalisé sont cadrés dans [92 — Workflow recherche domaines Internet](issues/92-workflow-recherche-domaines-internet.md). La validation officielle des APIs, quotas, prix et conditions reste un bloqueur de recherche avant intégration réelle.
 - **Objectifs RPO/RTO MVP** — site publié ≤1 h/≤2 h, Control Plane ≤1 h/≤4 h, démo régénérable sous 24 h ; objectifs à vérifier par tests fournisseurs.
 - **Offres définies par périmètre** — `Essential`, `Visibility`, `Managed` ; prix localisés et testés, pas inventés comme décisions définitives.
 - **Test commercial réel** — 10 à 15 restaurants exploratoires au Sri Lanka, mesure dossier complet, coût, temps humain, démo vue, paiement et marge.

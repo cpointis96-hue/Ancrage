@@ -44,6 +44,7 @@ Les paramètres sont modifiables uniquement via un brouillon versionné et prév
 - **Budget** : appel, agent, étape, génération, prospect, fournisseur, jour, mois, plafond global ; alertes 50/80/100 % et arrêt dur à 100 %.
 - **Qualité** : checks obligatoires, seuils, règles de provenance, liens, responsive, accessibilité, secrets, contenu et critères de validation.
 - **Système** : synchronisation, sauvegarde, conservation, restauration, logs, bridge local, état cloud, mode hors ligne et permissions.
+- **Internet** : workflow déterministe de génération de candidats, disponibilité, comparaison des devis registrars, ranking, provenance, cache, états partiels et liens d'achat externes. Les quatre connexions prévues (`Cloudflare`, `Dynadot`, `NameSilo`, `Name.com`) réutilisent le registre de secrets existant ; aucune clé n'est exposée au navigateur.
 
 ## Ce qui manque encore avant la production
 
@@ -54,5 +55,7 @@ Les paramètres sont modifiables uniquement via un brouillon versionné et prév
 5. Produire la spec d'interface et les tokens à partir de la référence visuelle, avec clavier, zoom 200 %, contraste, lecteurs d'écran et mouvement réduit.
 6. Construire le vertical slice technique public → intake → sync → run → QA → validation → démo, sans construire encore tout le catalogue de sites clients.
 7. Tester sur données synthétiques et fixtures locales avant toute connexion externe ; ensuite seulement valider Cloudflare, Neon, R2 et les providers.
+
+La surface `Internet` doit être spécifiée avec le ticket [92 — Workflow recherche domaines Internet](../../.scratch/website-factory-architecture/issues/92-workflow-recherche-domaines-internet.md) avant toute intégration réelle. Le prototype visuel ne vaut pas preuve de disponibilité, de prix ou de stockage sécurisé des clés.
 
 Le passage à `to-spec` n'est pas encore justifié tant que les décisions métier et les contrats de contrôle ne sont pas fermés. Le nouveau prototype sert précisément à examiner les choix d'interface et à révéler les trous restants.
