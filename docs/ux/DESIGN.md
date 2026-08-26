@@ -42,7 +42,7 @@ Pas de serif générique dans le cockpit, pas d'Inter imposé, pas de capitales 
 
 - **Bouton principal** : fond Moss, texte clair, rayon 7–8 px, retour tactile discret. Un seul par contexte.
 - **Bouton secondaire** : surface blanche, bord structural, aucune ombre décorative.
-- **Actions icon-only** : uniquement si le symbole est évident ; sinon libellé accessible obligatoire.
+- **Actions icon-only par défaut** : toute action secondaire dont le symbole est immédiatement évident utilise une petite icône intégrée au contexte, sans bouton textuel. Elle conserve une cible interactive d'au moins 44 px, un `aria-label` précis et un tooltip au survol ou au focus. Les actions principales, destructives, ambiguës ou à conséquence importante gardent un libellé visible.
 - **Panneaux** : surfaces solides séparées par une ligne ; les cartes ne servent que lorsqu'elles matérialisent une hiérarchie réelle.
 - **Champs** : label au-dessus, aide courte sous le champ, erreur précise sous le champ.
 - **Statuts** : texte + forme ou icône ; jamais couleur seule.

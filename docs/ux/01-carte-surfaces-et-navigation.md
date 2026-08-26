@@ -13,7 +13,7 @@ La sidebar comporte au maximum six entrées visibles :
 3. **Dossiers** — prospects, établissements, sources, photos et état de complétude.
 4. **Configuration** — étapes, rôles, prompts, contrats et politiques versionnés. Cette surface remplace le catalogue « Agents » comme entrée principale.
 5. **Qualité** — rapports QA, preuves, warnings et validations opérateur.
-6. **Système** — synchronisation locale, sauvegarde, logs techniques et accès.
+6. **Providers** — connexions IA, activation, clés masquées et modèles disponibles pour les étapes.
 
 Le coût est un filtre et un détail contextuel, pas une entrée principale séparée tant qu'il ne représente pas une décision autonome.
 
