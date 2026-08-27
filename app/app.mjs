@@ -413,39 +413,33 @@ async function renderConfiguration() {
   bindAll('[data-configuration-select]', button => { state.configurationCreating = null; state.configurationDraft = null; state.selected.configuration = button.dataset.configurationSelect; render(); });
 }
 
-function providerErrorLabel(code) {
-  return ({ ADAPTER_NOT_CONFIGURED: 'Adaptateur externe non raccordé', CONNECTION_FAILED: 'Connexion refusée', TIMEOUT: 'Délai dépassé' })[code] ?? code ?? '';
-}
-
 async function renderProviders() {
   const providers = await api.providers();
-  list.innerHTML = listHeader('Providers') + '<div class="section-label">Connexions</div><p class="list-hint">Les clés restent dans le trousseau local.</p>';
+  list.innerHTML = listHeader('Providers');
   if (!providers.length) {
     detail.innerHTML = emptyState('Aucun provider', 'Le registre local est vide.');
     return;
   }
-  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2><p>Connexions IA et domaines utilisées par les workflows.</p></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong><small>${provider.configured ? 'Clé enregistrée' : 'Non configuré'} · ${provider.enabled ? 'actif' : 'inactif'}</small></div><div class="provider-key"><input type="password" autocomplete="new-password" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" data-provider-secret="${esc(provider.id)}"><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button></div><button class="icon-control compact-icon" type="button" aria-label="Tester la connexion ${esc(provider.name)}" title="Tester" data-test-provider="${esc(provider.id)}">${icon('test')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button>${provider.configured ? iconControl(`Supprimer la clé ${provider.name}`, 'trash', `data-delete-provider="${esc(provider.id)}"`) : ''}</div>`).join('')}</section><p class="provider-footnote"><span class="state-dot pass" aria-hidden="true"></span>Les clés ne sont jamais renvoyées au navigateur.</p></div>`;
+  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong></div><div class="provider-key"><input type="password" autocomplete="new-password" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" data-provider-secret="${esc(provider.id)}"></div><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button></div>`).join('')}</section></div>`;
   bindAll('[data-save-provider]', async button => {
     const id = button.dataset.saveProvider;
     const input = document.querySelector(`[data-provider-secret="${id}"]`);
     if (!input.value.trim()) { notify('Saisissez une clé.'); input.focus(); return; }
-    const result = await perform(button, () => api.saveSecret(id, input.value), 'Clé enregistrée dans le trousseau local.');
-    input.value = '';
-    if (result.ok) await render();
-  });
-  bindAll('[data-test-provider]', async button => {
-    const result = await perform(button, () => api.testProvider(button.dataset.testProvider));
-    if (result.ok) { notify(result.value.health === 'healthy' ? 'Connexion vérifiée.' : providerErrorLabel(result.value.lastErrorCode)); await render(); }
+    const result = await perform(button, () => api.saveSecret(id, input.value));
+    if (!result.ok) return;
+    const checked = await perform(button, () => api.testProvider(id));
+    if (!checked.ok || checked.value.health !== 'healthy') {
+      notify('Clé non valide');
+      await api.deleteSecret(id).catch(() => {});
+      await render();
+      return;
+    }
+    notify('Clé enregistrée');
+    await render();
   });
   bindAll('[data-toggle-provider]', async button => {
     const provider = providers.find(item => item.id === button.dataset.toggleProvider);
     const result = await perform(button, () => api.setEnabled(provider.id, !provider.enabled), provider.enabled ? 'Provider désactivé.' : 'Provider activé.');
-    if (result.ok) await render();
-  });
-  bindAll('[data-delete-provider]', async button => {
-    const provider = providers.find(item => item.id === button.dataset.deleteProvider);
-    if (!window.confirm(`Supprimer la clé ${provider.name} du trousseau local ?`)) return;
-    const result = await perform(button, () => api.deleteSecret(provider.id), 'Clé supprimée.');
     if (result.ok) await render();
   });
 }
