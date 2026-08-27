@@ -28,6 +28,7 @@ export function createRouter({ artifacts = null, dossiers = null, providers, pro
         if (parts[3] === 'secret' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await providers.saveSecret(providerId, body.secret)); }
         if (parts[3] === 'secret' && method === 'DELETE') return sendJson(response, 200, await providers.deleteSecret(providerId));
         if (parts[3] === 'test' && method === 'POST') return sendJson(response, 200, await providers.testConnection(providerId));
+        if (parts[3] === 'test-secret' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await providers.testConnection(providerId, { secretOverride: body.secret })); }
         if (parts[3] === 'enabled' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await providers.setEnabled(providerId, body.enabled)); }
       }
       if (parts[1] === 'prompts') {

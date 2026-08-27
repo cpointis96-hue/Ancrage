@@ -418,22 +418,27 @@ async function renderProviders() {
     detail.innerHTML = emptyState('Aucun provider', 'Le registre local est vide.');
     return;
   }
-  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong></div><div class="provider-key"><input type="password" autocomplete="new-password" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" data-provider-secret="${esc(provider.id)}"></div><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button></div>`).join('')}</section></div>`;
+  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong></div><div class="provider-key"><input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" value="${provider.configured ? 'sk-••••••••' : ''}" data-masked="${provider.configured}" data-provider-secret="${esc(provider.id)}"></div><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button></div>`).join('')}</section></div>`;
+  document.querySelectorAll('[data-provider-secret]').forEach(input => {
+    const focusInput = event => { event.stopPropagation(); input.focus({ preventScroll: true }); };
+    input.addEventListener('pointerdown', focusInput);
+    input.addEventListener('click', focusInput);
+    input.addEventListener('focus', () => {
+      if (input.dataset.masked !== 'true') return;
+      input.value = '';
+      input.dataset.masked = 'false';
+    });
+  });
   bindAll('[data-save-provider]', async button => {
     const id = button.dataset.saveProvider;
     const input = document.querySelector(`[data-provider-secret="${id}"]`);
+    if (input.dataset.masked === 'true') { notify('Clé déjà enregistrée.'); return; }
     if (!input.value.trim()) { notify('Saisissez une clé.'); input.focus(); return; }
-    const result = await perform(button, () => api.saveSecret(id, input.value));
-    if (!result.ok) return;
-    const checked = await perform(button, () => api.testProvider(id));
-    if (!checked.ok || checked.value.health !== 'healthy') {
-      notify('Clé non valide');
-      await api.deleteSecret(id).catch(() => {});
-      await render();
-      return;
-    }
-    notify('Clé enregistrée');
-    await render();
+    const secret = input.value;
+    const checked = await perform(button, () => api.testProviderSecret(id, secret));
+    if (!checked.ok || checked.value.health !== 'healthy') { notify('Clé non valide'); await render(); return; }
+    const result = await perform(button, () => api.saveSecret(id, secret), 'Clé enregistrée');
+    if (result.ok) { await api.testProvider(id).catch(() => {}); await render(); }
   });
   bindAll('[data-toggle-provider]', async button => {
     const provider = providers.find(item => item.id === button.dataset.toggleProvider);

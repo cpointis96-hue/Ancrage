@@ -37,8 +37,9 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
     return (await list()).find(item => item.id === id);
   }
   async function deleteSecret(id) { await getDefinition(id); await secretStore.delete(SECRET_REF(id)); await saveStatus(id, { enabled: false, health: 'unknown', lastCheckedAt: null, lastErrorCode: null }); return (await list()).find(item => item.id === id); }
-  async function testConnection(id, { timeoutMs = 8000 } = {}) {
-    const definition = await getDefinition(id); if (!(await secretStore.has(SECRET_REF(id)))) throw new ValidationError('Secret absente.');
+  async function testConnection(id, { timeoutMs = 8000, secretOverride = null } = {}) {
+    const definition = await getDefinition(id); const secret = secretOverride ?? await secretStore.get(SECRET_REF(id));
+    if (!secret) throw new ValidationError('Secret absente.');
     const adapter = adapters[id];
     const started = Date.now();
     let health = 'healthy'; let lastErrorCode = null;
@@ -46,7 +47,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
       let timer;
       try {
         if (!adapter) throw Object.assign(new Error('adapter unavailable'), { code: 'ADAPTER_NOT_CONFIGURED' });
-        await Promise.race([Promise.resolve(adapter({ secret: await secretStore.get(SECRET_REF(id)), definition })), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), timeoutMs); })]);
+        await Promise.race([Promise.resolve(adapter({ secret, definition })), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), timeoutMs); })]);
       } finally { clearTimeout(timer); }
     } catch (error) { health = 'unhealthy'; lastErrorCode = error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'ADAPTER_NOT_CONFIGURED' ? 'ADAPTER_NOT_CONFIGURED' : 'CONNECTION_FAILED'; }
     await saveStatus(id, { health, lastCheckedAt: clock().toISOString(), lastErrorCode, enabled: false });

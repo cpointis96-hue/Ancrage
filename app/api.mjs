@@ -36,6 +36,7 @@ export const api = {
   startRun: (workflowId, input) => call('/runs', { method: 'POST', body: JSON.stringify({ workflowId, input }) }),
   startSimulation: (profile, fault = null) => call('/simulations/client-site', { method: 'POST', body: JSON.stringify({ profile, fault }) }),
   testProvider: id => call(`/providers/${id}/test`, { method: 'POST' }),
+  testProviderSecret: (id, secret) => call(`/providers/${id}/test-secret`, { method: 'POST', body: JSON.stringify({ secret }) }),
   activateWorkflow: (id, versionId) => call(`/workflows/${id}/activate`, { method: 'POST', body: JSON.stringify({ versionId }) }),
   workflows: () => call('/workflows'),
 };
