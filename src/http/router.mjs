@@ -3,7 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, audits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, publicAudits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -68,6 +68,11 @@ export function createRouter({ artifacts = null, audits = null, dossiers = null,
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await audits.create({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
         if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await audits.get(id(parts[3])));
         if (parts.length === 5 && parts[4] === 'report' && method === 'GET') { const report = await audits.readReport(id(parts[3])); return sendContent(response, 200, report.value, report.contentType); }
+      }
+      if (parts[1] === 'audits' && parts[2] === 'local' && publicAudits) {
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicAudits.list());
+        if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicAudits.create({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
+        if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicAudits.get(id(parts[3])));
       }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await simulation.start(body.profile ?? {}, { fault: body.fault ?? null })); }

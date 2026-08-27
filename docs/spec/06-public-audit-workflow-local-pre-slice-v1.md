@@ -1,0 +1,15 @@
+# Pré-slice local du workflow d’audit public V1
+
+Statut : implémenté localement, activation provider et vertical slice réel non autorisés
+
+Le point d’entrée `POST /api/audits/local` compose un run versionné `public-audit-v1` à partir d’un nom et d’une ville structurée. Il persiste le run sous `audit-runs/`, expose `GET` pour la liste et le détail, et accepte `Idempotency-Key`.
+
+Le workflow suit les étapes `establishment-search`, `site-discovery`, `gmb-audit`, `seo-audit`, `competitor-keywords` et `strategy`. Les capacités externes passent uniquement par l’adapter `dataforseo` déjà enregistré : Maps, recherche organique, Business Listings, OnPage, volumes, idées, aperçu de mots-clés et concurrents. Chaque appel exige un provider configuré, sain et activé, une estimation explicite dans `budget.endpointCosts`, puis écrit les `COST_AUTHORIZED` et `COST_SETTLED` correspondants. Un appel absent, refusé ou non budgétable produit `PARTIAL` ; l’échec de la recherche d’identité essentielle bloque les étapes suivantes. Le crawler SEO local reste séparé et ne démarre que pour un domaine fourni et conforme.
+
+Le profil standard par défaut est `maxPages: 50`, `maxBytes: 25 Mo` et `timeoutMs: 180000` (3 minutes), sans rendu JavaScript. L’enveloppe de pilotage par défaut est de `2 USD` par run, avec des estimations par capacité de `0,10` à `0,30 USD`. Ces montants sont `ESTIMÉS`, non des tarifs contractuels DataForSEO ; le coût `cost` retourné par le provider est réglé dans le ledger et un dépassement rend l’étape `PARTIAL`. Les valeurs peuvent être remplacées par le run, mais restent figées dans son entrée.
+
+Les résultats provider ne sont pas persistés comme payload brut. Le run conserve des données normalisées bornées et un `EvidenceSnapshot` avec hash du payload, paramètres de requête, endpoint, date, version et référence de conditions encore à confirmer. La stratégie actuelle est déterministe et explicitement limitée : elle fournit des intentions de départ, sans faire passer une suggestion pour une observation. Le prompt `audit-analyst` n’est pas appelé dans cette tranche ; `interpretation.status` vaut `NOT_RUN` tant qu’un routage IA approuvé, un contrat de sortie et un budget distinct ne sont pas activés.
+
+Cette tranche ne crée aucun credential, n’active aucun provider, n’appelle pas DataForSEO au démarrage et ne déclenche pas de demande réseau sans provider sain. La couverture des coûts réels, quotas, droits de restitution, licences, conservation, concurrence de plusieurs runs et vertical slice sur établissements/sites autorisés restent des gates externes.
+
+Références fournisseur consultées le 27 août 2026 : [Google Maps Live Advanced](https://docs.dataforseo.com/v3/serp-maps-live-advanced/), [Google SERP Live Advanced](https://docs.dataforseo.com/v3/serp-se-type-live-advanced/) et [Business Listings](https://docs.dataforseo.com/v3/business_data-business_listings-overview/). Elles indiquent une facturation par requête ou tâche et renvoient le coût dans la réponse ; le tarif exact dépend de la méthode et des paramètres. Les montants locaux ci-dessus restent donc des `ESTIMÉS` de garde-fou, pas une promesse fournisseur.
