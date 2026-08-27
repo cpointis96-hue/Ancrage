@@ -18,6 +18,7 @@ const state = {
   configurationTab: 'workflows',
   configurationCreating: null,
   configurationDraft: null,
+  configurationModels: {},
   internetQuery: '',
   internetResult: null,
   internetConfigOpen: false,
@@ -333,10 +334,12 @@ function rememberConfigurationDraft(source, read) {
   });
 }
 
-function workflowStepEditor(step, index, prompts, contracts, cliProfiles) {
+function workflowStepEditor(step, index, prompts, contracts, cliProfiles, providers, models) {
   const option = (value, label) => `<option value="${value}" ${step.kind === value ? 'selected' : ''}>${label}</option>`;
   const contractOptions = contracts.map(contract => `<option value="${esc(contract.id)}" ${contractId(step.contractRef) === contract.id ? 'selected' : ''}>${esc(contract.name ?? contract.id)}</option>`).join('');
   const profileOptions = cliProfiles.map(profile => `<option value="${esc(profile.id)}" ${step.profile === profile.id ? 'selected' : ''}>${esc(profile.name ?? profile.id)}</option>`).join('');
+  const providerOptions = [...providers, ...(step.provider && !providers.some(provider => provider.id === step.provider) ? [{ id: step.provider, name: step.provider }] : [])].map(provider => `<option value="${esc(provider.id)}" ${step.provider === provider.id ? 'selected' : ''}>${esc(provider.name ?? provider.id)}</option>`).join('');
+  const modelOptions = [...models, ...(step.model && !models.some(model => model.id === step.model) ? [{ id: step.model, name: step.model }] : [])].map(model => `<option value="${esc(model.id)}" ${step.model === model.id ? 'selected' : ''}>${esc(model.name ?? model.id)}</option>`).join('');
   return `<section class="workflow-editor-step" data-workflow-step data-step-trigger="${esc(step.trigger ?? '')}" data-step-approval="${esc(step.approval ?? 'none')}">
     <header><strong>Étape ${index + 1}</strong>${iconControl(`Supprimer l’étape ${index + 1}`, 'trash', 'data-remove-workflow-step')}</header>
     <div class="form-grid">
@@ -348,8 +351,8 @@ function workflowStepEditor(step, index, prompts, contracts, cliProfiles) {
       <label class="field span-2"><span>Sorties produites</span><input value="${esc((step.outputRefs ?? []).join(', '))}" data-step-field="outputRefs" placeholder="rapport, preuves"></label>
       <label class="field"><span>Prompt si étape IA</span><select data-step-field="promptRef"><option value="">Aucun</option>${prompts.map(prompt => `<option value="${esc(prompt.id)}" ${step.promptRef === prompt.id ? 'selected' : ''}>${esc(prompt.name)}</option>`).join('')}</select></label>
       <label class="field"><span>Acteur</span><input value="${esc(step.actor ?? '')}" data-step-field="actor" placeholder="rôle"></label>
-      <label class="field"><span>Provider</span><input value="${esc(step.provider ?? '')}" data-step-field="provider" placeholder="local ou approuvé"></label>
-      <label class="field"><span>Modèle si étape IA</span><input value="${esc(step.model ?? '')}" data-step-field="model" placeholder="Modèle choisi"></label>
+      <label class="field"><span>Provider</span><select data-step-field="provider" data-step-provider><option value="">Aucun</option>${providerOptions}</select></label>
+      <label class="field"><span>Modèle si étape IA</span><select data-step-field="model" data-step-model><option value="">Choisir un modèle</option>${modelOptions}</select></label>
       <label class="field"><span>Profil CLI</span><select data-step-field="profile"><option value="">Aucun</option>${profileOptions}</select></label>
       <label class="field span-2"><span>Contrat de sortie</span><select data-step-field="contractRef"><option value="">Aucun</option>${contractOptions}</select></label>
       <label class="field"><span>Timeout en ms</span>${numberField(step.timeoutMs ?? 1000, 'data-step-field="timeoutMs"')}</label>
@@ -392,7 +395,7 @@ function readCliProfileForm() {
 }
 
 async function renderConfiguration() {
-  const [workflows, prompts, templates, contracts, cliProfiles] = await Promise.all([api.workflows(), api.prompts(), api.templates(), api.contracts(), api.cliProfiles()]);
+  const [workflows, prompts, templates, contracts, cliProfiles, providers] = await Promise.all([api.workflows(), api.prompts(), api.templates(), api.contracts(), api.cliProfiles(), api.providers()]);
   const tabItems = state.configurationTab === 'workflows' ? workflows : state.configurationTab === 'prompts' ? prompts : state.configurationTab === 'contracts' ? contracts : cliProfiles;
   const creating = state.configurationCreating === state.configurationTab;
   const selectedId = creating ? null : (tabItems.some(item => item.id === state.selected.configuration) ? state.selected.configuration : tabItems[0]?.id);
@@ -463,7 +466,7 @@ async function renderConfiguration() {
     detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><h2>${creating ? 'Nouveau workflow' : esc(workflow.name || workflow.id)}</h2><p>Centre de configuration</p></div><div class="detail-actions">${action}</div></header>
       <section class="panel"><div class="section-label">Workflow</div><div class="form-grid"><label class="field"><span>Identifiant</span><input value="${esc(workflow.id)}" data-workflow-id ${creating ? '' : 'readonly'}></label><label class="field"><span>Nom</span><input value="${esc(workflow.name ?? '')}" data-workflow-name></label><label class="field"><span>Template de sortie</span><span class="select-wrap"><select class="select-control" data-workflow-template>${templates.map(item => `<option value="${esc(item.id)}" ${item.id === (workflow.outputTemplateId ?? template?.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></span></label><label class="field"><span>Version</span>${numberField(workflow.version ?? 1, 'data-workflow-version')}</label></div></section>
       <section class="panel"><div class="section-label">Limites par défaut</div><div class="limit-grid"><label class="field"><span>URL</span>${numberField(limits.urls, 'data-limit="urls"')}</label><label class="field"><span>Minutes</span>${numberField(limits.minutes, 'data-limit="minutes"')}</label><label class="field"><span>Mo</span>${numberField(limits.megabytes, 'data-limit="megabytes"')}</label><label class="field"><span>USD</span>${numberField(limits.dollars, 'data-limit="dollars"')}</label></div></section>
-      <div class="workflow-editor">${workflow.steps.map((step, index) => workflowStepEditor({ ...step, actor: step.actor ?? '', provider: step.provider ?? '', profile: step.profile ?? '' }, index, prompts, contracts, cliProfiles)).join('')}</div><button class="btn" type="button" data-add-workflow-step>${icon('plus')} Ajouter une étape</button>
+      <div class="workflow-editor">${workflow.steps.map((step, index) => workflowStepEditor({ ...step, actor: step.actor ?? '', provider: step.provider ?? '', profile: step.profile ?? '' }, index, prompts, contracts, cliProfiles, providers.filter(provider => provider.kind === 'ai' && provider.configured && provider.enabled && provider.health === 'healthy'), state.configurationModels[step.provider] ?? [])).join('')}</div><button class="btn" type="button" data-add-workflow-step>${icon('plus')} Ajouter une étape</button>
       <section class="panel"><div class="section-label">Templates de sortie</div><div class="template-list">${templates.map(item => `<div class="template-row"><span><strong>${esc(item.name)}</strong><small>${esc(item.id)} · ${item.versions.length} versions${item.activeVersionId ? ' · actif' : ''}</small></span><span class="template-actions">${item.activeVersionId ? '' : `<button class="btn compact" type="button" data-activate-template="${esc(item.id)}">Activer</button>`}<button class="btn compact" type="button" data-edit-template="${esc(item.id)}">Modifier</button><button class="btn compact danger" type="button" data-delete-template="${esc(item.id)}">Supprimer</button></span></div>`).join('')}</div><div class="template-create"><input data-template-id placeholder="identifiant" aria-label="Identifiant du template"><input data-template-name placeholder="nom" aria-label="Nom du template"><input type="file" data-template-file accept=".html,.htm,.txt"><button class="btn" type="button" data-upload-template>Importer</button></div></section>
       ${creating ? '' : `<section class="panel"><div class="section-label">Versions</div>${workflow.versions.length ? [...workflow.versions].reverse().map(version => `<div class="version-row"><span><strong>${esc(version.id)}</strong><small>${formatDate(version.createdAt)}</small></span>${workflow.activeVersionId === version.id ? '<span class="version-active">Version active</span>' : `<button class="btn compact" type="button" data-activate-workflow="${version.id}">Activer</button>`}</div>`).join('') : '<p class="muted">Enregistrez puis créez une première version.</p>'}</section>`}
     </div>`;
@@ -473,6 +476,11 @@ async function renderConfiguration() {
     $('[data-version-workflow]')?.addEventListener('click', async event => { const definition = readWorkflowForm(); const result = await perform(event.currentTarget, async () => { const saved = await api.saveWorkflow(definition.id, definition, source.hash); return api.createWorkflowVersion(definition.id, saved.hash); }, 'Version immuable créée.'); if (result.ok) { state.configurationDraft = null; await render(); } });
     bindAll('[data-activate-workflow]', async button => { if (!window.confirm('Utiliser cette version pour les futurs runs ?')) return; const result = await perform(button, () => api.activateWorkflow(source.id, button.dataset.activateWorkflow), 'Version activée.'); if (result.ok) await render(); });
     $('[data-sync-configuration]')?.addEventListener('click', () => { state.configurationDraft = null; notify('Fichiers locaux synchronisés.'); render(); });
+    document.querySelectorAll('[data-step-provider]').forEach(select => select.addEventListener('change', async event => {
+      const providerId = event.currentTarget.value;
+      if (!providerId || state.configurationModels[providerId]) { render(); return; }
+      try { state.configurationModels[providerId] = await api.providerModels(providerId); render(); } catch (error) { notify(error.message); }
+    }));
     bindAll('[data-activate-template]', async button => { const item = templates.find(template => template.id === button.dataset.activateTemplate); const version = item?.versions.at(-1); if (!version) { notify('Créez une version avant activation.'); return; } const result = await perform(button, () => api.activateTemplate(item.id, version.id), 'Template activé.'); if (result.ok) await render(); });
     bindAll('[data-delete-template]', async button => { if (!window.confirm('Supprimer ce template local ?')) return; const result = await perform(button, () => api.deleteTemplate(button.dataset.deleteTemplate), 'Template supprimé.'); if (result.ok) await render(); });
     $('[data-upload-template]')?.addEventListener('click', async event => { const file = $('[data-template-file]').files[0]; const id = $('[data-template-id]').value.trim(); const name = $('[data-template-name]').value.trim() || file?.name || id; if (!file || !id) { notify('Choisissez un fichier et un identifiant.'); return; } const content = await file.text(); const existing = templates.find(item => item.id === id); const result = await perform(event.currentTarget, () => api.saveTemplate(id, { name, content }, existing?.draftHash ?? null), 'Template importé sur disque.'); if (result.ok) { await api.createTemplateVersion(id, result.value.draftHash); await render(); } });

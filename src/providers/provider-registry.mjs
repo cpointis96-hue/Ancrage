@@ -67,5 +67,15 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
     if (!secret) throw new ValidationError('Secret provider absent.');
     return { provider, secret };
   }
-  return { deleteSecret, executionContext, list, saveSecret, setEnabled, testConnection };
+  async function listModels(id) {
+    const definition = await getDefinition(id);
+    if (definition.kind !== 'ai') throw new ValidationError(`Le provider ${id} ne propose pas de modèles IA.`);
+    const { secret } = await executionContext(id);
+    const adapter = adapters[id];
+    if (typeof adapter?.models !== 'function') throw Object.assign(new ValidationError(`Découverte des modèles indisponible pour le provider ${id}.`), { code: 'MODEL_DISCOVERY_UNAVAILABLE' });
+    const models = await adapter.models({ secret, definition });
+    if (!Array.isArray(models)) throw Object.assign(new ValidationError('Réponse de modèles invalide.'), { code: 'MODEL_DISCOVERY_INVALID' });
+    return models.map(model => ({ id: String(model.id ?? '').trim(), name: String(model.name ?? model.id ?? '').trim() })).filter(model => model.id && model.name);
+  }
+  return { deleteSecret, executionContext, list, listModels, saveSecret, setEnabled, testConnection };
 }

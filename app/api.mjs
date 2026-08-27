@@ -32,6 +32,7 @@ export const api = {
   contracts: () => call('/contracts'),
   cliProfiles: () => call('/cli-profiles'),
   providers: () => call('/providers'),
+  providerModels: id => call(`/providers/${id}/models`),
   resumeRun: id => call(`/runs/${id}/resume`, { method: 'POST' }),
   run: id => call(`/runs/${id}`),
   events: id => call(`/runs/${id}/events`),

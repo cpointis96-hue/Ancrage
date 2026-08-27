@@ -25,6 +25,25 @@ test('API loopback refuse origine étrangère et ne divulgue pas les secrets', a
   } finally { await api.close(); }
 });
 
+test('expose les modèles du provider IA actif sans son secret', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
+  const adapter = async ({ secret }) => { assert.equal(secret, 'sk-models-secret'); };
+  adapter.models = async ({ secret }) => { assert.equal(secret, 'sk-models-secret'); return [{ id: 'model-a', name: 'Model A' }]; };
+  const secretStore = createMemorySecretStore();
+  const api = createLocalServer({ app: createApp({ dataDir: root, secretStore, adapters: { openai: adapter } }) });
+  const address = await api.listen(); const base = `http://127.0.0.1:${address.port}`;
+  try {
+    await request(`${base}/api/providers/openai/secret`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ secret: 'sk-models-secret' }) });
+    await request(`${base}/api/providers/openai/test`, { method: 'POST', headers: { origin: base } });
+    await request(`${base}/api/providers/openai/enabled`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) });
+    const response = await request(`${base}/api/providers/openai/models`, { headers: { origin: base } });
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.deepEqual(JSON.parse(body), [{ id: 'model-a', name: 'Model A' }]);
+    assert.equal(body.includes('sk-models-secret'), false);
+  } finally { await api.close(); }
+});
+
 test('sert les modules du cockpit avec un type JavaScript', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
   const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }), staticRoot: path.resolve('app') });

@@ -50,3 +50,14 @@ test('ne déclare jamais saine une connexion sans adaptateur réel', async () =>
   assert.equal(result.lastErrorCode, 'ADAPTER_NOT_CONFIGURED');
   await assert.rejects(() => registry.setEnabled('openai', true));
 });
+
+test('liste les modèles uniquement pour un provider IA actif', async () => {
+  const adapter = async () => {};
+  adapter.models = async ({ secret }) => { assert.equal(secret, 'secret'); return [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B', secret: 'must-not-leak' }]; };
+  const { registry } = await setup({ openai: adapter });
+  await registry.saveSecret('openai', 'secret');
+  await registry.testConnection('openai');
+  await registry.setEnabled('openai', true);
+  assert.deepEqual(await registry.listModels('openai'), [{ id: 'model-a', name: 'Model A' }, { id: 'model-b', name: 'Model B' }]);
+  await assert.rejects(() => registry.listModels('dataforseo'), /ne propose pas de modèles IA/);
+});

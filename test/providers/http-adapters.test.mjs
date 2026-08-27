@@ -58,6 +58,25 @@ test('génère du JSON avec les adapters IA autorisés', async () => {
   assert.equal(JSON.stringify(outputs).includes('-key'), false);
 });
 
+test('découvre les modèles IA sans exposer le credential', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    const body = String(url).includes('anthropic') ? { data: [{ id: 'claude-test', display_name: 'Claude test' }] } : String(url).includes('generativelanguage') ? { models: [{ name: 'models/gemini-test', displayName: 'Gemini test' }] } : { data: [{ id: 'model-test', owned_by: 'provider' }] };
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  } });
+  const results = await Promise.all([
+    adapters.openai.models({ secret: 'openai-secret' }),
+    adapters.anthropic.models({ secret: 'anthropic-secret' }),
+    adapters['google-gemini'].models({ secret: 'gemini-secret' }),
+    adapters.openrouter.models({ secret: 'openrouter-secret' }),
+  ]);
+  assert.deepEqual(results.map(models => models[0].id), ['model-test', 'claude-test', 'gemini-test', 'model-test']);
+  assert.deepEqual(results.map(models => models[0].name), ['model-test', 'Claude test', 'Gemini test', 'model-test']);
+  assert.equal(JSON.stringify(results).includes('secret'), false);
+  assert.equal(calls.length, 4);
+});
+
 test('utilise un seul credential DataForSEO pour les capacités SEO', async () => {
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: fakeFetch(calls) });

@@ -75,15 +75,28 @@ function adapter(test, search = null) {
   return fn;
 }
 
+function normalizeModels(body) {
+  const items = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
+  return items.map(item => {
+    const id = String(item?.id ?? item?.name ?? '').replace(/^models\//, '').trim();
+    const name = String(item?.display_name ?? item?.displayName ?? item?.name ?? id).replace(/^models\//, '').trim();
+    return id ? { id, name: name || id } : null;
+  }).filter(Boolean);
+}
+
 export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, env = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('fetch is required');
   const openai = adapter(({ secret }) => bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
+  openai.models = async ({ secret }) => normalizeModels(await bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openai.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' } } });
   const anthropic = adapter(({ secret }) => requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
+  anthropic.models = async ({ secret }) => normalizeModels(await requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
   anthropic.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' }, body: { model, max_tokens: 4096, system, messages: [{ role: 'user', content: JSON.stringify(input) }] } });
   const googleGemini = adapter(({ secret }) => requestJson(fetchImpl, 'https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': credential(secret).key } }, timeoutMs));
+  googleGemini.models = async ({ secret }) => normalizeModels(await requestJson(fetchImpl, 'https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': credential(secret).key } }, timeoutMs));
   googleGemini.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'google-gemini', endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, headers: { 'x-goog-api-key': credential(secret).key }, body: { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json' } } });
   const openrouter = adapter(({ secret }) => bearer('https://openrouter.ai/api/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
+  openrouter.models = async ({ secret }) => normalizeModels(await bearer('https://openrouter.ai/api/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openrouter.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'openrouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' } } });
   const dataforseo = adapter(({ secret }) => dataForSeoRequest(fetchImpl, secret, 'appendix/user_data', {}, timeoutMs));
   dataforseo.serp = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/task_post', { method: 'POST', body: tasks }, timeoutMs);
