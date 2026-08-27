@@ -3,11 +3,15 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, audits = null, publicAudits = null, dossiers = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, publicAudits = null, demos = null, dossiers = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
       await ready;
+      if (parts[0] === 'demo' && parts.length === 2 && demos) {
+        const demo = await demos.read(parts[1]);
+        return sendContent(response, 200, demo.value.replace(/<head>/i, '<head><meta name="robots" content="noindex,nofollow">'), demo.contentType, { 'X-Robots-Tag': 'noindex, nofollow' });
+      }
       if (parts[0] !== 'api') throw new NotFoundError();
       if (parts[1] === 'intake' && parts[2] === 'dossiers' && parts.length === 3 && method === 'POST' && dossiers) {
         const body = await readJsonBody(request);
@@ -77,7 +81,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         if (parts.length === 2 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await runs.start(body.workflowId, body.input ?? {})); }
         if (parts.length === 4 && parts[3] === 'artifacts' && method === 'GET' && artifacts) return sendJson(response, 200, await artifacts.list(id(parts[2])));
         if (parts.length === 5 && parts[3] === 'artifacts' && method === 'GET' && artifacts) { const artifact = await artifacts.read(id(parts[2]), id(parts[4])); return sendContent(response, 200, artifact.value, artifact.contentType, { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:" }); }
-        if (parts.length === 4 && parts[3] === 'decision' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await runs.decide(id(parts[2]), body.decision)); }
+        if (parts.length === 4 && parts[3] === 'decision' && method === 'PUT') { const body = await readJsonBody(request); const decided = await runs.decide(id(parts[2]), body.decision); const presentation = body.decision === 'APPROVED' && demos ? await demos.create(decided.id) : null; return sendJson(response, 200, presentation ? { ...decided, presentation } : decided); }
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await runs.get(id(parts[2])));
         if (parts.length === 4 && parts[3] === 'events' && method === 'GET') return sendJson(response, 200, await runs.events(id(parts[2])));
         if (parts.length === 4 && parts[3] === 'resume' && method === 'POST') {

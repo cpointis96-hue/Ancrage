@@ -20,6 +20,7 @@ import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
 import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
+import { createDemoRegistry } from './demos/demo-registry.mjs';
 
 const defaultsRoot = new URL('../fixtures/defaults/', import.meta.url);
 
@@ -75,6 +76,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, contractRegistry: contracts, cliProfileRegistry: cliProfiles, templateRegistry: templates, implementations });
   const simulation = createClientSiteSimulation({ store, engine: runs, dossiers, faults });
   const artifacts = createArtifactRegistry({ store, runs });
+  const demos = createDemoRegistry({ store, artifacts, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const internet = createDomainResearchService({ store, runs });
@@ -89,5 +91,5 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedPrompt(store, prompts, 'copywriter');
     await seedTemplate(store, templates, 'site-preview');
   })();
-  return { artifacts, audits, cliProfiles, contracts, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
+  return { artifacts, audits, cliProfiles, contracts, demos, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
 }

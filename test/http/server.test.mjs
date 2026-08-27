@@ -134,7 +134,15 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.match(await site.text(), /Le Rivage/);
 
     const decision = await request(`${base}/api/runs/${run.id}/decision`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'APPROVED' }) });
-    assert.equal(JSON.parse(await decision.text()).operatorDecision.decision, 'APPROVED');
+    const decided = JSON.parse(await decision.text());
+    assert.equal(decided.operatorDecision.decision, 'APPROVED');
+    assert.match(decided.presentation.href, /^\/demo\/[A-Za-z0-9_-]{40,}$/);
+    const demo = await request(`${base}${decided.presentation.href}`);
+    assert.equal(demo.status, 200);
+    assert.equal(demo.headers['x-robots-tag'], 'noindex, nofollow');
+    assert.match(await demo.text(), /Le Rivage/);
+    const missingDemo = await request(`${base}/demo/not-a-real-token`);
+    assert.equal(missingDemo.status, 404);
     const open = await request(`${base}/api/dossiers/${dossier.id}/open`, { method: 'POST', headers: { origin: base } });
     assert.equal(open.status, 200);
     assert.equal(opened, path.join(root, 'dossiers', dossier.id));
