@@ -43,6 +43,17 @@ Le parcours complet est défini dans [87 — Parcours client de référence](../
 
 ## Answer
 
+### Politique de décision retenue — 27 août 2026
+
+La confiance n'est pas affichée comme un score au prospect. Le moteur utilise des bandes internes explicables :
+
+- `AUTO_CONTINUE` uniquement pour une fiche unique, avec nom normalisé et ville structurée cohérents, au moins un signal corroborant fiable (adresse, téléphone ou domaine officiel) et aucun conflit critique ;
+- `ASK_CONFIRMATION` dès qu'il existe plusieurs candidats, un signal contradictoire ou une correspondance qui n'atteint pas toutes les conditions précédentes ;
+- `ASK_MORE_DATA` lorsque l'identité ne peut pas être rapprochée de façon sûre, avec demande de l'adresse uniquement ;
+- aucune fiche ne déclenche un audit GMB ou un crawl tant que la branche n'est pas autorisée par cette décision.
+
+Le prospect voit une confirmation de lecture dans le seul cas `AUTO_CONTINUE`, une sélection explicite dans `ASK_CONFIRMATION`, ou l'aperçu local dans `ASK_MORE_DATA`. Les seuils numériques internes seront calibrés sur le vertical slice et ne modifieront pas ces garanties qualitatives sans décision documentée.
+
 Après l'action « Ce n'est pas mon établissement », le parcours ouvre directement la branche d'aperçu local. Il demande uniquement l'adresse de l'établissement, sans redemander la ville déjà sélectionnée et sans exiger d'abord un lien Google. L'aperçu reste borné : site officiel éventuel, intentions et mots-clés locaux, concurrents directs et opportunités de SEO local. Il indique explicitement que la fiche GMB n'a pas été confirmée et conserve la possibilité de préparer le site sans ressaisie.
 
 Décision HITL : choix 2, confirmé le 20 août 2026.

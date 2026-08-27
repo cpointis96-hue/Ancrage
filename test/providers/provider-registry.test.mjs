@@ -30,6 +30,7 @@ test('health check borné puis activation conditionnelle', async () => {
   const checked = await registry.testConnection('openai');
   assert.equal(checked.health, 'healthy');
   assert.equal((await registry.setEnabled('openai', true)).enabled, true);
+  assert.equal((await registry.testConnection('openai')).enabled, true);
 });
 
 test('échec du provider reste expurgé et désactivé', async () => {

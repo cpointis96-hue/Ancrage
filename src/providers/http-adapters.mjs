@@ -22,6 +22,29 @@ function credential(secret) {
   return { key: value, token: value };
 }
 
+function dataForSeoCredential(secret) {
+  if (typeof secret !== 'string' || !secret.trim()) throw Object.assign(new Error('Missing credential'), { code: 'MISSING_CREDENTIAL' });
+  try {
+    const value = JSON.parse(secret);
+    if (typeof value.login !== 'string' || !value.login.trim() || typeof value.password !== 'string' || !value.password.trim()) throw new Error('invalid');
+    return { login: value.login.trim(), password: value.password.trim() };
+  } catch {
+    throw Object.assign(new Error('DataForSEO credential must be JSON'), { code: 'INVALID_CREDENTIAL' });
+  }
+}
+
+function dataForSeoRequest(fetchImpl, secret, path, { method = 'GET', body = undefined } = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const { login, password } = dataForSeoCredential(secret);
+  const headers = { authorization: `Basic ${Buffer.from(`${login}:${password}`).toString('base64')}` };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  return requestJson(fetchImpl, `https://api.dataforseo.com/v3/${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, timeoutMs).then(result => {
+    if (result?.status_code !== undefined && result.status_code !== 20000) {
+      throw Object.assign(new Error('DataForSEO rejected the request'), { code: `DATAFORSEO_${result.status_code}` });
+    }
+    return result;
+  });
+}
+
 function bearer(url, { fetchImpl, token, timeoutMs }) {
   return requestJson(fetchImpl, url, { headers: { authorization: `Bearer ${token}` } }, timeoutMs);
 }
@@ -44,6 +67,13 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   const anthropic = adapter(({ secret }) => requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
   const googleGemini = adapter(({ secret }) => requestJson(fetchImpl, 'https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': credential(secret).key } }, timeoutMs));
   const openrouter = adapter(({ secret }) => bearer('https://openrouter.ai/api/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
+  const dataforseo = adapter(({ secret }) => dataForSeoRequest(fetchImpl, secret, 'appendix/user_data', {}, timeoutMs));
+  dataforseo.serp = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/task_post', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.keywordSearchVolume = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/search_volume/task_post', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.keywordIdeas = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/keywords_for_keywords/task_post', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.serpCompetitors = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/serp_competitors/live', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.domainIntersection = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/domain_intersection/live', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.onPage = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'on_page/task_post', { method: 'POST', body: tasks }, timeoutMs);
 
   const cloudflare = adapter(({ secret }) => {
     const value = credential(secret);
@@ -88,5 +118,5 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
     return body?.results ?? [];
   });
 
-  return { anthropic, cloudflare, dynadot, googleGemini, nameCom, namesilo, openai, openrouter };
+  return { anthropic, cloudflare, dataforseo, dynadot, googleGemini, nameCom, namesilo, openai, openrouter };
 }

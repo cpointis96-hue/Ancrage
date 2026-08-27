@@ -418,7 +418,12 @@ async function renderProviders() {
     detail.innerHTML = emptyState('Aucun provider', 'Le registre local est vide.');
     return;
   }
-  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2></div></header><section class="connection-list">${providers.map(provider => `<div class="provider-row"><div class="connection-name"><strong>${esc(provider.name)}</strong></div><div class="provider-key"><input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" placeholder="Clé API" aria-label="Clé API ${esc(provider.name)}" value="${provider.configured ? 'sk-••••••••' : ''}" data-masked="${provider.configured}" data-provider-secret="${esc(provider.id)}"></div><button class="icon-control compact-icon" type="button" aria-label="Enregistrer la clé ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button></div>`).join('')}</section></div>`;
+  detail.innerHTML = `<div class="detail-inner provider-page"><header class="inspect-head"><div><h2>Providers</h2></div></header><section class="connection-list">${providers.map(provider => { const isDataForSeo = provider.id === 'dataforseo'; const label = isDataForSeo ? 'Identifiants API' : 'Clé API'; const value = provider.configured ? '••••••••' : ''; const control = isDataForSeo ? `<div class="dataforseo-fields"><input type="text" name="dataforseo-api-login" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" placeholder="Login API (email)" aria-label="Login API DataForSEO" data-dataforseo-login><input type="password" name="dataforseo-api-password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" placeholder="API password" aria-label="API password DataForSEO" data-dataforseo-password></div>` : `<input type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore="true" data-lpignore="true" placeholder="${label}" aria-label="${label} ${esc(provider.name)}" value="${value}" data-masked="${provider.configured}" data-provider-secret="${esc(provider.id)}">`; return `<div class="provider-row${isDataForSeo ? ' dataforseo-row' : ''}"><div class="connection-name"><strong>${esc(provider.name)}</strong></div><div class="provider-key">${control}</div><button class="icon-control compact-icon" type="button" aria-label="Enregistrer ${label.toLowerCase()} ${esc(provider.name)}" title="Enregistrer" data-save-provider="${esc(provider.id)}">${icon('save')}</button><button class="connection-toggle ${provider.enabled ? 'on' : ''}" type="button" aria-label="${provider.enabled ? 'Désactiver' : 'Activer'} ${esc(provider.name)}" aria-pressed="${provider.enabled}" data-toggle-provider="${esc(provider.id)}"><span></span></button></div>`; }).join('')}</section></div>`;
+  document.querySelectorAll('[data-dataforseo-login], [data-dataforseo-password]').forEach(input => {
+    const focusInput = event => { event.stopPropagation(); input.focus({ preventScroll: true }); };
+    input.addEventListener('pointerdown', focusInput);
+    input.addEventListener('click', focusInput);
+  });
   document.querySelectorAll('[data-provider-secret]').forEach(input => {
     const focusInput = event => { event.stopPropagation(); input.focus({ preventScroll: true }); };
     input.addEventListener('pointerdown', focusInput);
@@ -432,6 +437,18 @@ async function renderProviders() {
   bindAll('[data-save-provider]', async button => {
     const id = button.dataset.saveProvider;
     const input = document.querySelector(`[data-provider-secret="${id}"]`);
+    if (id === 'dataforseo') {
+      const login = document.querySelector('[data-dataforseo-login]');
+      const password = document.querySelector('[data-dataforseo-password]');
+      if (!login.value.trim()) { notify('Saisissez le login API.'); login.focus(); return; }
+      if (!password.value) { notify('Saisissez l’API password.'); password.focus(); return; }
+      const secret = JSON.stringify({ login: login.value.trim(), password: password.value });
+      const checked = await perform(button, () => api.testProviderSecret(id, secret));
+      if (!checked.ok || checked.value.health !== 'healthy') { notify(checked.value?.lastErrorCode?.startsWith('DATAFORSEO_') ? 'DataForSEO refuse ces identifiants API.' : 'DataForSEO est momentanément inaccessible.'); return; }
+      const result = await perform(button, () => api.saveSecret(id, secret), 'Identifiants enregistrés');
+      if (result.ok) { password.value = ''; await api.testProvider(id).catch(() => {}); await render(); }
+      return;
+    }
     if (input.dataset.masked === 'true') { notify('Clé déjà enregistrée.'); return; }
     if (!input.value.trim()) { notify('Saisissez une clé.'); input.focus(); return; }
     const secret = input.value;

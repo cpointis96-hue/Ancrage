@@ -41,6 +41,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
     const definition = await getDefinition(id); const secret = secretOverride ?? await secretStore.get(SECRET_REF(id));
     if (!secret) throw new ValidationError('Secret absente.');
     const adapter = adapters[id];
+    const wasEnabled = Boolean((await statuses())[id]?.enabled);
     const started = Date.now();
     let health = 'healthy'; let lastErrorCode = null;
     try {
@@ -49,8 +50,8 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
         if (!adapter) throw Object.assign(new Error('adapter unavailable'), { code: 'ADAPTER_NOT_CONFIGURED' });
         await Promise.race([Promise.resolve(adapter({ secret, definition })), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), timeoutMs); })]);
       } finally { clearTimeout(timer); }
-    } catch (error) { health = 'unhealthy'; lastErrorCode = error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'ADAPTER_NOT_CONFIGURED' ? 'ADAPTER_NOT_CONFIGURED' : 'CONNECTION_FAILED'; }
-    await saveStatus(id, { health, lastCheckedAt: clock().toISOString(), lastErrorCode, enabled: false });
+    } catch (error) { health = 'unhealthy'; lastErrorCode = error.code?.startsWith('DATAFORSEO_') ? error.code : error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'ADAPTER_NOT_CONFIGURED' ? 'ADAPTER_NOT_CONFIGURED' : 'CONNECTION_FAILED'; }
+    await saveStatus(id, { health, lastCheckedAt: clock().toISOString(), lastErrorCode, enabled: health === 'healthy' ? wasEnabled : false });
     return { ...(await list()).find(item => item.id === id), durationMs: Date.now() - started };
   }
   async function setEnabled(id, enabled) {

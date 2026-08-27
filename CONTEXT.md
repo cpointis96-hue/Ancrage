@@ -111,8 +111,12 @@ Représentation canonique et sourcée d'un établissement local, reliant identit
 _Avoid_: simple fiche Google copiée, agrégat de sources contradictoires
 
 **EstablishmentMatch**:
-Résultat versionné du rapprochement entre une demande minimale, un établissement candidat, un domaine et des sources publiques, avec niveau de confiance, preuves, contradictions et décision de continuer ou demander confirmation.
+Résultat versionné du rapprochement entre une demande minimale, un établissement candidat, un domaine et des sources publiques, avec niveau de confiance interne, preuves, contradictions et décision `AUTO_CONTINUE`, `ASK_CONFIRMATION` ou `ASK_MORE_DATA`. `AUTO_CONTINUE` exige une fiche unique cohérente et corroborée sans conflit critique ; le score n'est jamais présenté au prospect.
 _Avoid_: établissement deviné, URL choisie arbitrairement
+
+**MatchDecision**:
+Décision explicable produite par un `EstablishmentMatch` qui autorise la continuation automatique dans le seul cas sûr, demande une confirmation explicite en cas ambigu ou demande l'adresse pour ouvrir un aperçu local lorsqu'aucune identité fiable n'est établie.
+_Avoid_: score public, sélection silencieuse
 
 **SEOAudit**:
 Analyse versionnée et bornée d'un site identifié, composée de faits observés, métriques calculées, preuves, problèmes, recommandations, limites et livrables.

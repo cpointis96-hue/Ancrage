@@ -655,8 +655,12 @@ a { color: var(--moss); }
 .connection-name { min-width: 0; }
 .connection-name strong { display: block; font-size: 13px; font-weight: 620; overflow-wrap: anywhere; }
 .provider-key { min-width: 0; }
-.provider-key input { width: 100%; height: 32px; min-width: 0; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: #101710; color: var(--ink); }
-.provider-key input::placeholder { color: var(--dim); }
+.provider-key input, .provider-key textarea { width: 100%; min-width: 0; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: #101710; color: var(--ink); }
+.provider-key input { height: 32px; }
+.provider-key textarea { min-height: 68px; padding-top: 7px; padding-bottom: 7px; resize: vertical; line-height: 1.35; }
+.provider-key input::placeholder, .provider-key textarea::placeholder { color: var(--dim); }
+.dataforseo-row { align-items: start; }
+.dataforseo-fields { display: grid; gap: 6px; }
 .compact-icon { width: 32px; min-width: 32px; height: 32px; min-height: 32px; }
 .provider-row .connection-toggle { justify-self: end; }
 .connection-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; min-height: 54px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }

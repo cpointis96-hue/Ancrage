@@ -57,6 +57,12 @@ Le niveau gratuit est l'audit standard : crawl plus large, règles SEO détermin
 
 Décision HITL : choix 2, confirmé le 20 août 2026.
 
+## Décision opérationnelle — dépassement de budget
+
+Les seuils 50/80/100 % produisent une notification et un `CostEvent`. À 100 %, aucune nouvelle dépense optionnelle ne démarre. Une branche essentielle déjà engagée peut terminer uniquement si son coût restant est connu et reste sous le plafond dur ; sinon elle devient `PARTIAL` ou `BLOCKED` avant l'appel suivant. Les branches optionnelles sont arrêtées proprement avec leur cause et leurs résultats disponibles.
+
+Une reprise exige une nouvelle enveloppe explicitement autorisée et un nouveau run. Aucun fallback premium, aucune boucle de relance et aucune hausse automatique de budget ne sont permis.
+
 Pour le MVP, l'audit standard gratuit utilise le profil prudent : 50 URL maximum, 3 minutes, 25 Mo, crawl HTML et mesures ciblées, sans rendu JavaScript complet. Ces valeurs restent à valider par le vertical slice et les limites fournisseurs avant activation commerciale.
 
 Décision HITL : choix 1, confirmé le 20 août 2026.

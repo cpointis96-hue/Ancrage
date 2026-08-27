@@ -39,6 +39,37 @@ test('accepte les credentials structurés nécessaires aux APIs composites', asy
   assert.match(calls[1].options.headers.authorization, /^Basic /);
 });
 
+test('utilise un seul credential DataForSEO pour les capacités SEO', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: fakeFetch(calls) });
+  const secret = JSON.stringify({ login: 'user@example.com', password: 'api-password' });
+  await adapters.dataforseo({ secret });
+  await adapters.dataforseo.serp({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
+  await adapters.dataforseo.keywordSearchVolume({ secret, tasks: [{ keywords: ['restaurant'] }] });
+  await adapters.dataforseo.serpCompetitors({ secret, tasks: [{ keywords: ['restaurant'], location_code: 2410, language_code: 'en' }] });
+  await adapters.dataforseo.domainIntersection({ secret, tasks: [{ target1: 'example.com', target2: 'competitor.com', location_code: 2410, language_code: 'en' }] });
+  await adapters.dataforseo.onPage({ secret, tasks: [{ target: 'example.com', max_crawl_pages: 1 }] });
+  assert.equal(calls.length, 6);
+  assert.equal(calls.every(call => /^Basic /.test(call.options.headers.authorization)), true);
+  assert.equal(calls.every(call => !JSON.stringify(call).includes('api-password')), true);
+  assert.match(calls[1].url, /api\.dataforseo\.com\/v3\/serp\/google\/organic\/task_post/);
+});
+
+test('normalise le credential DataForSEO et refuse une erreur API dans une réponse HTTP 200', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      return { ok: true, status: 200, text: async () => JSON.stringify({ status_code: 40100, status_message: 'Unauthorized' }) };
+    },
+  });
+  await assert.rejects(
+    () => adapters.dataforseo({ secret: JSON.stringify({ login: ' user@example.com ', password: ' api-password\n' }) }),
+    error => error.code === 'DATAFORSEO_40100',
+  );
+  assert.equal(Buffer.from('user@example.com:api-password').toString('base64'), calls[0].options.headers.authorization.slice(6));
+});
+
 test('recherche avec les adapters registrar sans divulguer la clé dans le résultat', async () => {
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: fakeFetch(calls), env: { CLOUDFLARE_ACCOUNT_ID: 'account', NAMECOM_USERNAME: 'user' } });
