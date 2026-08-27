@@ -49,7 +49,6 @@ export function createPromptRegistry({ store, clock = () => new Date() }) {
       id,
       name: parsed.metadata.name,
       ownerStep: parsed.metadata.ownerStep,
-      modelProfile: parsed.metadata.modelProfile,
       outputContract: parsed.metadata.outputContract,
       draftHash: result.hash,
       activeVersionId: existing?.activeVersionId ?? null,
@@ -86,7 +85,11 @@ export function createPromptRegistry({ store, clock = () => new Date() }) {
     }
 
     parsePromptMarkdown(prompt.markdown);
+    const contract = await store.readText(`config/contracts/${prompt.outputContract}.schema.json`, null);
+    if (contract === null) throw new ValidationError(`Contrat de sortie introuvable : ${prompt.outputContract}`);
     const versionId = `v-${versionStamp(clock())}-${prompt.draftHash.slice(-8)}`;
+    const existingVersion = prompt.versions.find(version => version.id === versionId);
+    if (existingVersion) return existingVersion;
     await store.writeText(promptPath(id, `versions/${versionId}.md`), prompt.markdown, {
       immutable: true,
     });

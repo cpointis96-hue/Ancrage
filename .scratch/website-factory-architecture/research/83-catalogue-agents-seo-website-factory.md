@@ -30,8 +30,8 @@ Agents return structured contributions. They do not mutate the source of truth, 
 | `ReportExplainer` | approved findings | readable explanations | report data | small approved model |
 | `BusinessProfileWriter` | verified facts and supplied story | business profile draft | intake/evidence | small model + schema gate |
 | `ContentPlanner` | audit, intents, business profile | page/content plan | final report | deterministic + small model |
-| `Copywriter` | approved plan and evidence | page copy drafts | content plan | local-small first |
-| `Translator` | approved source copy, language | versioned translation | copy draft | local-small/cloud-small approved |
+| `Copywriter` | approved plan and evidence | page copy drafts | content plan | modèle choisi dans l’étape |
+| `Translator` | approved source copy, language | versioned translation | copy draft | modèle choisi dans l’étape |
 | `AssetCurator` | supplied assets and rights metadata | selected asset refs | photo intake | deterministic + vision only when allowed |
 | `SiteSpecComposer` | plan, copy, assets, SEO rules | versioned `SiteSpec` | all site contributions | deterministic merge |
 | `Renderer` | `SiteSpec`, template | build artifact | SiteSpec | deterministic |

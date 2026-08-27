@@ -2,7 +2,7 @@ import { createId } from '../core/ids.mjs';
 import { createDossierRegistry } from '../dossiers/dossier-registry.mjs';
 
 const workflowId = 'client-site-simulation';
-export const clientSiteWorkflow = { id: workflowId, version: 1, steps: [
+export const clientSiteWorkflow = { id: workflowId, name: 'Création de site client', version: 1, steps: [
   { id: 'dossier-validation', kind: 'deterministic', dependsOn: [], inputRefs: [], outputRefs: ['dossier'], implementation: 'simulation-dossier-validation', timeoutMs: 1000, budget: 0 },
   { id: 'content-plan', kind: 'deterministic', dependsOn: ['dossier-validation'], inputRefs: ['dossier-validation'], outputRefs: ['contentPlan'], implementation: 'simulation-content-plan', timeoutMs: 1000, budget: 0 },
   { id: 'site-build', kind: 'deterministic', dependsOn: ['content-plan'], inputRefs: ['content-plan'], outputRefs: ['site'], implementation: 'simulation-site-build', timeoutMs: 1000, budget: 0 },

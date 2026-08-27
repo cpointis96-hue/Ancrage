@@ -16,6 +16,8 @@ const state = {
   runTab: 'overview',
   dossierTab: 'identity',
   configurationTab: 'workflows',
+  configurationCreating: null,
+  configurationDraft: null,
   internetQuery: '',
   internetResult: null,
   internetConfigOpen: false,
@@ -220,11 +222,12 @@ async function renderRuns() {
   if (run.operatorDecision?.decision === 'APPROVED' && site) runActions.push(`<a class="btn primary" href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site</a>`);
   if (dossier) runActions.push(iconControl('Ouvrir le dossier', 'folder', `data-open-dossier="${dossier.id}"`));
   const runTabs = [['overview', 'Vue'], ['steps', 'Étapes'], ['proofs', 'Preuves'], ['versions', 'Versions'], ['journal', 'Journal']];
+  const snapshotRows = run.snapshot.steps.map(step => `<div class="snapshot-step"><strong>${esc(step.id)}</strong>${step.promptRef ? `<small>Prompt : ${esc(step.promptRef)} · ${esc(step.promptVersionId)}</small><small>Modèle : ${esc(step.model)}</small>` : '<small>Étape déterministe</small>'}${step.contractRef ? `<small>Contrat : ${esc(step.contractRef)}</small>` : ''}</div>`).join('');
   const progress = `<section class="panel"><div class="section-label">Progression</div>${run.snapshot.steps.map(snapshot => {
     const step = run.steps.find(item => item.id === snapshot.id);
     return `<div class="step-row"><span><strong>${esc(snapshot.id)}</strong>${failedAttempt?.stepId === snapshot.id ? `<small>Échec précédent · ${esc(failedAttempt.errorCode)}</small>` : ''}</span>${badge(step?.status ?? 'EN ATTENTE')}</div>`;
   }).join('')}</section>`;
-  const runBody = state.runTab === 'steps' ? progress : state.runTab === 'proofs' ? `<section class="panel"><div class="section-label">Artefacts</div>${artifacts.length ? `<div class="artifact-links">${site ? `<a href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site ${icon('external')}</a>` : ''}${report ? `<a href="${esc(report.href)}" target="_blank" rel="noopener">Voir le rapport ${icon('external')}</a>` : ''}</div>` : '<p class="muted">Aucun artefact disponible pour ce run.</p>'}</section><section class="panel"><div class="section-label">Dossier source</div><p>${dossier ? `${esc(dossier.name)} · ${esc(dossier.city)} · ${dossier.assetCount} média` : 'Dossier introuvable.'}</p></section>` : state.runTab === 'versions' ? `<section class="panel"><div class="section-label">Configuration du run</div><div class="grid"><div><small>Workflow</small><strong>${esc(run.workflowId)}</strong></div><div><small>Version workflow</small><strong>${esc(run.snapshot.workflowVersion)}</strong></div>${run.snapshot.steps.map(step => `<div><small>${esc(step.id)} · prompt</small><strong>${esc(step.promptRef ?? 'Aucun')}</strong></div><div><small>${esc(step.id)} · contrat</small><strong>${esc(step.contractRef ?? 'Aucun')}</strong></div>`).join('')}</div></section>` : state.runTab === 'journal' ? `<section class="panel"><div class="section-label">Journal</div>${events.length ? events.map(event => `<div class="event-row"><span>${formatDate(event.at)}</span><strong>${esc(event.type)}</strong><small>${esc(event.stepId ?? event.decision ?? '')}</small></div>`).join('') : '<p class="muted">Aucun événement enregistré.</p>'}</section>` : `<section class="preview-card"><div class="preview-matter" aria-hidden="true"></div><div class="preview-copy"><span>Site démo</span><strong>${esc(dossier?.name ?? run.workflowId)}</strong><small>${esc(run.workflowId)} · ${run.status === 'SUCCEEDED' ? 'Aperçu prêt' : 'Aperçu en préparation'}</small></div></section><section class="facts">
+  const runBody = state.runTab === 'steps' ? progress : state.runTab === 'proofs' ? `<section class="panel"><div class="section-label">Artefacts</div>${artifacts.length ? `<div class="artifact-links">${site ? `<a href="${esc(site.href)}" target="_blank" rel="noopener">Voir le site ${icon('external')}</a>` : ''}${report ? `<a href="${esc(report.href)}" target="_blank" rel="noopener">Voir le rapport ${icon('external')}</a>` : ''}</div>` : '<p class="muted">Aucun artefact disponible pour ce run.</p>'}</section><section class="panel"><div class="section-label">Dossier source</div><p>${dossier ? `${esc(dossier.name)} · ${esc(dossier.city)} · ${dossier.assetCount} média` : 'Dossier introuvable.'}</p></section>` : state.runTab === 'versions' ? `<section class="panel"><div class="section-label">Configuration figée pour ce run</div><div class="snapshot-head"><span><small>Workflow</small><strong>${esc(run.workflowId)}</strong></span><span><small>Version active</small><strong>${esc(run.snapshot.workflowVersionId ?? run.snapshot.workflowVersion)}</strong></span><span><small>Hash</small><strong>${esc(run.snapshot.workflowHash ?? 'Ancien run sans hash')}</strong></span></div>${snapshotRows}</section>` : state.runTab === 'journal' ? `<section class="panel"><div class="section-label">Journal</div>${events.length ? events.map(event => `<div class="event-row"><span>${formatDate(event.at)}</span><strong>${esc(event.type)}</strong><small>${esc(event.stepId ?? event.decision ?? '')}</small></div>`).join('') : '<p class="muted">Aucun événement enregistré.</p>'}</section>` : `<section class="preview-card"><div class="preview-matter" aria-hidden="true"></div><div class="preview-copy"><span>Site démo</span><strong>${esc(dossier?.name ?? run.workflowId)}</strong><small>${esc(run.workflowId)} · ${run.status === 'SUCCEEDED' ? 'Aperçu prêt' : 'Aperçu en préparation'}</small></div></section><section class="facts">
       <div class="fact"><small>État</small><strong>${badge(run.status)}</strong></div>
       <div class="fact"><small>Checkpoint fiable</small><strong>${esc(checkpoint?.id ?? 'Aucun')}</strong></div>
       <div class="fact"><small>Tentatives</small><strong>${run.attempts.length}</strong></div>
@@ -301,58 +304,113 @@ async function renderDossiers() {
   bindOpenDossier();
 }
 
+const csv = value => String(value ?? '').split(',').map(item => item.trim()).filter(Boolean);
+
+function promptBody(markdown) {
+  const closing = markdown.indexOf('\n---\n', 4);
+  return closing < 0 ? markdown : markdown.slice(closing + 5).trim();
+}
+
+function promptMarkdown({ id, name, ownerStep, outputContract, body }) {
+  return `---\nid: ${id}\nname: ${name}\nownerStep: ${ownerStep}\noutputContract: ${outputContract}\n---\n${body.trim()}\n`;
+}
+
+function workflowStepEditor(step, index, prompts) {
+  const option = (value, label) => `<option value="${value}" ${step.kind === value ? 'selected' : ''}>${label}</option>`;
+  return `<section class="workflow-editor-step" data-workflow-step>
+    <header><strong>Étape ${index + 1}</strong>${iconControl(`Supprimer l’étape ${index + 1}`, 'trash', 'data-remove-workflow-step')}</header>
+    <div class="form-grid">
+      <label class="field"><span>Identifiant</span><input value="${esc(step.id ?? '')}" data-step-field="id" placeholder="analyse"></label>
+      <label class="field"><span>Type</span><select data-step-field="kind">${option('deterministic', 'Déterministe')}${option('ai', 'IA')}</select></label>
+      <label class="field span-2"><span>Implémentation</span><input value="${esc(step.implementation ?? '')}" data-step-field="implementation" placeholder="nom-de-l-implementation"></label>
+      <label class="field"><span>Dépend de</span><input value="${esc((step.dependsOn ?? []).join(', '))}" data-step-field="dependsOn" placeholder="étape-précédente"></label>
+      <label class="field"><span>Entrées reçues</span><input value="${esc((step.inputRefs ?? []).join(', '))}" data-step-field="inputRefs" placeholder="étape-précédente"></label>
+      <label class="field span-2"><span>Sorties produites</span><input value="${esc((step.outputRefs ?? []).join(', '))}" data-step-field="outputRefs" placeholder="rapport, preuves"></label>
+      <label class="field"><span>Prompt si étape IA</span><select data-step-field="promptRef"><option value="">Aucun</option>${prompts.map(prompt => `<option value="${esc(prompt.id)}" ${step.promptRef === prompt.id ? 'selected' : ''}>${esc(prompt.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Modèle si étape IA</span><input value="${esc(step.model ?? '')}" data-step-field="model" placeholder="Modèle choisi"></label>
+      <label class="field span-2"><span>Contrat de sortie</span><input value="${esc(step.contractRef ?? '')}" data-step-field="contractRef" placeholder="copy-draft"></label>
+      <label class="field"><span>Timeout en ms</span><input type="number" min="100" max="900000" value="${esc(step.timeoutMs ?? 1000)}" data-step-field="timeoutMs"></label>
+      <label class="field"><span>Budget maximum</span><input type="number" min="0" step="0.01" value="${esc(step.budget ?? 0)}" data-step-field="budget"></label>
+    </div>
+  </section>`;
+}
+
+function readWorkflowForm() {
+  const steps = [...document.querySelectorAll('[data-workflow-step]')].map((row, index) => {
+    const value = name => row.querySelector(`[data-step-field="${name}"]`).value.trim();
+    const step = {
+      id: value('id'), kind: value('kind'), trigger: index === 0 ? 'start' : 'ready',
+      dependsOn: csv(value('dependsOn')), inputRefs: csv(value('inputRefs')), outputRefs: csv(value('outputRefs')),
+      implementation: value('implementation'), timeoutMs: Number(value('timeoutMs')), budget: Number(value('budget')), approval: 'none',
+    };
+    if (value('promptRef')) step.promptRef = value('promptRef');
+    if (value('model')) step.model = value('model');
+    if (value('contractRef')) step.contractRef = value('contractRef');
+    return step;
+  });
+  return { id: $('[data-workflow-id]').value.trim(), name: $('[data-workflow-name]').value.trim(), version: Number($('[data-workflow-version]').value), steps };
+}
+
 async function renderConfiguration() {
   const [workflows, prompts] = await Promise.all([api.workflows(), api.prompts()]);
   const tabItems = state.configurationTab === 'workflows' ? workflows : prompts;
-  const selectedId = tabItems.some(item => item.id === state.selected.configuration) ? state.selected.configuration : tabItems[0]?.id;
+  const creating = state.configurationCreating === state.configurationTab;
+  const selectedId = creating ? null : (tabItems.some(item => item.id === state.selected.configuration) ? state.selected.configuration : tabItems[0]?.id);
   state.selected.configuration = selectedId;
-  list.innerHTML = listHeader('Configuration') + `<nav class="tabs list-tabs" aria-label="Type de configuration"><button class="${state.configurationTab === 'workflows' ? 'active' : ''}" type="button" data-configuration-tab="workflows">Workflows</button><button class="${state.configurationTab === 'prompts' ? 'active' : ''}" type="button" data-configuration-tab="prompts">Prompts</button></nav><div class="section-label">${state.configurationTab === 'workflows' ? 'Workflows disponibles' : 'Prompts utilisés'}</div>${tabItems.map(item => `
+  const createLabel = state.configurationTab === 'workflows' ? 'Créer un workflow' : 'Créer un prompt';
+  list.innerHTML = listHeader('Configuration', iconControl(createLabel, 'plus', 'data-new-configuration')) + `<nav class="tabs list-tabs" aria-label="Type de configuration"><button class="${state.configurationTab === 'workflows' ? 'active' : ''}" type="button" data-configuration-tab="workflows">Workflows</button><button class="${state.configurationTab === 'prompts' ? 'active' : ''}" type="button" data-configuration-tab="prompts">Prompts</button></nav><div class="section-label">${state.configurationTab === 'workflows' ? 'Workflows' : 'Prompts'}</div>${tabItems.map(item => `
     <button class="list-row ${item.id === selectedId ? 'active' : ''}" type="button" data-configuration-select="${item.id}">
-      <span class="row-top"><strong>${esc(item.name ?? item.id)}</strong>${state.configurationTab === 'prompts' ? badge(item.activeVersionId ? 'PASS' : 'WARN') : `<span class="row-count">${item.steps.length}</span>`}</span>
-      <span class="row-meta">${state.configurationTab === 'prompts' ? esc(item.ownerStep) : `${item.steps.length} étapes`}</span>
+      <span class="row-top"><strong>${esc(item.name ?? item.id)}</strong>${state.configurationTab === 'workflows' ? `<span class="row-count">${item.steps.length}</span>` : ''}</span>
+      <span class="row-meta">${state.configurationTab === 'prompts' ? `Étape ${esc(item.ownerStep)}` : `${item.steps.length} étapes`}</span>
     </button>`).join('')}`;
-  if (!selectedId) {
-    detail.innerHTML = emptyState('Aucune configuration', 'Aucun fichier de configuration n’est disponible.');
-    return;
-  }
+
   if (state.configurationTab === 'workflows') {
-    const workflow = workflows.find(item => item.id === selectedId);
-    const action = workflow.id === 'client-site-simulation' ? `<button class="btn primary" type="button" data-test-workflow>Lancer un test</button>${iconControl('Tester une interruption', 'test', 'data-test-workflow-fault')}` : '<button class="btn primary" type="button" data-open-internet>Ouvrir Internet</button>';
-    const contracts = workflow.steps.filter(step => step.contractRef);
-    detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Configuration · workflow</div><h2>${esc(workflow.id)}</h2><p>Le fichier local est utilisé par les futurs runs.</p></div><div class="detail-actions">${action}</div></header><section class="panel"><div class="section-label">Étapes dans l’ordre</div>${workflow.steps.map((step, index) => `<div class="workflow-step"><b>${String(index + 1).padStart(2, '0')}</b><span><strong>${esc(step.id)}</strong><small>${esc(step.kind)} · ${esc(step.implementation)}</small><small>Entrées : ${esc((step.inputRefs ?? []).join(' · ') || 'Aucune')} · sorties : ${esc((step.outputRefs ?? []).join(' · ') || 'Aucune')}</small></span><span>${step.timeoutMs} ms</span></div>`).join('')}</section><section class="panel"><div class="section-label">Contrats de données</div>${contracts.length ? contracts.map(step => `<div class="contract-row"><strong>${esc(step.id)}</strong><span>${esc(step.contractRef)}</span></div>`).join('') : '<p class="muted">Aucun contrat déclaré dans ce workflow.</p>'}</section></div>`;
-    $('[data-test-workflow]')?.addEventListener('click', async event => {
-      const result = await perform(event.currentTarget, () => api.startSimulation({ name: 'Maison Sillage', city: 'Pattaya' }), 'Simulation créée.');
-      if (result.ok) await go('runs', result.value.id);
-    });
-    $('[data-test-workflow-fault]')?.addEventListener('click', async event => {
-      const result = await perform(event.currentTarget, () => api.startSimulation({ name: 'Maison Reprise', city: 'Nantes' }, 'site-build'), 'Interruption injectée au rendu.');
-      if (result.ok) await go('runs', result.value.id);
-    });
-    $('[data-open-internet]')?.addEventListener('click', () => go('internet'));
+    const source = creating ? { id: '', name: '', version: 1, hash: null, activeVersionId: null, versions: [], steps: [{ id: 'premiere-etape', kind: 'deterministic', dependsOn: [], inputRefs: [], outputRefs: ['resultat'], implementation: '', timeoutMs: 1000, budget: 0 }] } : workflows.find(item => item.id === selectedId);
+    if (!source) { detail.innerHTML = emptyState('Aucun workflow', 'Créez le premier workflow pour définir ses étapes.'); }
+    else {
+      const workflow = state.configurationDraft ?? source;
+      const action = `<button class="btn primary" type="button" data-save-workflow>Enregistrer</button>${creating ? '' : iconControl('Créer une version', 'versions', 'data-version-workflow')}`;
+      const testAction = !creating && workflow.id === 'client-site-simulation' ? `<button class="btn" type="button" data-test-workflow>Lancer un test</button>${iconControl('Tester une interruption', 'test', 'data-test-workflow-fault')}` : !creating && workflow.id === 'domain-research' ? '<button class="btn" type="button" data-open-internet>Ouvrir Internet</button>' : '';
+      detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Workflow</div><h2>${creating ? 'Nouveau workflow' : esc(workflow.name || workflow.id)}</h2><p>${creating ? 'Définissez les étapes dans leur ordre d’exécution.' : `config/workflows/${esc(workflow.id)}.json`}</p></div><div class="detail-actions">${action}</div></header>
+        <section class="panel"><div class="form-grid"><label class="field"><span>Identifiant</span><input value="${esc(workflow.id)}" data-workflow-id ${creating ? '' : 'readonly'}></label><label class="field"><span>Nom</span><input value="${esc(workflow.name ?? '')}" data-workflow-name></label><label class="field"><span>Version du fichier</span><input type="number" min="1" value="${esc(workflow.version ?? 1)}" data-workflow-version></label></div></section>
+        <div class="workflow-editor">${workflow.steps.map((step, index) => workflowStepEditor(step, index, prompts)).join('')}</div>
+        <button class="btn" type="button" data-add-workflow-step>${icon('plus')} Ajouter une étape</button>
+        ${creating ? '' : `<section class="panel"><div class="section-label">Versions</div>${workflow.versions.length ? [...workflow.versions].reverse().map(version => `<div class="version-row"><span><strong>${esc(version.id)}</strong><small>${formatDate(version.createdAt)}</small></span>${workflow.activeVersionId === version.id ? '<span class="version-active">Version utilisée par les futurs runs</span>' : `<button class="btn compact" type="button" data-activate-workflow="${version.id}">Activer</button>`}</div>`).join('') : '<p class="muted">Enregistrez puis créez une première version.</p>'}</section>${testAction ? `<section class="panel"><div class="section-label">Vérifier</div><div class="detail-actions left">${testAction}</div></section>` : ''}`}
+      </div>`;
+      $('[data-add-workflow-step]')?.addEventListener('click', () => { const draft = readWorkflowForm(); draft.steps.push({ id: `etape-${draft.steps.length + 1}`, kind: 'deterministic', dependsOn: draft.steps.length ? [draft.steps.at(-1).id] : [], inputRefs: draft.steps.length ? [draft.steps.at(-1).id] : [], outputRefs: ['resultat'], implementation: '', timeoutMs: 1000, budget: 0 }); state.configurationDraft = draft; render(); });
+      bindAll('[data-remove-workflow-step]', button => { const draft = readWorkflowForm(); const index = [...document.querySelectorAll('[data-remove-workflow-step]')].indexOf(button); draft.steps.splice(index, 1); state.configurationDraft = draft; render(); });
+      $('[data-save-workflow]')?.addEventListener('click', async event => {
+        const definition = readWorkflowForm();
+        const result = await perform(event.currentTarget, () => api.saveWorkflow(definition.id, definition, creating ? null : source.hash), 'Workflow enregistré sur disque.');
+        if (result.ok) { state.configurationCreating = null; state.configurationDraft = null; state.selected.configuration = definition.id; await render(); }
+      });
+      $('[data-version-workflow]')?.addEventListener('click', async event => {
+        const definition = readWorkflowForm();
+        const result = await perform(event.currentTarget, async () => { const saved = await api.saveWorkflow(definition.id, definition, source.hash); return api.createWorkflowVersion(definition.id, saved.hash); }, 'Version immuable créée.');
+        if (result.ok) { state.configurationDraft = null; await render(); }
+      });
+      bindAll('[data-activate-workflow]', async button => { if (!window.confirm('Utiliser cette version pour les futurs runs ?')) return; const result = await perform(button, () => api.activateWorkflow(source.id, button.dataset.activateWorkflow), 'Version activée.'); if (result.ok) await render(); });
+      $('[data-test-workflow]')?.addEventListener('click', async event => { const result = await perform(event.currentTarget, () => api.startSimulation({ name: 'Maison Sillage', city: 'Pattaya' }), 'Simulation créée.'); if (result.ok) await go('runs', result.value.id); });
+      $('[data-test-workflow-fault]')?.addEventListener('click', async event => { const result = await perform(event.currentTarget, () => api.startSimulation({ name: 'Maison Reprise', city: 'Nantes' }, 'site-build'), 'Interruption injectée au rendu.'); if (result.ok) await go('runs', result.value.id); });
+      $('[data-open-internet]')?.addEventListener('click', () => go('internet'));
+    }
   } else {
-    const prompt = await api.getPrompt(selectedId);
-    detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Configuration · prompt</div><h2>${esc(prompt.name)}</h2><p>${esc(prompt.ownerStep)} · ${esc(prompt.modelProfile)}</p></div><div class="detail-actions"><button class="btn primary" type="button" data-save-prompt>Enregistrer</button>${iconControl('Créer une version', 'versions', 'data-version-prompt')}</div></header><section class="panel"><label class="field"><span>Prompt Markdown</span><textarea data-prompt-editor spellcheck="false">${esc(prompt.markdown)}</textarea></label></section><section class="panel"><div class="section-label">Versions</div>${prompt.versions.length ? [...prompt.versions].reverse().map(version => `<div class="version-row"><span><strong>${esc(version.id)}</strong><small>${formatDate(version.createdAt)}</small></span>${prompt.activeVersionId === version.id ? badge('PASS') : `<button class="btn compact" type="button" data-activate-version="${version.id}">Activer</button>`}</div>`).join('') : '<p class="muted">Aucune version créée.</p>'}</section></div>`;
-    $('[data-save-prompt]')?.addEventListener('click', async event => {
-      const markdown = $('[data-prompt-editor]').value;
-      const result = await perform(event.currentTarget, () => api.savePrompt(prompt.id, markdown, prompt.draftHash), 'Brouillon enregistré sur disque.');
-      if (result.ok) await render();
-    });
-    $('[data-version-prompt]')?.addEventListener('click', async event => {
-      const markdown = $('[data-prompt-editor]').value;
-      const result = await perform(event.currentTarget, async () => {
-        const saved = markdown === prompt.markdown ? { hash: prompt.draftHash } : await api.savePrompt(prompt.id, markdown, prompt.draftHash);
-        return api.createPromptVersion(prompt.id, saved.hash);
-      }, 'Version immuable créée.');
-      if (result.ok) await render();
-    });
-    bindAll('[data-activate-version]', async button => {
-      if (!window.confirm('Activer cette version pour les futurs runs ?')) return;
-      const result = await perform(button, () => api.activatePrompt(prompt.id, button.dataset.activateVersion), 'Version activée.');
-      if (result.ok) await render();
-    });
+    const prompt = creating ? { id: '', name: '', ownerStep: '', outputContract: '', markdown: '', draftHash: null, activeVersionId: null, versions: [] } : (selectedId ? await api.getPrompt(selectedId) : null);
+    if (!prompt) detail.innerHTML = emptyState('Aucun prompt', 'Créez le premier prompt pour écrire ses instructions.');
+    else {
+      detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><div class="eyebrow">Prompt</div><h2>${creating ? 'Nouveau prompt' : esc(prompt.name)}</h2><p>${creating ? 'Le prompt sera enregistré comme fichier Markdown.' : `config/prompts/${esc(prompt.id)}/draft.md`}</p></div><div class="detail-actions"><button class="btn primary" type="button" data-save-prompt>Enregistrer</button>${creating ? '' : iconControl('Créer une version', 'versions', 'data-version-prompt')}</div></header>
+        <section class="panel"><div class="form-grid"><label class="field"><span>Identifiant</span><input value="${esc(prompt.id)}" data-prompt-id ${creating ? '' : 'readonly'}></label><label class="field"><span>Nom</span><input value="${esc(prompt.name)}" data-prompt-name></label><label class="field"><span>Étape propriétaire</span><input value="${esc(prompt.ownerStep)}" data-prompt-owner placeholder="analyse"></label><label class="field"><span>Contrat de sortie</span><input value="${esc(prompt.outputContract)}" data-prompt-contract placeholder="audit-report"></label><label class="field span-2"><span>Instructions</span><textarea data-prompt-body>${esc(promptBody(prompt.markdown))}</textarea></label></div></section>
+        ${creating ? '' : `<section class="panel"><div class="section-label">Versions</div>${prompt.versions.length ? [...prompt.versions].reverse().map(version => `<div class="version-row"><span><strong>${esc(version.id)}</strong><small>${formatDate(version.createdAt)}</small></span>${prompt.activeVersionId === version.id ? '<span class="version-active">Version utilisée par les futurs runs</span>' : `<button class="btn compact" type="button" data-activate-version="${version.id}">Activer</button>`}</div>`).join('') : '<p class="muted">Enregistrez puis créez une première version.</p>'}</section>`}
+      </div>`;
+      const readPrompt = () => promptMarkdown({ id: $('[data-prompt-id]').value.trim(), name: $('[data-prompt-name]').value.trim(), ownerStep: $('[data-prompt-owner]').value.trim(), outputContract: $('[data-prompt-contract]').value.trim(), body: $('[data-prompt-body]').value });
+      $('[data-save-prompt]')?.addEventListener('click', async event => { const id = $('[data-prompt-id]').value.trim(); const result = await perform(event.currentTarget, () => api.savePrompt(id, readPrompt(), creating ? null : prompt.draftHash), 'Prompt enregistré sur disque.'); if (result.ok) { state.configurationCreating = null; state.selected.configuration = id; await render(); } });
+      $('[data-version-prompt]')?.addEventListener('click', async event => { const markdown = readPrompt(); const result = await perform(event.currentTarget, async () => { const saved = await api.savePrompt(prompt.id, markdown, prompt.draftHash); return api.createPromptVersion(prompt.id, saved.hash); }, 'Version immuable créée.'); if (result.ok) await render(); });
+      bindAll('[data-activate-version]', async button => { if (!window.confirm('Utiliser cette version pour les futurs runs ?')) return; const result = await perform(button, () => api.activatePrompt(prompt.id, button.dataset.activateVersion), 'Version activée.'); if (result.ok) await render(); });
+    }
   }
-  bindAll('[data-configuration-tab]', button => { state.configurationTab = button.dataset.configurationTab; state.selected.configuration = null; render(); });
-  bindAll('[data-configuration-select]', button => { state.selected.configuration = button.dataset.configurationSelect; render(); });
+  $('[data-new-configuration]')?.addEventListener('click', () => { state.configurationCreating = state.configurationTab; state.configurationDraft = null; state.selected.configuration = null; render(); });
+  bindAll('[data-configuration-tab]', button => { state.configurationTab = button.dataset.configurationTab; state.configurationCreating = null; state.configurationDraft = null; state.selected.configuration = null; render(); });
+  bindAll('[data-configuration-select]', button => { state.configurationCreating = null; state.configurationDraft = null; state.selected.configuration = button.dataset.configurationSelect; render(); });
 }
 
 function providerErrorLabel(code) {

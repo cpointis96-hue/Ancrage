@@ -34,6 +34,8 @@ Le scénario client synthétique reprend le nom, le lieu, l’histoire, le menu,
 
 Les prompts, workflows et contrats éditables vivent dans `config/` sous le répertoire de données. Un brouillon doit être enregistré, versionné puis activé ; un run conserve ses références de configuration dans son manifest. Les écritures passent par le stockage atomique et les versions de prompt sont immuables.
 
+Le guide [Configurer les workflows et les prompts](../guides/configurer-workflows-prompts.md) décrit le parcours opérateur, le sens des entrées et sorties, la sélection explicite du modèle et les fichiers écrits à chaque action.
+
 ## Secrets
 
 Sur macOS, les secrets sont stockés dans le trousseau via `security`, service `com.ancrage.provider`, sous le compte normalisé du provider. Le cockpit ne reçoit que `configured`, `health`, `enabled` et les codes d’erreur expurgés. Les tests utilisent `createMemorySecretStore` et ne doivent jamais recevoir une vraie clé.

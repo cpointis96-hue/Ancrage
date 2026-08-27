@@ -12,7 +12,6 @@ const prompt = `---
 id: copywriter
 name: Copywriter
 ownerStep: S7
-modelProfile: local-small
 outputContract: copy-draft
 ---
 Rédige uniquement à partir des faits autorisés.
@@ -29,6 +28,7 @@ beforeEach(async () => {
     store,
     clock: () => new Date('2026-08-26T09:10:11.000Z'),
   });
+  await store.writeJson('config/contracts/copy-draft.schema.json', { type: 'object' }, { expectedHash: null });
 });
 
 afterEach(async () => {

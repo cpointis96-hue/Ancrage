@@ -1,7 +1,7 @@
 import { assertResourceId } from '../core/ids.mjs';
 import { ValidationError } from '../core/errors.mjs';
 
-const REQUIRED_FIELDS = ['id', 'name', 'ownerStep', 'modelProfile', 'outputContract'];
+const REQUIRED_FIELDS = ['id', 'name', 'ownerStep', 'outputContract'];
 const ALLOWED_FIELDS = new Set(REQUIRED_FIELDS);
 
 export function parsePromptMarkdown(markdown) {
@@ -38,10 +38,9 @@ export function parsePromptMarkdown(markdown) {
   }
 
   assertResourceId(metadata.id, 'id');
-  assertResourceId(metadata.modelProfile, 'modelProfile');
   assertResourceId(metadata.outputContract, 'outputContract');
-  if (!/^S(?:[0-9]|10)$/.test(metadata.ownerStep)) {
-    throw new ValidationError('ownerStep doit être compris entre S0 et S10.');
+  if (!/^(?:S(?:[0-9]|10)|[a-z0-9][a-z0-9-]{0,63})$/.test(metadata.ownerStep)) {
+    throw new ValidationError('ownerStep invalide.');
   }
   if (metadata.name.length > 80) throw new ValidationError('Le nom du prompt est trop long.');
 

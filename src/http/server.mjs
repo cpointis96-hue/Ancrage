@@ -35,5 +35,12 @@ async function serveStatic(request, response, root, headers) {
     '.webp': 'image/webp',
     '.woff2': 'font/woff2',
   };
-  try { response.writeHead(200, { ...headers, 'Content-Type': contentTypes[extname(file).toLowerCase()] ?? 'application/octet-stream' }); response.end(await readFile(file)); } catch { response.writeHead(404, headers); response.end('Not found'); }
+  try {
+    const body = await readFile(file);
+    response.writeHead(200, { ...headers, 'Content-Type': contentTypes[extname(file).toLowerCase()] ?? 'application/octet-stream' });
+    response.end(body);
+  } catch {
+    if (!response.headersSent) response.writeHead(404, headers);
+    if (!response.writableEnded) response.end('Not found');
+  }
 }

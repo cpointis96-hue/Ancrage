@@ -37,7 +37,7 @@ Every provider record exposes only the controls needed by an operator:
 2. Prefer local `small` for classification, extraction from already-authorized text, simple grouping, and constrained rewriting.
 3. Use approved cloud `small` only when local capability, latency, or quality is insufficient and the provider/data policy allows it.
 4. Use a larger model only for an explicitly approved ambiguous synthesis with a hard budget.
-5. Never silently route from local-small to premium cloud.
+5. Never silently replace the model explicitly selected for a workflow step.
 6. If no permitted model is available, stop with `BLOCK` or request human intervention.
 
 ## 4. Token and cost control

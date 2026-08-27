@@ -38,7 +38,7 @@ Le cockpit permet de modifier la description, le rôle, la position dans le work
 
 Le fallback conserve le même niveau de capacité et de coût cible :
 
-`local-small` → `cloud-small`
+Le modèle de chaque étape IA est choisi explicitement par l’opérateur. Aucun basculement automatique de modèle.
 
 Un MacBook Air avec 16 Go de RAM pourra utiliser un petit modèle local lorsque la tâche le permet. S'il est indisponible, le système choisira un modèle cloud économique équivalent — par exemple une classe “mini/haïku/sonnet léger” selon le fournisseur — sans basculer automatiquement vers un modèle premium plus puissant.
 

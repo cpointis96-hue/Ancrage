@@ -38,6 +38,25 @@ test('sert les modules du cockpit avec un type JavaScript', async () => {
   } finally { await api.close(); }
 });
 
+test('crée, versionne et active un workflow via l’API', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
+  const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) });
+  const address = await api.listen();
+  const base = `http://127.0.0.1:${address.port}`;
+  const definition = { id: 'audit-simple', name: 'Audit simple', version: 1, steps: [{ id: 'collecte', kind: 'deterministic', trigger: 'start', dependsOn: [], inputRefs: [], outputRefs: ['faits'], implementation: 'collect-query', timeoutMs: 1000, budget: 0, approval: 'none' }] };
+  try {
+    const savedResponse = await request(`${base}/api/workflows/audit-simple/draft`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ definition, expectedHash: null }) });
+    assert.equal(savedResponse.status, 200);
+    const saved = JSON.parse(await savedResponse.text());
+    const versionResponse = await request(`${base}/api/workflows/audit-simple/versions`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ expectedDraftHash: saved.hash }) });
+    const version = JSON.parse(await versionResponse.text());
+    assert.equal(versionResponse.status, 200);
+    const activeResponse = await request(`${base}/api/workflows/audit-simple/activate`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ versionId: version.id }) });
+    assert.equal(activeResponse.status, 200);
+    assert.equal(JSON.parse(await activeResponse.text()).activeVersionId, version.id);
+  } finally { await api.close(); }
+});
+
 test('expose la simulation client via l’API et permet la reprise', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-')); const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) }); const address = await api.listen(); const base = `http://127.0.0.1:${address.port}`;
   try {

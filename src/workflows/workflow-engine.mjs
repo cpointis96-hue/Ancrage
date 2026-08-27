@@ -8,13 +8,21 @@ import { defaultImplementations } from './implementations.mjs';
 const workflowRoot = new URL('../../fixtures/defaults/workflows/', import.meta.url);
 const runPath = id => `runs/${id}`;
 
-async function loadDefinition(store, id) {
+async function loadDefinition(store, id, workflowRegistry) {
+  if (workflowRegistry) return workflowRegistry.resolveActive(id);
   const local = await store.readJson(`config/workflows/${id}.json`, null);
-  if (local) return validateWorkflowDefinition(local);
-  try { return validateWorkflowDefinition(JSON.parse(await readFile(new URL(`${id}.json`, workflowRoot), 'utf8'))); } catch { throw new NotFoundError(`Workflow introuvable : ${id}`); }
+  if (local) {
+    const definition = validateWorkflowDefinition(local);
+    return { definition, versionId: `v${definition.version ?? 1}`, hash: store.hashText(JSON.stringify(definition)) };
+  }
+  try {
+    const text = await readFile(new URL(`${id}.json`, workflowRoot), 'utf8');
+    const definition = validateWorkflowDefinition(JSON.parse(text));
+    return { definition, versionId: `v${definition.version ?? 1}`, hash: store.hashText(text) };
+  } catch { throw new NotFoundError(`Workflow introuvable : ${id}`); }
 }
 
-export function createWorkflowEngine({ store, promptRegistry, implementations = defaultImplementations, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
+export function createWorkflowEngine({ store, promptRegistry, workflowRegistry = null, implementations = defaultImplementations, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
   async function get(id) { const run = await store.readJson(`${runPath(id)}/run-manifest.json`, null); if (!run) throw new NotFoundError(`Run introuvable : ${id}`); const operatorDecision = await store.readJson(`${runPath(id)}/operator-decision.json`, null); return { ...run, operatorDecision }; }
   async function list() { const index = await store.readJson('runs/index.json', []); return Promise.all(index.map(get)); }
   async function event(id, type, data = {}) { return store.appendJsonLine(`${runPath(id)}/events.jsonl`, { at: clock().toISOString(), type, ...data }); }
@@ -24,8 +32,18 @@ export function createWorkflowEngine({ store, promptRegistry, implementations = 
   }
   async function addIndex(id) { const current = await store.readJson('runs/index.json', []); if (!current.includes(id)) await store.writeJson('runs/index.json', [...current, id].sort(), { expectedHash: (await store.readText('runs/index.json', null)) === null ? null : store.hashText(await store.readText('runs/index.json')) }); }
   async function start(workflowId, input = {}) {
-    const definition = await loadDefinition(store, workflowId); const id = idFactory('run');
-    const run = { id, workflowId, status: 'RUNNING', input, snapshot: { workflowId, workflowVersion: definition.version ?? 1, steps: definition.steps.map(step => ({ id: step.id, promptRef: step.promptRef ?? null, contractRef: step.contractRef ?? null })) }, steps: [], attempts: [], startedAt: clock().toISOString(), updatedAt: clock().toISOString() };
+    const loaded = await loadDefinition(store, workflowId, workflowRegistry);
+    const definition = loaded.definition;
+    const frozenSteps = await Promise.all(definition.steps.map(async step => {
+      if (step.kind !== 'ai') return { id: step.id, kind: step.kind, promptRef: null, promptVersionId: null, promptHash: null, model: null, contractRef: step.contractRef ?? null };
+      if (!promptRegistry) throw new ValidationError('Registre de prompts absent.');
+      const prompt = await promptRegistry.get(step.promptRef);
+      if (!prompt.activeVersionId) throw new ValidationError(`Aucune version active pour le prompt : ${step.promptRef}`);
+      const version = prompt.versions.find(item => item.id === prompt.activeVersionId);
+      return { id: step.id, kind: step.kind, promptRef: step.promptRef, promptVersionId: version.id, promptHash: version.hash, model: step.model, contractRef: step.contractRef ?? prompt.outputContract ?? null };
+    }));
+    const id = idFactory('run');
+    const run = { id, workflowId, status: 'RUNNING', input, snapshot: { workflowId, workflowVersion: definition.version ?? 1, workflowVersionId: loaded.versionId, workflowHash: loaded.hash, definition, steps: frozenSteps }, steps: [], attempts: [], startedAt: clock().toISOString(), updatedAt: clock().toISOString() };
     await store.writeJson(`${runPath(id)}/run-manifest.json`, run, { expectedHash: null }); await addIndex(id); await event(id, 'RUN_STARTED', { workflowId });
     return execute(run, definition);
   }
@@ -49,7 +67,7 @@ export function createWorkflowEngine({ store, promptRegistry, implementations = 
     }
     if (run.status === 'RUNNING') run.status = 'SUCCEEDED'; run.updatedAt = clock().toISOString(); await event(run.id, 'RUN_FINISHED', { status: run.status }); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run); return run;
   }
-  async function resume(id) { const run = await get(id); const definition = await loadDefinition(store, run.workflowId); return run.status === 'SUCCEEDED' ? run : execute(run, definition); }
+  async function resume(id) { const run = await get(id); const definition = validateWorkflowDefinition(run.snapshot.definition); return run.status === 'SUCCEEDED' ? run : execute(run, definition); }
   async function decide(id, decision) {
     const run = await get(id);
     if (run.status !== 'SUCCEEDED') throw new ConflictError('Le run doit être terminé avant la décision opérateur.');

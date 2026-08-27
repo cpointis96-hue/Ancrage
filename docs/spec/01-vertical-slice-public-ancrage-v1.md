@@ -374,7 +374,7 @@ Chaque événement doit être idempotent, horodaté, corrélé à un run opaque,
 - e-mail au clic `Préparer mon site` ;
 - démo sans compte ni paiement, sept jours, tokenisée et `noindex` ;
 - validation opérateur avant présentation ;
-- déterministe d'abord, local-small préféré, cloud approuvé avec budget explicite ;
+- déterministe d’abord ; pour chaque étape IA, modèle choisi explicitement et budget approuvé ;
 - Cloudflare/R2/Neon et archive locale selon 85/86, sans inference obligatoire sur l'intake.
 
 ### Hypothèses explicites pour ce slice

@@ -115,7 +115,7 @@ Expected: FAIL avec module absent.
 
 - [ ] **Step 3: Implémenter le parseur borné et le registre**
 
-Le frontmatter accepte uniquement des lignes `clé: valeur`, rejette les clés inconnues et exige `id`, `name`, `ownerStep`, `modelProfile` et `outputContract`. Une version utilise `v-<timestamp>-<hash8>` et ne peut pas être remplacée.
+Le frontmatter accepte uniquement des lignes `clé: valeur`, rejette les clés inconnues et exige `id`, `name`, `ownerStep` et `outputContract`. Le modèle est choisi dans l’étape IA du workflow. Une version utilise `v-<timestamp>-<hash8>` et ne peut pas être remplacée.
 
 - [ ] **Step 4: Tester conflits et immutabilité**
 

@@ -70,7 +70,6 @@ Un prompt est lisible et modifiable comme fichier `.md`. Son frontmatter contien
 id: copywriter
 name: Copywriter
 ownerStep: S7
-modelProfile: local-small
 outputContract: copy-draft
 ---
 Rédige uniquement à partir des faits autorisés.
@@ -80,7 +79,7 @@ Rédige uniquement à partir des faits autorisés.
 
 ### Workflow JSON
 
-Un workflow déclare un graphe acyclique d'étapes. Chaque étape possède `id`, `kind`, `trigger`, `dependsOn`, `inputRefs`, `outputRefs`, `implementation`, `promptRef`, `contractRef`, `timeoutMs`, `budget` et `approval`.
+Un workflow déclare un graphe acyclique d'étapes. Chaque étape possède `id`, `kind`, `trigger`, `dependsOn`, `inputRefs`, `outputRefs`, `implementation`, `promptRef`, `model`, `contractRef`, `timeoutMs`, `budget` et `approval`. Le modèle est choisi explicitement dans l’étape IA et n’est jamais imposé par le prompt.
 
 Le moteur refuse un workflow avec identifiant dupliqué, dépendance absente, cycle, sortie ambiguë, prompt absent, contrat absent, timeout non borné ou budget cloud non explicite.
 
