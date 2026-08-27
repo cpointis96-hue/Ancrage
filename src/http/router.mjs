@@ -3,7 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, audits = null, publicAudits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, publicAudits = null, dossiers = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -38,6 +38,22 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await prompts.saveDraft(promptId, body.markdown, { expectedHash: body.expectedHash })); }
         if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await prompts.createVersion(promptId, { expectedDraftHash: body.expectedDraftHash })); }
         if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await prompts.activate(promptId, body.versionId)); }
+      }
+      if (parts[1] === 'contracts' && contracts) {
+        if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await contracts.list());
+        const contractId = id(parts[2]);
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await contracts.get(contractId));
+        if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await contracts.save(contractId, body, { expectedHash: body.expectedHash })); }
+        if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await contracts.createVersion(contractId, { expectedDraftHash: body.expectedDraftHash })); }
+        if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await contracts.activate(contractId, body.versionId)); }
+      }
+      if (parts[1] === 'cli-profiles' && cliProfiles) {
+        if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await cliProfiles.list());
+        const profileId = id(parts[2]);
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await cliProfiles.get(profileId));
+        if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await cliProfiles.save(profileId, body, { expectedHash: body.expectedHash })); }
+        if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await cliProfiles.createVersion(profileId, { expectedDraftHash: body.expectedDraftHash })); }
+        if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await cliProfiles.activate(profileId, body.versionId)); }
       }
       if (parts[1] === 'workflows') {
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await workflows.list());

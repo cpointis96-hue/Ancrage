@@ -12,7 +12,7 @@ function versionStamp(date) {
   return date.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 }
 
-export function createPromptRegistry({ store, clock = () => new Date() }) {
+export function createPromptRegistry({ store, clock = () => new Date(), contractRegistry = null }) {
   async function readManifest(id) {
     const manifest = await store.readJson(promptPath(id, 'manifest.json'), null);
     if (!manifest) throw new NotFoundError(`Prompt introuvable : ${id}`);
@@ -42,6 +42,7 @@ export function createPromptRegistry({ store, clock = () => new Date() }) {
     if (parsed.metadata.id !== id) {
       throw new ValidationError('L’identifiant du frontmatter ne correspond pas au prompt.');
     }
+    if (contractRegistry) await contractRegistry.get(parsed.metadata.outputContract);
 
     const result = await store.writeText(promptPath(id, 'draft.md'), markdown, { expectedHash });
     const existing = await store.readJson(promptPath(id, 'manifest.json'), null);
@@ -85,8 +86,13 @@ export function createPromptRegistry({ store, clock = () => new Date() }) {
     }
 
     parsePromptMarkdown(prompt.markdown);
-    const contract = await store.readText(`config/contracts/${prompt.outputContract}.schema.json`, null);
-    if (contract === null) throw new ValidationError(`Contrat de sortie introuvable : ${prompt.outputContract}`);
+    if (contractRegistry) {
+      const contract = await contractRegistry.get(prompt.outputContract);
+      if (!contract.activeVersionId) throw new ValidationError(`Aucune version active pour le contrat : ${prompt.outputContract}`);
+    } else {
+      const contract = await store.readText(`config/contracts/${prompt.outputContract}.schema.json`, null);
+      if (contract === null) throw new ValidationError(`Contrat de sortie introuvable : ${prompt.outputContract}`);
+    }
     const versionId = `v-${versionStamp(clock())}-${prompt.draftHash.slice(-8)}`;
     const existingVersion = prompt.versions.find(version => version.id === versionId);
     if (existingVersion) return existingVersion;

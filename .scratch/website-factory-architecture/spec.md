@@ -45,6 +45,11 @@ Le répertoire de données est configurable par `ANCRAGE_DATA_DIR`. En développ
     prompts/<prompt-id>/manifest.json
     workflows/<workflow-id>.json
     contracts/<contract-id>.schema.json
+    contracts/<contract-id>/versions/<version-id>.schema.json
+    contracts/<contract-id>/manifest.json
+    cli-profiles/<profile-id>.json
+    cli-profiles/<profile-id>/versions/<version-id>.json
+    cli-profiles/<profile-id>/manifest.json
     providers/<provider-id>.json
     routing/<policy-id>.json
   runs/<run-id>/
@@ -86,6 +91,14 @@ Le moteur refuse un workflow avec identifiant dupliqué, dépendance absente, cy
 ### Contrat JSON Schema
 
 Chaque contribution IA et chaque frontière d'étape possède un JSON Schema versionné. Une sortie invalide ne devient jamais un checkpoint fiable.
+
+Le brouillon est le fichier `contracts/<contract-id>.schema.json`. Son registre publie une version immuable puis une activation séparée. Un prompt doit référencer un contrat existant et une version de prompt ne peut être créée que si ce contrat possède une version active.
+
+### Profil CLI
+
+Un profil CLI versionné décrit uniquement une commande, ses arguments, son timeout, sa limite de sortie et ses origines autorisées. Il ne contient aucun secret et n'autorise pas à lui seul une exécution depuis le navigateur. Une étape peut référencer un profil CLI existant ; une version de workflow exige alors que ce profil soit actif.
+
+Une étape IA doit référencer un prompt existant et son `contractRef` doit correspondre au `outputContract` du prompt. Une étape qui référence un contrat ou un profil CLI inexistant est refusée côté registre avant écriture.
 
 ## Sémantique des actions du cockpit
 

@@ -1,6 +1,7 @@
 import { ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
 import { assertResourceId } from '../core/ids.mjs';
 import { validateWorkflowDefinition } from '../workflows/workflow-validator.mjs';
+import { normalizeContractId } from './contract-registry.mjs';
 
 const INDEX_PATH = 'config/workflows/index.json';
 const workflowPath = id => `config/workflows/${id}.json`;
@@ -11,7 +12,26 @@ function versionStamp(date) {
   return date.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 }
 
-export function createWorkflowRegistry({ store, clock = () => new Date() }) {
+export function createWorkflowRegistry({ store, clock = () => new Date(), promptRegistry = null, contractRegistry = null, cliProfileRegistry = null }) {
+  async function validateReferences(definition, { requireActive = false } = {}) {
+    for (const step of definition.steps) {
+      const prompt = step.promptRef && promptRegistry ? await promptRegistry.get(step.promptRef) : null;
+      const contractRef = step.contractRef ?? (step.kind === 'ai' ? prompt?.outputContract : null);
+      if (contractRef && contractRegistry) {
+        const normalizedContractId = normalizeContractId(contractRef);
+        const contract = await contractRegistry.get(normalizedContractId);
+        if (requireActive && !contract.activeVersionId) throw new ValidationError(`Aucune version active pour le contrat : ${normalizedContractId}`);
+      }
+      if (prompt) {
+        if (requireActive && step.kind === 'ai' && !prompt.activeVersionId) throw new ValidationError(`Aucune version active pour le prompt : ${step.promptRef}`);
+        if (step.kind === 'ai' && step.contractRef && normalizeContractId(step.contractRef) !== normalizeContractId(prompt.outputContract)) throw new ValidationError(`Le contrat de l’étape ${step.id} diffère de celui du prompt.`);
+      }
+      if (step.profile && cliProfileRegistry) {
+        const profile = await cliProfileRegistry.get(step.profile);
+        if (requireActive && !profile.activeVersionId) throw new ValidationError(`Aucune version active pour le profil CLI : ${step.profile}`);
+      }
+    }
+  }
   async function ensureIndexed(id) {
     const currentText = await store.readText(INDEX_PATH, null);
     const current = currentText === null ? [] : JSON.parse(currentText);
@@ -24,6 +44,7 @@ export function createWorkflowRegistry({ store, clock = () => new Date() }) {
     const text = await store.readText(workflowPath(id), null);
     if (text === null) throw new NotFoundError(`Workflow introuvable : ${id}`);
     const definition = validateWorkflowDefinition(JSON.parse(text));
+    await validateReferences(definition);
     const manifest = await store.readJson(manifestPath(id), { activeVersionId: null, versions: [] });
     return { ...definition, hash: store.hashText(text), activeVersionId: manifest.activeVersionId, versions: manifest.versions ?? [] };
   }
@@ -38,6 +59,7 @@ export function createWorkflowRegistry({ store, clock = () => new Date() }) {
     assertResourceId(id, 'workflowId');
     if (!definition || typeof definition !== 'object' || definition.id !== id) throw new ValidationError('Définition de workflow invalide.');
     const validated = validateWorkflowDefinition(definition);
+    await validateReferences(validated);
     const result = await store.writeJson(workflowPath(id), validated, { expectedHash });
     await ensureIndexed(id);
     const currentManifest = await store.readJson(manifestPath(id), null);
@@ -53,11 +75,7 @@ export function createWorkflowRegistry({ store, clock = () => new Date() }) {
   async function createVersion(id, { expectedDraftHash }) {
     const workflow = await get(id);
     if (workflow.hash !== expectedDraftHash) throw new ConflictError(undefined, { currentHash: workflow.hash });
-    for (const step of workflow.steps) {
-      if (!step.contractRef) continue;
-      const relativePath = step.contractRef.startsWith('contracts/') ? `config/${step.contractRef}` : `config/contracts/${step.contractRef}.schema.json`;
-      if (await store.readText(relativePath, null) === null) throw new ValidationError(`Contrat introuvable : ${step.contractRef}`);
-    }
+    await validateReferences(workflow, { requireActive: true });
     const definition = { ...workflow };
     delete definition.hash;
     delete definition.activeVersionId;

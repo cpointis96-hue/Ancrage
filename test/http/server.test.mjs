@@ -58,6 +58,44 @@ test('crée, versionne et active un workflow via l’API', async () => {
   } finally { await api.close(); }
 });
 
+test('relie les routes contrat, prompt et profil CLI à un workflow', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
+  const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) });
+  const address = await api.listen();
+  const base = `http://127.0.0.1:${address.port}`;
+  const headers = { origin: base, 'content-type': 'application/json' };
+  try {
+    const contractResponse = await request(`${base}/api/contracts/site-output/draft`, { method: 'PUT', headers, body: JSON.stringify({ name: 'Sortie site', schema: { type: 'object', required: ['title'] }, expectedHash: null }) });
+    assert.equal(contractResponse.status, 200);
+    const contract = JSON.parse(await contractResponse.text());
+    const contractVersionResponse = await request(`${base}/api/contracts/site-output/versions`, { method: 'POST', headers, body: JSON.stringify({ expectedDraftHash: contract.draftHash }) });
+    const contractVersion = JSON.parse(await contractVersionResponse.text());
+    await request(`${base}/api/contracts/site-output/activate`, { method: 'POST', headers, body: JSON.stringify({ versionId: contractVersion.id }) });
+
+    const profileResponse = await request(`${base}/api/cli-profiles/html-crawler/draft`, { method: 'PUT', headers, body: JSON.stringify({ name: 'HTML crawler', profile: { command: '/usr/bin/curl', args: ['--fail'], timeoutMs: 1000, maxBytes: 10000, allowedOrigins: ['https://example.test'] }, expectedHash: null }) });
+    assert.equal(profileResponse.status, 200);
+    const profile = JSON.parse(await profileResponse.text());
+    const profileVersionResponse = await request(`${base}/api/cli-profiles/html-crawler/versions`, { method: 'POST', headers, body: JSON.stringify({ expectedDraftHash: profile.draftHash }) });
+    const profileVersion = JSON.parse(await profileVersionResponse.text());
+    await request(`${base}/api/cli-profiles/html-crawler/activate`, { method: 'POST', headers, body: JSON.stringify({ versionId: profileVersion.id }) });
+
+    const markdown = '---\nid: site-copy\nname: Site copy\nownerStep: S7\noutputContract: site-output\n---\nRédige la sortie.';
+    const promptResponse = await request(`${base}/api/prompts/site-copy/draft`, { method: 'PUT', headers, body: JSON.stringify({ markdown, expectedHash: null }) });
+    assert.equal(promptResponse.status, 200);
+    const prompt = JSON.parse(await promptResponse.text());
+    const promptVersionResponse = await request(`${base}/api/prompts/site-copy/versions`, { method: 'POST', headers, body: JSON.stringify({ expectedDraftHash: prompt.hash }) });
+    const promptVersion = JSON.parse(await promptVersionResponse.text());
+    await request(`${base}/api/prompts/site-copy/activate`, { method: 'POST', headers, body: JSON.stringify({ versionId: promptVersion.id }) });
+
+    const definition = { id: 'connected-workflow', name: 'Workflow connecté', version: 1, steps: [{ id: 'copy', kind: 'ai', trigger: 'start', dependsOn: [], inputRefs: [], outputRefs: ['site'], implementation: 'copy', promptRef: 'site-copy', model: 'approved-model', contractRef: 'site-output', profile: 'html-crawler', timeoutMs: 1000, budget: 0, approval: 'none' }] };
+    const workflowResponse = await request(`${base}/api/workflows/connected-workflow/draft`, { method: 'PUT', headers, body: JSON.stringify({ definition, expectedHash: null }) });
+    assert.equal(workflowResponse.status, 200);
+    const workflow = JSON.parse(await workflowResponse.text());
+    const versionResponse = await request(`${base}/api/workflows/connected-workflow/versions`, { method: 'POST', headers, body: JSON.stringify({ expectedDraftHash: workflow.hash }) });
+    assert.equal(versionResponse.status, 200);
+  } finally { await api.close(); }
+});
+
 test('expose la simulation client via l’API et permet la reprise', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-')); const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) }); const address = await api.listen(); const base = `http://127.0.0.1:${address.port}`;
   try {

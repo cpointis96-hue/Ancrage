@@ -4,6 +4,8 @@ import { createAtomicStore } from './core/atomic-store.mjs';
 import { createPromptRegistry } from './config/prompt-registry.mjs';
 import { createWorkflowRegistry } from './config/workflow-registry.mjs';
 import { createTemplateRegistry } from './config/template-registry.mjs';
+import { createContractRegistry } from './config/contract-registry.mjs';
+import { createCliProfileRegistry } from './config/cli-profile-registry.mjs';
 import { createDossierRegistry } from './dossiers/dossier-registry.mjs';
 import { createDomainCandidatesImplementation, createDomainResearchService } from './internet/domain-research-service.mjs';
 import { createMemorySecretStore } from './providers/memory-secret-store.mjs';
@@ -42,10 +44,12 @@ async function seedPrompt(store, prompts, id) {
   }
 }
 
-async function seedContract(store, id) {
-  if (await store.readText(`config/contracts/${id}.schema.json`, null) !== null) return;
-  const schema = JSON.parse(await readFile(new URL(`contracts/${id}.schema.json`, defaultsRoot), 'utf8'));
-  await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: null });
+async function seedContract(store, contracts, id) {
+  if (await store.readText(`config/contracts/${id}.schema.json`, null) === null) {
+    const schema = JSON.parse(await readFile(new URL(`contracts/${id}.schema.json`, defaultsRoot), 'utf8'));
+    await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: null });
+  }
+  await contracts.ensure(id, id);
 }
 
 async function seedTemplate(store, templates, id) {
@@ -58,24 +62,26 @@ async function seedTemplate(store, templates, id) {
 
 export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined } = {}) {
   const store = createAtomicStore(dataDir);
-  const prompts = createPromptRegistry({ store });
-  const workflows = createWorkflowRegistry({ store });
+  const contracts = createContractRegistry({ store });
+  const cliProfiles = createCliProfileRegistry({ store });
+  const prompts = createPromptRegistry({ store, contractRegistry: contracts });
+  const workflows = createWorkflowRegistry({ store, promptRegistry: prompts, contractRegistry: contracts, cliProfileRegistry: cliProfiles });
   const templates = createTemplateRegistry({ store });
   const providerAdapters = { ...createDefaultProviderAdapters(), ...adapters };
   const providers = createProviderRegistry({ store, secretStore, adapters: providerAdapters });
   const dossiers = createDossierRegistry({ store, opener });
   const faults = new Set();
   const implementations = { ...defaultImplementations, ...createSimulationImplementations({ store, faults }), 'domain-candidates': createDomainCandidatesImplementation({ providers, adapters: providerAdapters, secretStore, fallback: query => ({ domain: `${String(query).toLowerCase().replace(/[^a-z0-9]+/g, '')}.com`, source: 'local-candidate-generator', availability: 'unknown' }) }) };
-  const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, implementations });
+  const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, contractRegistry: contracts, cliProfileRegistry: cliProfiles, implementations });
   const simulation = createClientSiteSimulation({ store, engine: runs, dossiers, faults });
   const artifacts = createArtifactRegistry({ store, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const internet = createDomainResearchService({ store, runs });
   const ready = (async () => {
-    await seedContract(store, 'domain-candidates');
-    await seedContract(store, 'audit-report');
-    await seedContract(store, 'copy-draft');
+    await seedContract(store, contracts, 'domain-candidates');
+    await seedContract(store, contracts, 'audit-report');
+    await seedContract(store, contracts, 'copy-draft');
     const domainResearch = JSON.parse(await readFile(new URL('workflows/domain-research.json', defaultsRoot), 'utf8'));
     await workflows.ensure(domainResearch);
     await workflows.ensure(clientSiteWorkflow);
@@ -83,5 +89,5 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedPrompt(store, prompts, 'copywriter');
     await seedTemplate(store, templates, 'site-preview');
   })();
-  return { artifacts, audits, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
+  return { artifacts, audits, cliProfiles, contracts, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
 }
