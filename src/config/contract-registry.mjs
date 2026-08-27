@@ -42,6 +42,16 @@ export function createContractRegistry({ store, clock = () => new Date() } = {})
     return Promise.all(ids.map(get));
   }
 
+  async function getActiveVersion(id) {
+    const contract = await get(id);
+    if (!contract.activeVersionId) throw new ValidationError(`Aucune version active pour le contrat : ${id}`);
+    const version = contract.versions.find(item => item.id === contract.activeVersionId);
+    if (!version) throw new NotFoundError(`Version active introuvable pour le contrat : ${id}`);
+    const schema = await store.readJson(versionPath(id, version.id), null);
+    if (!schema) throw new NotFoundError(`Schéma de version introuvable pour le contrat : ${id}`);
+    return { id, versionId: version.id, hash: version.hash, schema: validateSchema(id, schema) };
+  }
+
   async function save(id, { name, schema }, { expectedHash } = {}) {
     const validated = validateSchema(id, schema);
     const result = await store.writeJson(schemaPath(id), validated, { expectedHash });
@@ -91,5 +101,5 @@ export function createContractRegistry({ store, clock = () => new Date() } = {})
     return get(id);
   }
 
-  return { activate, createVersion, ensure, get, list, save };
+  return { activate, createVersion, ensure, get, getActiveVersion, list, save };
 }

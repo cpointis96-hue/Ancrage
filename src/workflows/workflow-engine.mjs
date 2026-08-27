@@ -5,6 +5,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../core/errors.mj
 import { validateWorkflowDefinition } from './workflow-validator.mjs';
 import { defaultImplementations } from './implementations.mjs';
 import { normalizeContractId } from '../config/contract-registry.mjs';
+import { validateJsonSchema } from '../core/json-schema.mjs';
 
 const workflowRoot = new URL('../../fixtures/defaults/workflows/', import.meta.url);
 const runPath = id => `runs/${id}`;
@@ -23,7 +24,7 @@ async function loadDefinition(store, id, workflowRegistry) {
   } catch { throw new NotFoundError(`Workflow introuvable : ${id}`); }
 }
 
-export function createWorkflowEngine({ store, promptRegistry, workflowRegistry = null, contractRegistry = null, cliProfileRegistry = null, implementations = defaultImplementations, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
+export function createWorkflowEngine({ store, promptRegistry, workflowRegistry = null, contractRegistry = null, cliProfileRegistry = null, templateRegistry = null, implementations = defaultImplementations, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
   async function get(id) { const run = await store.readJson(`${runPath(id)}/run-manifest.json`, null); if (!run) throw new NotFoundError(`Run introuvable : ${id}`); const operatorDecision = await store.readJson(`${runPath(id)}/operator-decision.json`, null); return { ...run, operatorDecision }; }
   async function list() { const index = await store.readJson('runs/index.json', []); return Promise.all(index.map(get)); }
   async function event(id, type, data = {}) { return store.appendJsonLine(`${runPath(id)}/events.jsonl`, { at: clock().toISOString(), type, ...data }); }
@@ -44,13 +45,15 @@ export function createWorkflowEngine({ store, promptRegistry, workflowRegistry =
       const contract = contractRef && contractRegistry ? await contractRegistry.get(normalizeContractId(contractRef)) : null;
       if (contract && !contract.activeVersionId) throw new ValidationError(`Aucune version active pour le contrat : ${normalizeContractId(contractRef)}`);
       const contractVersion = contract?.versions.find(item => item.id === contract.activeVersionId) ?? null;
+      const contractSnapshot = contract && contractRegistry?.getActiveVersion ? await contractRegistry.getActiveVersion(normalizeContractId(contractRef)) : null;
       const profile = step.profile && cliProfileRegistry ? await cliProfileRegistry.get(step.profile) : null;
       if (profile && !profile.activeVersionId) throw new ValidationError(`Aucune version active pour le profil CLI : ${step.profile}`);
       const profileVersion = profile?.versions.find(item => item.id === profile.activeVersionId) ?? null;
-      return { id: step.id, kind: step.kind, promptRef: prompt?.id ?? null, promptVersionId: promptVersion?.id ?? null, promptHash: promptVersion?.hash ?? null, model: step.model ?? null, contractRef: contract ? normalizeContractId(contractRef) : contractRef, contractVersionId: contractVersion?.id ?? null, contractHash: contractVersion?.hash ?? null, profile: step.profile ?? null, profileVersionId: profileVersion?.id ?? null, profileHash: profileVersion?.hash ?? null, provider: step.provider ?? null, actor: step.actor ?? null };
+      return { id: step.id, kind: step.kind, promptRef: prompt?.id ?? null, promptVersionId: promptVersion?.id ?? null, promptHash: promptVersion?.hash ?? null, model: step.model ?? null, contractRef: contract ? normalizeContractId(contractRef) : contractRef, contractVersionId: contractVersion?.id ?? null, contractHash: contractVersion?.hash ?? null, contractSchema: contractSnapshot?.schema ?? null, profile: step.profile ?? null, profileVersionId: profileVersion?.id ?? null, profileHash: profileVersion?.hash ?? null, provider: step.provider ?? null, actor: step.actor ?? null };
     }));
+    const template = definition.outputTemplateId && templateRegistry?.getActiveVersion ? await templateRegistry.getActiveVersion(definition.outputTemplateId) : null;
     const id = idFactory('run');
-    const run = { id, workflowId, status: 'RUNNING', input, snapshot: { workflowId, workflowVersion: definition.version ?? 1, workflowVersionId: loaded.versionId, workflowHash: loaded.hash, definition, steps: frozenSteps }, steps: [], attempts: [], startedAt: clock().toISOString(), updatedAt: clock().toISOString() };
+    const run = { id, workflowId, status: 'RUNNING', input, snapshot: { workflowId, workflowVersion: definition.version ?? 1, workflowVersionId: loaded.versionId, workflowHash: loaded.hash, definition, template, steps: frozenSteps }, steps: [], attempts: [], startedAt: clock().toISOString(), updatedAt: clock().toISOString() };
     await store.writeJson(`${runPath(id)}/run-manifest.json`, run, { expectedHash: null }); await addIndex(id); await event(id, 'RUN_STARTED', { workflowId });
     return execute(run, definition);
   }
@@ -68,6 +71,8 @@ export function createWorkflowEngine({ store, promptRegistry, workflowRegistry =
         const implementation = implementations[step.implementation]; if (!implementation) throw new ValidationError(`Implémentation absente : ${step.implementation}`);
         const result = await Promise.race([Promise.resolve(implementation({ input, step, run, store })), new Promise((_, reject) => { const timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), step.timeoutMs); timer.unref?.(); })]);
         if (!result || typeof result !== 'object') throw new ValidationError('Sortie d’étape invalide.');
+        const snapshotStep = run.snapshot.steps.find(item => item.id === step.id);
+        if (snapshotStep?.contractSchema) validateJsonSchema(snapshotStep.contractSchema, result);
         const outputHash = store.hashText(JSON.stringify(result)); attempt.status = 'SUCCEEDED'; attempt.outputHash = outputHash; attempt.finishedAt = clock().toISOString(); run.steps = [...run.steps.filter(item => item.id !== step.id), { id: step.id, status: 'SUCCEEDED', outputHash }]; outputs[step.id] = result; await store.writeJson(`${runPath(run.id)}/steps/${step.id}/step-run.json`, { stepId: step.id, output: result, outputHash, attemptId: attempt.id }, { expectedHash: null }); await event(run.id, 'STEP_SUCCEEDED', { stepId: step.id, outputHash });
       } catch (error) { attempt.status = 'FAILED'; attempt.errorCode = error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'VALIDATION_ERROR' ? 'INVALID_OUTPUT' : 'STEP_FAILED'; attempt.finishedAt = clock().toISOString(); run.status = 'FAILED'; await event(run.id, 'STEP_FAILED', { stepId: step.id, errorCode: attempt.errorCode }); run.attempts.push(attempt); run.updatedAt = clock().toISOString(); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run); return run; }
       run.attempts.push(attempt); run.updatedAt = clock().toISOString(); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run);

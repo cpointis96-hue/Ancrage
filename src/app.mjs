@@ -72,7 +72,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const dossiers = createDossierRegistry({ store, opener });
   const faults = new Set();
   const implementations = { ...defaultImplementations, ...createSimulationImplementations({ store, faults }), 'domain-candidates': createDomainCandidatesImplementation({ providers, adapters: providerAdapters, secretStore, fallback: query => ({ domain: `${String(query).toLowerCase().replace(/[^a-z0-9]+/g, '')}.com`, source: 'local-candidate-generator', availability: 'unknown' }) }) };
-  const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, contractRegistry: contracts, cliProfileRegistry: cliProfiles, implementations });
+  const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, contractRegistry: contracts, cliProfileRegistry: cliProfiles, templateRegistry: templates, implementations });
   const simulation = createClientSiteSimulation({ store, engine: runs, dossiers, faults });
   const artifacts = createArtifactRegistry({ store, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });

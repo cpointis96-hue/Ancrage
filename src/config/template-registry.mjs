@@ -29,6 +29,16 @@ export function createTemplateRegistry({ store, clock = () => new Date() }) {
     return Promise.all(ids.map(get));
   }
 
+  async function getActiveVersion(id) {
+    const template = await get(id);
+    if (!template.activeVersionId) throw new ValidationError(`Aucune version active pour le template : ${id}`);
+    const version = template.versions.find(item => item.id === template.activeVersionId);
+    if (!version) throw new NotFoundError(`Version active introuvable pour le template : ${id}`);
+    const content = await store.readText(versionPath(id, version.id), null);
+    if (content === null) throw new NotFoundError(`Contenu de version introuvable pour le template : ${id}`);
+    return { id, versionId: version.id, hash: version.hash, content };
+  }
+
   async function save(id, { name, content }, { expectedHash } = {}) {
     assertResourceId(id, 'templateId');
     if (typeof content !== 'string' || !content.trim() || content.length > 25 * 1024 * 1024) throw new ValidationError('Template vide ou trop volumineux.');
@@ -74,5 +84,5 @@ export function createTemplateRegistry({ store, clock = () => new Date() }) {
     return { id, removed: true };
   }
 
-  return { activate, createVersion, get, list, remove, save };
+  return { activate, createVersion, get, getActiveVersion, list, remove, save };
 }
