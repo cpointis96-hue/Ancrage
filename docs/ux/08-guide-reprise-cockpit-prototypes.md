@@ -2,11 +2,11 @@
 
 > La fondation locale opérable est désormais dans `app/`, `src/` et `test/e2e/`. Le fichier `prototypes/ux-vertical-slice/cockpit-operator-v2.html` reste la référence visuelle historique préservée, pas la source des données de production.
 
-Status: handoff de travail, prototype UX avant production
+Status: référence UX et handoff de fondation locale
 
 ## Objectif
 
-Construire l’ensemble du cockpit opérateur Ancrage avant toute implémentation de production. Le cockpit doit permettre de suivre les démos lancées, comprendre leur étape réelle, inspecter les agents et leurs versions, voir les providers et le routage, suivre les tokens et les budgets, puis corriger, reprendre, contrôler et valider une démo.
+La fondation locale opérable du cockpit Ancrage est maintenant implémentée dans `app/` et `src/`. Le cockpit doit permettre de suivre les runs locaux, comprendre leur étape réelle, inspecter les configurations et leurs versions, voir les providers et le routage, suivre les preuves, puis corriger, reprendre, contrôler et valider une simulation.
 
 Le cockpit n’est pas une landing page et ne doit pas devenir un dashboard SaaS générique. Sa structure est celle d’un outil de travail dense : menu court à gauche, liste de dossiers ou de ressources au centre, inspecteur détaillé à droite, avec lecture mobile empilée.
 
@@ -72,7 +72,7 @@ Cette page est la référence pour la densité d’inspection : les paramètres 
 
 ## Ordre de reprise dans la prochaine conversation
 
-Commencer par **Runs**, car c’est la page qui relie les démos visibles dans « À traiter » aux étapes et aux consommations demandées. La version de travail couvre ensuite Configuration, Dossiers, Providers et Internet. Ne pas passer à une implémentation de production.
+La fondation locale couvre maintenant **À traiter**, **Runs**, **Dossiers**, **Configuration**, **Providers** et **Internet**. Les runs de simulation produisent des artefacts persistants et un rapport inspectable ; le parcours public E0-E7 et les intégrations externes restent des tranches distinctes à valider.
 
 ### Reprise effectuée — page « Runs »
 
@@ -80,7 +80,7 @@ La page Runs est maintenant prototypée dans `prototypes/ux-vertical-slice/cockp
 
 Validation observée : navigation Runs sans erreur JavaScript, inspection de `RUN-024` et `RUN-023`, inspection de `RUN-022` en mobile, absence de débordement horizontal global à 390 px, tableau défilable dans son propre conteneur et console sans erreur ni warning.
 
-Décisions restantes : raccorder les actions du prototype à un Control Plane réel et remplacer les données de démonstration par les contrats persistants.
+Décisions restantes : raccorder les actions locales à un Control Plane distant si ce produit est retenu et valider les comptes externes nécessaires.
 
 ### Reprise effectuée — fusion « À traiter » / « Qualité »
 
@@ -88,7 +88,7 @@ Les décisions opérateur et les contrôles qualité sont maintenant réunis dan
 
 Validation statique à rejouer : navigation sans erreur JavaScript, contrôles utiles visibles dans le détail et absence de débordement horizontal global à 390 px.
 
-Décisions restantes : définir le contrat de preuve réel et les seuils de validation.
+Décisions restantes : définir les seuils de validation métier avant une publication distante.
 
 ### Reprise effectuée — page « Dossiers »
 
@@ -96,7 +96,7 @@ La page Dossiers est maintenant prototypée dans `prototypes/ux-vertical-slice/c
 
 Validation observée : navigation Dossiers sans erreur JavaScript, inspection d’Atelier Noma et Bistro Sillage, action Synchroniser visible, inspection mobile de Maison Rive à 390 px, absence de débordement horizontal global et console sans erreur ni warning.
 
-Décisions restantes : compléter les états Agents demandés, puis finaliser Système avant la revue croisée des pages.
+Décisions restantes : compléter les intégrations de synchronisation et de publication avant une utilisation multi-client distante.
 
 ### Reprise effectuée — page « Configuration »
 
@@ -104,7 +104,7 @@ La page Configuration expose les étapes S0 à S10, cinq rôles IA, les prompts 
 
 Validation observée : inspection de `PhotoRightsVerifier`, `SchemaContractValidator`, `LegacySEOReviewer` et `Copywriter`, test contrôlé visible, état `INACTIF` visible dans Versions, viewport mobile à 390 px sans débordement global et console sans erreur ni warning.
 
-Décisions restantes : finaliser la page Système, puis réaliser une revue croisée de toutes les pages et de leurs états.
+Décisions restantes : rejouer la revue croisée après chaque évolution de la fondation locale.
 
 ### Reprise effectuée — page « Système »
 
@@ -112,7 +112,7 @@ La page Système est maintenant finalisée avec sept registres : providers, prof
 
 Validation observée : inspection d’Outils & MCP et Synchronisation, états `WARN` et `PARTIAL` lisibles, actions locales visibles, viewport mobile à 390 px sans débordement global et console sans erreur ni warning.
 
-Décisions restantes : réaliser la revue croisée finale des six entrées du menu et figer les écarts avant passage éventuel à une étape de spécification.
+Décisions restantes : figer les autorisations et les comptes externes avant la spécification d’une exploitation distante.
 
 ### Reprise effectuée — spécialisation des registres Système V3
 
@@ -132,9 +132,9 @@ Validation observée : V3 ouverte dans Helium, navigation des sept registres, in
 
 ### Revue croisée finale — cockpit V2
 
-Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Configuration`, `Providers`, `Internet`) sont couvertes par le prototype. La validation syntaxique du JavaScript et l’absence de débordement horizontal global restent les contrôles reproductibles ; la validation navigateur doit être rejouée dans un runtime équipé.
+Les six entrées du menu (`À traiter`, `Runs`, `Dossiers`, `Configuration`, `Providers`, `Internet`) sont couvertes par l’application locale et conservent le prototype comme référence visuelle. La validation a été rejouée dans le navigateur local à 1440, 900 et 390 px : navigation, actions principales, absence de débordement global et console propre sur une session fraîche.
 
-Écart conservé pour la suite : les données, preuves, coûts, providers et actions restent des fixtures locales ; aucune mutation durable ni intégration réelle n’est validée par ce prototype.
+Écart conservé pour la suite : les comptes providers, registrars, l’authentification, la publication distante et le Control Plane cloud ne sont pas validés par cette fondation locale.
 
 ### Ajustement de navigation
 
@@ -150,7 +150,7 @@ Les six entrées du menu utilisent des icônes SVG distinctes et cohérentes ave
 - Les tables peuvent défiler dans leur propre conteneur, jamais provoquer un débordement horizontal global.
 - Les secrets ne sont jamais affichés ; les paramètres montrent leur forme et leur état, avec `[REDACTED_SECRET]` si nécessaire.
 - La densité doit rester native macOS/Codex : séparateurs fins, panneaux sobres, hiérarchie d’outil, pas de cartes statistiques décoratives.
-- Le prototype reste local, sans base de données, sans provider réel et sans mutation durable.
+- La fondation locale persiste les dossiers, runs, événements et artefacts sur disque ; elle ne stocke pas les secrets dans le navigateur et ne prétend pas avoir validé les providers ou registrars réels.
 
 ## Validation attendue à chaque page
 
@@ -168,9 +168,9 @@ La validation navigateur doit être distinguée de la validation syntaxique ou s
 
 ## Hors périmètre
 
-- backend réel ;
-- authentification, paiement et providers externes ;
+- Control Plane cloud, authentification et paiement ;
+- comptes providers et registrars externes ;
 - lancement réel d’agents ;
 - suppression ou purge de données ;
-- production de sites clients ;
-- passage à `to-spec` avant revue complète des pages et des états.
+- publication distante de sites clients ;
+- passage à `to-spec` pour une exploitation distante avant validation des comptes, permissions et contrats.

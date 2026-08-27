@@ -17,7 +17,23 @@ export function createLocalServer({ app, host = '127.0.0.1', port = 0, staticRoo
 }
 
 async function serveStatic(request, response, root, headers) {
-  const { readFile } = await import('node:fs/promises'); const { join, normalize } = await import('node:path'); const file = normalize(join(root, new URL(request.url, 'http://localhost').pathname === '/' ? '/index.html' : new URL(request.url, 'http://localhost').pathname));
-  if (!file.startsWith(root)) { response.writeHead(403, headers); response.end('Forbidden'); return; }
-  try { response.writeHead(200, { ...headers, 'Content-Type': file.endsWith('.css') ? 'text/css; charset=utf-8' : /\.m?js$/.test(file) ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8' }); response.end(await readFile(file)); } catch { response.writeHead(404, headers); response.end('Not found'); }
+  const { readFile } = await import('node:fs/promises');
+  const { extname, relative, resolve, sep } = await import('node:path');
+  const staticRoot = resolve(root);
+  const pathname = new URL(request.url, 'http://localhost').pathname;
+  const file = resolve(staticRoot, `.${pathname === '/' ? '/index.html' : pathname}`);
+  const relativePath = relative(staticRoot, file);
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || relativePath.startsWith(sep)) { response.writeHead(403, headers); response.end('Forbidden'); return; }
+  const contentTypes = {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.woff2': 'font/woff2',
+  };
+  try { response.writeHead(200, { ...headers, 'Content-Type': contentTypes[extname(file).toLowerCase()] ?? 'application/octet-stream' }); response.end(await readFile(file)); } catch { response.writeHead(404, headers); response.end('Not found'); }
 }

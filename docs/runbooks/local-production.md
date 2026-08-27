@@ -12,7 +12,7 @@ npm run dev
 
 Le bridge écoute uniquement sur `http://127.0.0.1:4173` par défaut et sert le cockpit depuis `app/`. Le répertoire de données est `.ancrage/`, ou la valeur de `ANCRAGE_DATA_DIR`. Il est ignoré par Git.
 
-Pour lancer le scénario client synthétique depuis le cockpit, ouvrir `Configuration` puis choisir `Simuler`. La même simulation peut injecter une interruption contrôlée par API :
+Pour lancer le scénario client synthétique depuis le cockpit, ouvrir `Configuration` puis choisir `Lancer un test`. La même simulation peut injecter une interruption contrôlée par API :
 
 ```sh
 curl -s -X POST http://127.0.0.1:4173/api/simulations/client-site \
@@ -24,9 +24,11 @@ La réponse `FAILED` est attendue dans ce cas ; reprendre le `run.id` sur `/api/
 
 ## Parcours dossier de bout en bout
 
-`app/intake.html` est l’entrée publique locale. La validation de `POST /api/intake/dossiers` crée immédiatement un dossier sous `.ancrage/dossiers/<dossier-id>/` avec `dossier.json`, `story.md`, `menu.json` et les médias reçus. Le registre l’indexe dans `dossiers/index.json`; le cockpit le voit dans `Dossiers` et `À traiter` sans import manuel.
+`app/intake.html` est l’entrée publique locale. Le premier CTA identifie l’établissement et ouvre l’enrichissement progressif ; le dossier n’est créé qu’après `Enregistrer mon dossier`. La validation de `POST /api/intake/dossiers` crée alors un dossier sous `.ancrage/dossiers/<dossier-id>/` avec `dossier.json`, `story.md`, `menu.json` et les médias reçus. Le registre l’indexe dans `dossiers/index.json`; le cockpit le voit dans `Dossiers` et `À traiter` sans import manuel.
 
 Depuis le cockpit, `Lancer la création` appelle `POST /api/dossiers/<dossier-id>/runs`. Le moteur persiste les étapes, les reprises et les artefacts dans `.ancrage/runs/<run-id>/`. Le site et le rapport sont consultables par les liens d’artefacts, puis l’opérateur peut valider ou demander des corrections. `Ouvrir le dossier` ouvre uniquement le répertoire local validé.
+
+Le scénario client synthétique reprend le nom, le lieu, l’histoire, le menu, le contact et la première image du dossier dans le site généré. Le site est responsive, autonome et sans ressource externe ; le rapport conserve les éléments fournis et la provenance locale. Le quality gate vérifie la présence des artefacts, du viewport mobile, d’une règle responsive, du contenu d’identité et de la provenance du rapport avant de marquer le run comme réussi.
 
 ## Données et configurations
 

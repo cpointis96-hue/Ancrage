@@ -32,6 +32,9 @@ test('sert les modules du cockpit avec un type JavaScript', async () => {
     const response = await request(`http://127.0.0.1:${address.port}/app.mjs`);
     assert.equal(response.status, 200);
     assert.match(response.headers['content-type'], /^text\/javascript/);
+    const image = await request(`http://127.0.0.1:${address.port}/assets/brand-rock.png`);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers['content-type'], 'image/png');
   } finally { await api.close(); }
 });
 
