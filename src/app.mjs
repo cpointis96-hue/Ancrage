@@ -14,6 +14,8 @@ import { defaultImplementations } from './workflows/implementations.mjs';
 import { createWorkflowEngine } from './workflows/workflow-engine.mjs';
 import { clientSiteWorkflow, createClientSiteSimulation, createSimulationImplementations } from './simulation/client-site-simulation.mjs';
 import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
+import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
+import { runSeoAudit } from './audit/seo-audit-service.mjs';
 
 const defaultsRoot = new URL('../fixtures/defaults/', import.meta.url);
 
@@ -44,7 +46,7 @@ async function seedContract(store, id) {
   await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: null });
 }
 
-export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener() } = {}) {
+export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit } = {}) {
   const store = createAtomicStore(dataDir);
   const prompts = createPromptRegistry({ store });
   const workflows = createWorkflowRegistry({ store });
@@ -56,6 +58,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, implementations });
   const simulation = createClientSiteSimulation({ store, engine: runs, dossiers, faults });
   const artifacts = createArtifactRegistry({ store, runs });
+  const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const internet = createDomainResearchService({ store, runs });
   const ready = (async () => {
     await seedContract(store, 'domain-candidates');
@@ -67,5 +70,5 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedPrompt(store, prompts, 'audit-analyst');
     await seedPrompt(store, prompts, 'copywriter');
   })();
-  return { artifacts, dossiers, internet, providers, prompts, ready, runs, simulation, workflows };
+  return { artifacts, audits, dossiers, internet, providers, prompts, ready, runs, simulation, workflows };
 }

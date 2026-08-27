@@ -1,7 +1,9 @@
 # Wayfinder map — Architecture produit et technique de la Website Factory
 
 Type: wayfinder:map
-Status: open
+Status: ready-for-to-spec
+
+Portée du statut : tranche documentaire audit GMB/SEO uniquement. L'architecture globale est consolidée dans [`docs/spec/03-website-factory-global-v1.md`](../../docs/spec/03-website-factory-global-v1.md), mais l'activation fournisseur, la revue juridique, le vertical slice et la commercialisation restent ouverts.
 
 ## Destination
 
@@ -12,6 +14,8 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 ## Notes
 
 - **Audit de reprise du 27 août 2026** — [`audit-001-existing-state.md`](audit-001-existing-state.md) sépare les preuves de la fondation Ancrage des capacités encore absentes. La spec ciblée [`docs/spec/02-audit-gmb-seo-borné.md`](../../docs/spec/02-audit-gmb-seo-borné.md) formalise le prochain périmètre documentaire : GMB, SEO/concurrence, provenance, sécurité crawl, budgets et gates.
+- **Consolidation Wayfinder du 27 août 2026** — la spec `docs/spec/02-audit-gmb-seo-borné.md` distingue désormais décisions d'architecture, hypothèses calibrables et gates de commercialisation. Le socle Ancrage n'est pas étendu pendant cette passe.
+- **Recherches officielles du 27 août 2026** — DataForSEO, Cloudflare/Neon, licences d'index géographique, GMB/concurrence/conservation et pricing/cadre légal sont capturés dans [94](research/94-dataforseo-endpoints-prix-limites-provenance.md), [95](research/95-cloudflare-neon-prix-limites-restauration.md), [96](research/96-cityindex-gmb-concurrence-conservation.md) et [97](research/97-pricing-et-cadre-legal-marches.md). Ces notes séparent `MESURÉ`, `DOCUMENTÉ`, `DÉDUIT`, `À TESTER` et `NON OBSERVABLE`.
 - **Fondation Ancrage V1 implémentée localement** — le dépôt contient maintenant un `LocalBridge` loopback, un stockage atomique, un registre de prompts versionnés, un registre Provider sans secret navigateur, un moteur DAG avec runs et artefacts persistants, une API JSON et un cockpit `app/` raccordé. La preuve automatisée est dans `test/e2e/local-vertical-slice.test.mjs`. Les intégrations externes, Keychain réel, restauration sur support et validation navigateur restent ouvertes et ne sont pas déclarées comme prouvées.
 
 - Communication avec l'utilisateur en français.
@@ -120,7 +124,11 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Audit SEO fail-closed** — seuil de confiance, validation de domaine, protections SSRF, limites de crawl, budget et statut partiel doivent bloquer ou demander confirmation plutôt que deviner.
 - **Dépassement de budget audit** — à 100 %, aucune dépense optionnelle ne démarre ; une branche essentielle ne termine que si son coût restant connu reste sous le plafond dur, sinon elle devient `PARTIAL` ou `BLOCKED`. Toute reprise exige une nouvelle enveloppe et un nouveau run ; aucun fallback premium ou relance implicite.
 - **Sources et licences vérifiées** — la recherche 93 établit que Places est payant et soumis à attribution/conservation, Business Profile exige OAuth propriétaire, Nominatim public est exclu de l'autocomplétion et l'EULA Screaming Frog exclut par défaut un service automatisé multi-utilisateurs. Le MVP privilégie `CityIndex` local, observation Google transitoire seulement si approuvée, pistes concurrentielles sourcées et crawler HTTP/HTML interne.
-- **Provider SEO DataForSEO** — un seul credential structuré login/mot de passe API couvre SERP Google, données de mots-clés, concurrents, intersections de domaines et OnPage. Les appels restent déclenchés par des workflows versionnés avec budget et `CostEvent`; aucune clé n'est créée ou copiée automatiquement.
+- **Provider SEO DataForSEO** — un seul credential structuré login/mot de passe API couvre SERP Google, Maps/local pack, Business Listings, données de mots-clés, concurrents, intersections de domaines et OnPage. Les adapters et leurs chemins sont testés sans réseau réel ; les appels restent déclenchés par des workflows versionnés avec budget et `CostEvent`; aucune clé n'est créée ou copiée automatiquement.
+- **DataForSEO prioritaire pour l'audit public** — DataForSEO couvre par défaut les capacités publiques disponibles de SERP, Google Maps/local pack et Business Listings ; l'API Google Business Profile reste exclue de la recherche anonyme et réservée à un futur mode propriétaire OAuth.
+- **Index géographique et restitution** — GeoNames est le candidat commun sous CC BY 4.0 ; INSEE COG est la source française sous Licence Ouverte 2.0 ; ABS est secondaire ; la redistribution d'une source officielle Sri Lanka n'est pas confirmée. Google Maps public reste un handoff humain, OSM est conditionné à attribution/ODbL, et la redistribution DataForSEO reste `NON OBSERVABLE` avant confirmation écrite.
+- **Prix et cadre légal** — le relevé 97 interdit toute promesse mondiale « moins cher » et sépare prix initial, prépaiement, renouvellement, taxes, domaine, support, SEO, propriété et export. Les offres `Essential`, `Visibility`, `Managed` restent structurées mais leurs montants sont à tester par marché ; aucune CGV ou conformité n'est conclue sans revue locale.
+- **Arborescence globale** — le ticket [42](issues/42-arborescence-et-simplicite-systeme.md) est résolu au niveau architecture par `SiteSpec`, templates déterministes, configuration versionnée et cockpit orienté tâches ; le polish et les tests d'exécution restent hors décision Wayfinder.
 - **Parcours audit groupé** — l'audit du site et l'analyse de la fiche Google Business Profile sont proposés ensemble lorsque les deux sources existent ; leurs données, autorisations et preuves restent séparées.
 - **Rapport audit gratuit** — le prospect reçoit un rapport web complet dans le périmètre annoncé, avec preuves et limites ; les exports bruts, le volume illimité et les fonctions avancées restent distincts du rapport interprété.
 - **Branche sans site** — si aucun domaine fiable n'est trouvé, aucun crawl n'est lancé ; une démo est proposée seulement si le seuil de génération est atteint, sinon le `ProgressiveIntake` demande les champs critiques manquants et les cinq photos obligatoires avant génération.
@@ -137,37 +145,42 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Pilotage cockpit de l'audit** — le propriétaire peut versionner contenu, règles d'affichage, priorités, prompts de synthèse, profils de crawl et e-mails ; il peut suivre et relancer le CLI Screaming Frog via profils contrôlés, sans shell arbitraire exposé au navigateur.
 - **Terminal local d'intervention** — le cockpit peut ouvrir sur le Mac opérateur un terminal avec commande Screaming Frog préparée, profil et dossier isolé visibles ; confirmation obligatoire avant exécution, aucun terminal public.
 - **IA audit SEO subordonnée** — règles et métriques déterministes d'abord ; l'IA explique, regroupe et priorise seulement des findings prouvés, avec sortie structurée et reviewer indépendant.
+- **Screaming Frog hors chemin commercial** — le MVP s'appuie sur le crawler HTTP/HTML interne ; le CLI Screaming Frog reste une intervention opérateur conditionnée à une licence compatible vérifiée par écrit.
+- **Crawl fail-closed** — validation DNS/IP avant connexion et après redirection, limites de ressources, isolation, absence d'exécution/téléchargement et logs expurgés sont des gates bloquants ; la preuve d'exécution appartient au vertical slice.
+- **Stockage audit borné** — Neon pour les métadonnées, R2 pour le rapport/PDF pendant sept jours par défaut, archive locale chiffrée pour les exports lourds sans réplication supplémentaire acceptée au MVP ; une restauration Mac éteint reste `WAITING_FOR_MAC`.
+- **Orchestration audit** — les branches indépendantes ne démarrent qu'après identité/domaine autorisés ; chaque branche publie un checkpoint, un budget et un état partial ; le rapport final, le PDF et le CTA de préparation attendent les preuves et la revue.
 
 ## Fog restante avant `to-spec`
 
-La direction produit est décidée. Il reste uniquement des validations ou des prototypes bornés :
+La direction produit et l'architecture de l'audit sont décidées. Il reste des validations d'exécution, des prototypes et des preuves externes bornées :
 
-### Bloqueurs avant `to-spec`
+### Gates d'exécution après `to-spec`
 
 - **Prototype templates** : différé ; reprendre avec l'agent UI, hors chemin critique de l'architecture.
-- **Prototype cockpit** : le profil visuel/comportemental Ancrage V1 est disponible ; valider encore l'arborescence complète, les états métier et l'écran de validation finale.
-- **Prototype parcours public** : vérifier l'enchaînement nom/ville → enrichissement → formulaire → cinq photos → email → génération.
-- **Recherche fournisseurs** : confirmer Neon, Cloudflare, stockage objet, queues/workflows, domaine et paiement avec coûts et limites actuels.
-- **Sécurité et données** : finaliser registre des traitements, politique de conservation, suppression, uploads, SSRF, prompt injection, backups et restore par marché.
+- **Prototypes public/cockpit/templates** : validation statique effectuée le 27 août 2026 et consignée dans [09-validation-prototypes-wayfinder-2026-08-27.md](../../docs/ux/09-validation-prototypes-wayfinder-2026-08-27.md). Les prototypes restent jetables ; une nouvelle vérification navigateur est `NON OBSERVABLE` dans cette session car le navigateur intégré a refusé `file://`.
+- **Prototype parcours public** : les écrans E0–E7, l'e-mail invalide, le PDF, la partialité, la validation opérateur et le CTA sont présents ; l'intégration backend et le vertical slice réel restent ouverts.
+- **Recherche fournisseurs** : la documentation officielle est consolidée dans [94](research/94-dataforseo-endpoints-prix-limites-provenance.md) et [95](research/95-cloudflare-neon-prix-limites-restauration.md) ; restent à tester compte, permissions, coûts effectifs, quotas, restauration et désactivation, sans activation automatique.
+- **Sécurité et données** : la décision documentaire est résolue dans le ticket [10](issues/10-securite-donnees-et-standards.md) ; les tests runtime de sandbox/egress, rate limiting, backups, restore et suppression restent des gates d'exécution.
 - **RPO/RTO** : tester les objectifs du document [63-rpo-rto-mvp.md](research/63-rpo-rto-mvp.md).
-- **Pricing réel** : exécuter le protocole [64-protocole-test-prix-restaurants.md](research/64-protocole-test-prix-restaurants.md) sur des restaurants accessibles.
+- **Pricing réel** : le relevé officiel [97](research/97-pricing-et-cadre-legal-marches.md) interdit une revendication « moins cher » ; exécuter ensuite le protocole [64-protocole-test-prix-restaurants.md](research/64-protocole-test-prix-restaurants.md) avant de fixer les montants.
 - **Catalogue final** : renseigner les prix, taxes, limites, options et conditions dans les trois offres après les tests.
 - **Vertical slice réel** : produire quelques démos avec de vrais restaurants, mesurer coût, délai, qualité et temps opérateur.
-- **Audit SEO — entrée produit** : décider si l'audit est un parcours indépendant, une étape de la démo ou une valeur d'acquisition qui mène ensuite à la démo ([66](issues/66-entree-audit-seo-et-promesse.md)).
-- **Identification établissement/domaine** : rechercher les sources autorisées, quotas, coûts et fiabilité avant de choisir un fournisseur ([67](issues/67-identification-etablissement-et-sources.md)).
+- **Audit SEO — entrée produit** : décision déjà résolue dans [66](issues/66-entree-audit-seo-et-promesse.md) ; le pré-slice Control Plane local est implémenté, tandis que l'intégration publique réelle reste ouverte.
+- **Identification établissement/domaine** : les options et licences sont documentées dans [96](research/96-cityindex-gmb-concurrence-conservation.md) ; rester en `À TESTER` pour couverture, import, mapping et runtime, avec `CityIndex` versionné et handoff Maps humain.
 - **Confirmation d'identité** — `AUTO_CONTINUE` est réservé à une fiche unique cohérente et corroborée sans conflit critique ; plusieurs candidats, un conflit ou une correspondance insuffisante déclenchent `ASK_CONFIRMATION`, et l'absence d'identité fiable déclenche `ASK_MORE_DATA` avec l'adresse uniquement. Aucun audit ne démarre avant la décision autorisante.
 - **Correspondance unique forte** — afficher le nom, la fiche et une ou deux images, puis continuer automatiquement ; proposer un contrôle discret « Ce n'est pas mon établissement » pour basculer vers une branche sans fiche confirmée.
 - **Ville structurée obligatoire** — la ville est choisie dans des suggestions structurées après saisie des premières lettres, avec pays et identifiant géographique ; une valeur libre n'est pas acceptée comme ville de référence.
 - **Branche sans GMB confirmé** — si aucune fiche fiable ne correspond malgré la ville validée, demander uniquement l'adresse de l'établissement puis produire un aperçu local borné : site officiel éventuel, mots-clés, concurrents directs et opportunités SEO local. La même préparation de site reste proposée sans ressaisie.
 - **Autocomplétion géographique MVP** — privilégier un index local de villes pour limiter coûts et dépendances ; Google Places Autocomplete est une option à vérifier pour couverture/UX et règles d'attribution ; l'instance publique Nominatim est exclue pour l'autocomplétion client ; Pelias/Photon restent des options auto-hébergées à étudier.
-- **Licence crawler** : obtenir la position écrite de Screaming Frog et comparer l'aperçu déterministe interne, Lighthouse/Playwright et crawler licencié ([68](issues/68-licence-screaming-frog-et-cli-cloud.md)).
+- **Licence crawler** : le ticket [68](issues/68-licence-screaming-frog-et-cli-cloud.md) est résolu par le retrait de Screaming Frog du chemin commercial ; une éventuelle licence opérateur reste optionnelle.
 - **Référence Screaming Frog** : la documentation CLI macOS, les limites gratuites, le launcher, les profils `.seospiderconfig`, les exports et le risque EULA sont capturés dans [74-screaming-frog-cli-reference.md](research/74-screaming-frog-cli-reference.md).
-- **Sécurité crawler** : spécifier et tester SSRF, DNS rebinding, isolation, téléchargements et limites de ressources ([69](issues/69-crawl-securite-isolation-ssrf.md)).
+- **Sécurité crawler** : les contrôles sont spécifiés et le ticket [69](issues/69-crawl-securite-isolation-ssrf.md) résolu ; l'exécution des tests reste un gate.
 - **Modèle et états audit** : valider les entités, transitions, idempotence, conservation et comparabilité ([70](issues/70-modele-pipeline-audit-seo.md)).
 - **Périmètres/prix audit** : aligner aperçu, standard et avancé avec les trois offres, budgets durs et affichage honnête du périmètre ([71](issues/71-perimetres-audit-et-prix.md)).
-- **Rapport audit** : trancher l'UX du rapport et de l'e-mail avec un prototype throwaway ([72](issues/72-prototype-rapport-audit-seo.md)).
+- **Rapport audit** : hiérarchie et états sont décidés dans [72](issues/72-prototype-rapport-audit-seo.md) ; le prototype throwaway reste à relire avant UI de production.
 - **Cockpit audit/CLI** : décider le niveau d'accès local au launcher, les profils autorisés et la frontière entre pilotage et terminal exceptionnel ([75](issues/75-cockpit-rapport-et-cli-screaming-frog.md)).
-- **Vertical slice audit** : exécuter un jeu de sites autorisés et mesurer exactitude, coût, délai, qualité et suppression ([73](issues/73-vertical-slice-audit-seo.md)).
+- **Vertical slice audit** : exécuter un jeu de sites explicitement autorisés et mesurer exactitude, coût, délai, qualité et suppression ([73](issues/73-vertical-slice-audit-seo.md)) ; aucune cible réelle ni donnée externe n'a été ajoutée pendant cette passe.
+- **Pré-slice audit local** : le crawler, le service, le registre immuable, les routes API et le rapport échappé sont implémentés et testés sur sept fixtures synthétiques ; le ledger de coûts et les adapters DataForSEO sont testés séparément, sans fermer le gate réel.
 
 ### Non-bloqueurs pouvant rester ouverts
 
@@ -180,7 +193,7 @@ La direction produit est décidée. Il reste uniquement des validations ou des p
 
 ### Frontière `to-spec`
 
-Le projet pourra passer à `to-spec` lorsque chaque bloqueur ci-dessus aura soit une décision vérifiée, soit une hypothèse explicitement acceptée avec un test planifié dans la spécification. Aucun nouveau choix produit fondamental ne doit alors rester implicite.
+Le projet peut passer à `to-spec` pour la tranche d'audit GMB/SEO : aucun choix produit fondamental de ce périmètre ne reste implicite. La construction et la commercialisation restent conditionnées aux gates d'exécution de la spec 02 ; elles ne sont pas déclarées réalisées par la présente carte.
 
 ## Out of scope
 

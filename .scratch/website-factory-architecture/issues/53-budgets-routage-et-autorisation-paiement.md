@@ -19,3 +19,9 @@ Autoriser le fallback uniquement dans une enveloppe préconfigurée. Le modèle 
 ## Decision
 
 Les budgets sont configurables par agent, étape, `DemoGeneration`, prospect, fournisseur et période, avec un plafond global. Toute dépense produit un `CostEvent`. Un dépassement, un coût inconnu ou une estimation absente bloque l'exécution et demande une intervention explicite.
+
+## Progression technique — 27 août 2026
+
+Le registre local [`src/runs/cost-ledger.mjs`](../../../src/runs/cost-ledger.mjs) implémente la pré-autorisation d'un coût connu, le blocage des coûts inconnus et du dépassement avant appel, le règlement du coût réel, la libération après échec et les événements de seuil 50/80/100 %. Les tests [`test/core/cost-ledger.test.mjs`](../../../test/core/cost-ledger.test.mjs) vérifient ces comportements sans appeler de provider.
+
+Cette brique n'est pas encore branchée à un workflow DataForSEO et ne constitue pas une preuve de coût réel ou de plafond fournisseur.

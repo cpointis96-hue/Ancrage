@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: open
+Status: resolved
 
 ## Question UX
 
@@ -36,3 +36,11 @@ Décision HITL : choix 1, confirmé le 20 août 2026.
 ## Décision de cadrage appliquée par l'agent
 
 Un rapport partiel est affiché avec le statut `PARTIAL`, les résultats disponibles, les éléments manquants et leur cause. Il ne peut jamais être présenté comme complet. Le cockpit conserve les actions de reprise ou de relance, tandis que le prospect reçoit une restitution utile et honnête sans attendre silencieusement une branche bloquée.
+
+## Answer
+
+Les variantes A, B et C de [`public-ancrage-v1-prototype.html`](../prototypes/public-ancrage-v1-prototype.html), ainsi que le parcours public E0 à E7, couvrent la comparaison de structure, le rapport GMB précoce, le rapport final, l'état `PARTIAL`, l'e-mail, la construction, la démo et le téléchargement PDF. Le cockpit associé montre la configuration du rapport, les preuves, les coûts, les étapes et la frontière d'intervention locale.
+
+La hiérarchie retenue est : résumé compréhensible, cinq priorités lorsque les findings disponibles le permettent, preuves et exemples, périmètre, limites, puis détails techniques. Les nombres et URLs d'un prototype restent des fixtures et ne sont pas des résultats commerciaux. Le PDF est un téléchargement local de démonstration, pas une preuve de génération côté serveur.
+
+Décision de prototype résolue le 27 août 2026. La validation navigateur historique reste distincte d'une validation de production ; l'ouverture directe des fichiers n'a pas pu être rejouée dans le navigateur courant à cause de sa politique d'URL.

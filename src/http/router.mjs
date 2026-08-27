@@ -3,7 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -63,6 +63,12 @@ export function createRouter({ artifacts = null, dossiers = null, providers, pro
         }
       }
       if (parts[1] === 'internet' && parts[2] === 'search' && method === 'POST') { if (!internet) throw new AppError('Recherche Internet non configurée.', { code: 'INTERNET_NOT_CONFIGURED', status: 503 }); const body = await readJsonBody(request); return sendJson(response, 200, await internet(body)); }
+      if (parts[1] === 'audits' && parts[2] === 'seo' && audits) {
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await audits.list());
+        if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await audits.create(body)); }
+        if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await audits.get(id(parts[3])));
+        if (parts.length === 5 && parts[4] === 'report' && method === 'GET') { const report = await audits.readReport(id(parts[3])); return sendContent(response, 200, report.value, report.contentType); }
+      }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await simulation.start(body.profile ?? {}, { fault: body.fault ?? null })); }
         if (parts.length === 5 && parts[4] === 'resume' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await simulation.resume(id(parts[3]), { fault: body.fault ?? null })); }

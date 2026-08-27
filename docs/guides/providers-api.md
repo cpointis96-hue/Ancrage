@@ -28,7 +28,7 @@ pour Name.com. Les valeurs complémentaires peuvent aussi rester dans `.env.loca
 | Anthropic Claude | `x-api-key` et `anthropic-version` | `GET /v1/models` | n/a |
 | Google Gemini | `x-goog-api-key` | `GET /v1beta/models` | n/a |
 | OpenRouter | `Authorization: Bearer` | `GET /api/v1/models` | n/a |
-| DataForSEO | `Authorization: Basic` avec login + mot de passe API | `GET /v3/appendix/user_data` | SERP, mots-clés, concurrents, intersection de domaines et OnPage |
+| DataForSEO | `Authorization: Basic` avec login + mot de passe API | `GET /v3/appendix/user_data` | SERP Google, Maps/local pack, Business Listings, mots-clés, concurrence, intersection de domaines et OnPage |
 | Cloudflare | `Authorization: Bearer` + account ID | Registrar extensions | Registrar domain search |
 | Dynadot | clé `key` + `command` | API JSON search | API JSON search |
 | NameSilo | clé `key` en query string | `getAccountInfo` | `checkRegisterAvailability` |
@@ -42,7 +42,7 @@ DataForSEO utilise un seul secret JSON enregistré dans le trousseau :
 {"login":"...","password":"..."}
 ```
 
-Ce credential teste `GET /v3/appendix/user_data` sans coût selon la documentation DataForSEO. Les capacités SEO restent des appels explicitement déclenchés par un workflow versionné : SERP Google, volume et idées de mots-clés, concurrents SERP, intersection de domaines et crawl OnPage. Chaque appel doit être associé à un budget et à un `CostEvent`; aucun appel n'est lancé par l'affichage de l'onglet Providers.
+Ce credential teste `GET /v3/appendix/user_data` sans coût selon la documentation DataForSEO. Les capacités SEO restent des appels explicitement déclenchés par un workflow versionné : SERP Google, Maps/local pack, Business Listings, volume et idées de mots-clés, aperçu de mots-clés, concurrents SERP, intersection de domaines et crawl OnPage. Chaque appel doit être associé à un budget et à un `CostEvent`; aucun appel n'est lancé par l'affichage de l'onglet Providers.
 
 La recherche ne déclenche jamais d'achat. Cloudflare recommande de refaire une vérification temps réel immédiatement avant toute inscription ; l'inscription et toute opération facturable restent hors de cette intégration.
 
@@ -58,8 +58,13 @@ La recherche ne déclenche jamais d'achat. Cloudflare recommande de refaire une 
 - [Name.com Check Availability](https://docs.name.com/api/v1/reference/domains/check-availability)
 - [DataForSEO API v3, authentification](https://docs.dataforseo.com/v3/auth/)
 - [DataForSEO SERP Google](https://docs.dataforseo.com/v3/serp-google-type-task_post/)
+- [DataForSEO Google Maps](https://docs.dataforseo.com/v3/serp/google/maps/task_post/)
+- [DataForSEO Local Finder](https://docs.dataforseo.com/v3/serp/google/local_finder/live/advanced/)
+- [DataForSEO Business Listings](https://docs.dataforseo.com/v3/business_data-business_listings-search-live/)
 - [DataForSEO Keywords Data](https://docs.dataforseo.com/v3/keywords-data-overview/)
+- [DataForSEO Keyword Overview](https://docs.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live/)
 - [DataForSEO SERP Competitors](https://docs.dataforseo.com/v3/dataforseo_labs-google-serp_competitors-live/)
+- [DataForSEO Domain Intersection](https://docs.dataforseo.com/v3/dataforseo_labs/google/domain_intersection/live/)
 - [DataForSEO OnPage](https://docs.dataforseo.com/v3/on_page-task_post/)
 
 Les tests automatisés utilisent un `fetch` simulé. Un test réel consomme les quotas et peut dépendre des permissions, de la facturation, du sandbox et des TLD supportés par chaque compte.

@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -34,3 +34,9 @@ Le produit doit vendre un résultat compréhensible — présence professionnell
 ## Decision provisoire
 
 Le catalogue aura trois niveaux communs : `Essential`, `Visibility` et `Managed`. La structure reste identique entre pays, tandis que prix, devise, taxes, copy, paiement et limites sont localisés. La recherche de prix et le test commercial détermineront les montants finaux.
+
+## Answer
+
+La recherche bornée du 27 août 2026 confirme la structure, mais pas un montant définitif : les pages publiques observées mélangent prépaiement long, renouvellement, devises, taxes et périmètres non comparables. `Essential`, `Visibility` et `Managed` restent donc des niveaux communs, avec prix et limites localisés après test commercial documenté. Le domaine, le travail humain, le support, le SEO, les taxes, le renouvellement et la sortie doivent être séparés dans toute offre.
+
+Preuve : [`97-pricing-et-cadre-legal-marches.md`](../research/97-pricing-et-cadre-legal-marches.md). La règle « moins cher du marché » reste fermée ; aucun prix public Website Factory n'est inventé.

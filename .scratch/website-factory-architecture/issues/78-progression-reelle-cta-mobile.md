@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: open
+Status: resolved
 
 ## Parcours cible
 
@@ -39,3 +39,11 @@ Trois variantes mobiles du rapport avec barre d'étapes, état en cours, état p
 ## Références stratégiques
 
 Le parcours commercial invariant est [87 — Parcours client de référence](../research/87-parcours-client-reference.md) ; la stratégie SEO et le pipeline technique sont [82 — Stratégie SEO Website Factory](../research/82-seo-strategy-website-factory.md) et [85 — Pipeline audit vers site](../research/85-pipeline-audit-vers-site-website-factory.md).
+
+## Answer
+
+La variante C, `Encre profonde`, est retenue comme structure du parcours public : étapes persistantes, lecture verticale, état courant visible et une action primaire. Le prototype vérifie aussi l'e-mail invalide sans démarrage de run, le rapport final avec PDF, le passage au cockpit et les états de construction, de validation et de démo.
+
+La progression doit toujours provenir des `ProgressCheckpoint` validés. Le texte d'état explique la cause et la prochaine action, sans pourcentage artificiel ni promesse de délai. Le CTA `Préparer mon site` reste intentionnel ; l'e-mail est demandé après le clic et la génération après validation de l'adresse.
+
+Décision UX résolue le 27 août 2026. Les seuils de performance et la validation navigateur actuelle restent des gates d'exécution.

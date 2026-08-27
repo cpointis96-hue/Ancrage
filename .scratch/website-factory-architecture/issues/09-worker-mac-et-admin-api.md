@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -23,3 +23,11 @@ La connexion passe par un backend local authentifié vers une Admin API distante
 Le service public dépose les formulaires et fichiers dans une `CloudIntakeInbox` persistante : métadonnées dans `Neon`, objets de 10 à 20 Mo ou autres fichiers autorisés dans `Cloudflare R2`. Aucun modèle IA ni worker Mac n'est requis pour cette réception.
 
 Le cockpit local déclenche une synchronisation manuelle via le backend local authentifié. Le backend récupère un lot par curseur, vérifie l'identifiant de dossier, la version du schéma, la taille et le hash, écrit dans une zone locale chiffrée et idempotente, puis accuse réception. Le Control Plane ne supprime les objets R2 qu'après cet accusé de réception ; une relance reprend le même lot sans doublon. Une suppression lifecycle de secours traite les objets orphelins.
+
+## Answer
+
+La frontière retenue est un cockpit local servi par `LocalBridge`, avec authentification locale vers une Admin API distante au moyen de tokens courts et révocables. Le navigateur ne reçoit ni credential cloud, ni secret provider, ni accès shell. Le Control Plane reste disponible Mac éteint ; le Mac ne reprend que les lots et jobs compatibles avec ses capacités locales.
+
+La synchronisation est manuelle et idempotente : curseur, identifiant opaque de dossier, version de schéma, taille et hash sont vérifiés avant écriture atomique locale. L'accusé de réception précède toute suppression R2. Une divergence devient `SYNC_BLOCKED`, une interruption devient `SYNC_RETRY`, et un besoin d'archive locale lorsque le Mac est éteint devient `WAITING_FOR_MAC`.
+
+Décision d'architecture résolue le 27 août 2026. Les comptes, permissions minimales, tokens réels, reconnexion et restauration restent des gates de test, sans modifier la fondation Ancrage.

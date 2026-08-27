@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -28,3 +28,11 @@ Aucune promesse commerciale reposant sur Screaming Frog ne devient définitive s
 Voir [74-screaming-frog-cli-reference.md](../research/74-screaming-frog-cli-reference.md) pour l'installation macOS, les commandes launcher/headless, les profils, les exports, les limites gratuites et le risque EULA.
 
 Constat actuel : la version gratuite permet jusqu'à 500 URL par crawl, mais ses restrictions sur sauvegarde, configuration et fonctions avancées la rendent insuffisante comme hypothèse implicite du service complet.
+
+## Answer
+
+Screaming Frog est retiré du chemin commercial du MVP. La documentation et l'EULA capturées dans la recherche 93 ne permettent pas de considérer une licence standard comme autorisation d'un service automatisé multi-prospects. Le service utilise donc le crawler HTTP/HTML interne borné ; Lighthouse/Playwright restent des mesures ciblées contrôlées. Screaming Frog peut être lancé uniquement par l'opérateur, avec une licence et un profil explicitement vérifiés, sans exposer son interface, sa clé ou ses exports bruts au prospect.
+
+La question d'une licence adaptée pourra être rouverte avec une réponse écrite du fournisseur, mais elle ne bloque plus la spécification du MVP puisqu'aucune promesse ni étape obligatoire n'en dépend.
+
+Décision documentée le 27 août 2026 à partir de `research/93-sources-licences-identification-concurrence-crawler.md` et `research/74-screaming-frog-cli-reference.md`.

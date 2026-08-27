@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -27,3 +27,9 @@ Le système doit configurer des plafonds, alertes et budgets internes. La limite
 ## Clarification de périmètre
 
 Pour l'intake public lorsque le Mac est éteint, aucune base ou plateforme cloud supplémentaire n'est souhaitée par défaut : `Cloudflare` reste la couche d'entrée, de stockage objet et d'asynchrone ; `Neon` reste la couche relationnelle minimale candidate. Les petits volumes seront mesurés, mais les quotas, coûts et limites actuels devront être vérifiés avant activation.
+
+## Answer
+
+La recherche officielle du 27 août 2026 confirme ce choix au niveau architecture : Neon PostgreSQL est la base relationnelle mutualisée candidate, avec scale-to-zero et historique/restauration selon le plan ; R2 conserve les binaires ; Cloudflare porte l'entrée et l'asynchrone. Les limites Free/Paid, le cold start, l'historique et les spending limits sont documentés dans [`95-cloudflare-neon-prix-limites-restauration.md`](../research/95-cloudflare-neon-prix-limites-restauration.md).
+
+Le spending limit Neon est une alerte et non un arrêt automatique ; le plafond bloquant doit rester dans Website Factory. La région, le compte, les permissions, la restauration réelle, le coût effectif et le comportement de purge ne sont pas mesurés et restent des gates avant activation.

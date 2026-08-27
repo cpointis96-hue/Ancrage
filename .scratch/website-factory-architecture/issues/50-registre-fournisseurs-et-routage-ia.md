@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: open
+Status: resolved
 
 ## Question
 
@@ -43,3 +43,11 @@ Le modèle de chaque étape IA est choisi explicitement par l’opérateur. Aucu
 Un MacBook Air avec 16 Go de RAM pourra utiliser un petit modèle local lorsque la tâche le permet. S'il est indisponible, le système choisira un modèle cloud économique équivalent — par exemple une classe “mini/haïku/sonnet léger” selon le fournisseur — sans basculer automatiquement vers un modèle premium plus puissant.
 
 La sélection se fait par capacité requise, budget et politique de données, pas uniquement par le nom commercial du modèle. Chaque fournisseur devra déclarer ses capacités réelles et être testé avant activation.
+
+## Answer
+
+Le registre unique est composé de `ProviderConnection`, `ModelProfile` et `AIRoutingPolicy`. L'étape de workflow choisit explicitement sa capacité et sa classe de coût ; la configuration active est versionnée dans `AgentConfigurationVersion` et gelée par run. Le routage suit `déterministe → local → cloud approuvé de même classe → humain`, selon la politique de données et le budget.
+
+Un provider n'est activé qu'après secret présent hors navigateur, test minimal réussi, capacités déclarées, politique de données et plafond vérifié. Chaque `AIExecutionRecord` conserve provider, modèle, policy, configuration, schéma, coût, durée, fallback et validation. Aucun fallback premium, fournisseur inconnu ou modèle implicite n'est autorisé.
+
+Décision d'architecture résolue le 27 août 2026. La vérification des comptes et des coûts réels reste un gate d'exécution ; aucune clé n'est créée par cette décision.

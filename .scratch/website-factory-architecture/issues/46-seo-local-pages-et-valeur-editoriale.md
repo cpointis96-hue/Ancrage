@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,17 @@ Google Search Central et documentation structurée officielle ; compléter par d
 ## Decision provisoire
 
 Le système peut proposer de nombreuses pages pour la démo, mais la production n'indexe que les pages qui passent un seuil de valeur, d'originalité, de provenance, de navigation utile et d'intention réelle. Les pages faibles sont fusionnées, privées ou `noindex`.
+
+## Answer
+
+La règle est retenue pour la spécification globale : une page n'est proposée à l'indexation que si son intention est réelle, son contenu est original et utile au visiteur, ses faits sont sourcés, sa place dans la navigation est compréhensible et sa canonicalisation est déterminée. Une page faible reste privée, fusionnée ou `noindex`. Une page de démonstration n'est jamais indexable par défaut.
+
+Cette règle suit les recommandations officielles de Google sur le contenu people-first, la prévention des doorway pages et du contenu produit à grande échelle, ainsi que la réduction des duplications par canonicalisation. Elle ne constitue ni un seuil de classement ni une garantie de visibilité.
+
+Décision d'architecture résolue le 27 août 2026 ; le seuil opérationnel exact et la revue sur dataset réel restent des gates de spécification et de vertical slice.
+
+## Sources primaires vérifiées le 27 août 2026
+
+- [Google Search Central, contenu utile et people-first](https://developers.google.com/search/docs/fundamentals/creating-helpful-content)
+- [Google Search Central, spam policies](https://developers.google.com/search/docs/essentials/spam-policies)
+- [Google Search Central, canonicalisation des URLs](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls)

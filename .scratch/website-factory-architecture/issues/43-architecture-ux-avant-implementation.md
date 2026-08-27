@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: open
+Status: resolved
 
 ## Question
 
@@ -35,3 +35,11 @@ Choisir le premier parcours à prototyper et les critères d'observation. Le pro
 ## Prototype pointers
 
 Les prototypes templates/cockpit servent de base de comparaison structurelle. Le parcours public complet reste à prototyper avant `to-spec`.
+
+## Answer
+
+Le parcours prioritaire est `landing page → nom + ville → enrichissement → ProgressiveIntake → audit → rapport → préparation de démo`, complété par la revue cockpit et le site restaurant mobile-first. Les prototypes jetables déjà présents couvrent les écrans publics E0 à E7, les états `PARTIAL`, erreur e-mail, génération, démo, le cockpit de validation et la direction SSTR.
+
+Le comportement retenu est une seule action primaire par état, une progression fondée sur les `ProgressCheckpoint`, un rapport GMB visible dès qu'il est prêt, un PDF seulement au rapport final, et une validation opérateur avant livraison. Le design final et les templates restent hors production jusqu'à une revue UI dédiée.
+
+Décision de prototype résolue le 27 août 2026. Les validations navigateur historiques sont conservées comme preuves antérieures ; la vérification courante de cette reprise reste statique lorsque l'ouverture directe des fichiers est bloquée par la politique du navigateur.

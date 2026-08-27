@@ -7,6 +7,7 @@ import http from 'node:http';
 import { createApp } from '../../src/app.mjs';
 import { createLocalServer } from '../../src/http/server.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
+import { runSeoAudit } from '../../src/audit/seo-audit-service.mjs';
 
 function request(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -100,4 +101,49 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.equal(open.status, 200);
     assert.equal(opened, path.join(root, 'dossiers', dossier.id));
   } finally { await api.close(); }
+});
+
+test('expose un audit SEO local, son rapport, puis le recharge', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-audit-'));
+  const fetchImpl = async url => ({
+    url,
+    status: 200,
+    headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null },
+    text: async () => '<!doctype html><html lang="fr"><head><title>Maison Sillage</title><meta name="description" content="Restaurant"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://example.com/"><script type="application/ld+json">{}</script></head><body><h1>Maison Sillage</h1></body></html>',
+  });
+  const auditRunner = input => runSeoAudit({ ...input, fetchImpl, lookup: async () => ['93.184.216.34'] });
+  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), auditRunner });
+  const server = createLocalServer({ app });
+  const address = await server.listen();
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    const createdResponse = await request(`${base}/api/audits/seo`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ target: 'https://example.com', observedAt: '2026-08-27T00:00:00.000Z' }) });
+    assert.equal(createdResponse.status, 201);
+    const created = JSON.parse(await createdResponse.text());
+    assert.match(created.id, /^audit-/);
+    assert.equal(created.status, 'SUCCEEDED');
+    assert.equal(Object.hasOwn(created, 'html'), false);
+    assert.equal(created.crawlSummary.pagesCompleted, 1);
+
+    const listed = await request(`${base}/api/audits/seo`, { headers: { origin: base } });
+    assert.deepEqual(JSON.parse(await listed.text()).map(item => item.id), [created.id]);
+    const report = await request(`${base}/api/audits/seo/${created.id}/report`, { headers: { origin: base } });
+    assert.equal(report.status, 200);
+    assert.match(report.headers['content-type'], /^text\/html/);
+    const reportBody = await report.text();
+    assert.match(reportBody, /https:\/\/example\.com\//);
+    assert.equal(reportBody.includes('Maison Sillage'), false);
+  } finally {
+    await server.close();
+  }
+
+  const reloaded = createApp({ dataDir: root, secretStore: createMemorySecretStore(), auditRunner });
+  const reloadedServer = createLocalServer({ app: reloaded });
+  const reloadedAddress = await reloadedServer.listen();
+  try {
+    const persisted = await request(`http://127.0.0.1:${reloadedAddress.port}/api/audits/seo`, { headers: { origin: `http://127.0.0.1:${reloadedAddress.port}` } });
+    assert.equal(JSON.parse(await persisted.text()).length, 1);
+  } finally {
+    await reloadedServer.close();
+  }
 });

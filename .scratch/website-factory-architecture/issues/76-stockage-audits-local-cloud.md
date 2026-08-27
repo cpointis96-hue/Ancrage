@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: grilling
-Status: open
+Status: resolved
 
 ## Recommandation provisoire
 
@@ -49,3 +49,11 @@ Décision HITL : choix 1, confirmé le 20 août 2026.
 L'archive locale chiffrée ne reçoit pas de sauvegarde supplémentaire dans le MVP. Après synchronisation vérifiée et purge R2, le contenu privé peut donc n'exister que sur le Mac opérateur. Cette décision constitue un risque accepté : une panne, perte ou compromission du Mac peut rendre ces fichiers irrécupérables ; les métadonnées, hashes, statuts et événements restent conservés dans le Control Plane selon leur propre politique.
 
 Décision HITL : choix 2, confirmé le 20 août 2026.
+
+## Answer
+
+La politique est maintenant normative : Neon garde les métadonnées minimales et les hashes ; R2 garde le rapport et le PDF pendant sept jours par défaut, avec lifecycle de secours ; l'archive locale chiffrée garde les crawls et exports lourds sans sauvegarde supplémentaire dans le MVP. Cette dernière décision est un risque accepté et ne constitue pas une promesse de restauration.
+
+Une restauration ou une purge locale lorsque le Mac est éteint reste `WAITING_FOR_MAC`. Toute suppression est manuelle, confirmée et journalisée, et la suppression d'un objet synchronisé exige une écriture locale atomique et un hash vérifié. Les coûts de stockage et durées peuvent être recalibrés après mesure sans changer ces frontières d'autorité.
+
+Décision consolidée le 27 août 2026 dans la section 10.4 de `docs/spec/02-audit-gmb-seo-borné.md`.

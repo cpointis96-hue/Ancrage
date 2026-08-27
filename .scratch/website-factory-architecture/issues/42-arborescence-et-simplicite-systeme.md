@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: claimed
+Status: resolved
 
 ## Question
 
@@ -34,6 +34,12 @@ Définir la carte des dossiers, modules, surfaces et responsabilités avant impl
 ## Decision provisoire
 
 L'architecture s'organise autour d'un `SiteSpec` versionné, de templates déterministes, de contenus/offres configurables et d'un cockpit court orienté tâches. L'opérateur peut modifier les offres, textes, règles et paramètres activables sans éditer le code ; chaque version est restaurable. Le prototype d'arborescence reste à réaliser avant `to-spec`.
+
+## Answer
+
+La carte d'arborescence est désormais spécifiée par [`docs/spec/03-website-factory-global-v1.md`](../../../docs/spec/03-website-factory-global-v1.md) : `SiteSpec` versionné, templates déterministes, contenu/configuration séparés, Control Plane source de vérité, Agent Plane subordonné, artefacts et intégrations isolés, et cockpit orienté tâches. L'édition client reste bornée aux données courantes ; structure, template, SEO avancé et nouvelle langue passent par une génération contrôlée.
+
+Le prototype historique reste une référence UX et non une preuve de production. Les états métier et les tests d'exécution sont des gates distincts, sans modification de la fondation Ancrage.
 
 L'édition client après production est limitée aux horaires, téléphone, adresse, prix, plats, photos, textes courts et offres. Les changements de structure, template, SEO avancé ou nouvelle langue passent par une génération contrôlée.
 

@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: prototype
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,11 @@ Prototype : [templates-prototype.html](../prototypes/templates-prototype.html), 
 ## Deferred
 
 Les variantes produites sont rejetées comme direction visuelle. Le choix des templates est retiré du chemin critique et sera repris plus tard avec un agent UI dédié. Aucun style de ce prototype ne doit être promu en production.
+
+## Answer
+
+Le prototype [`templates-prototype.html`](../prototypes/templates-prototype.html) confirme une structure de trois familles partageant un même `SiteSpec` : `Local & chaleureux`, `Premium gastronomique` et `Tropical & expérience`. Les composants communs restent l'identité, le menu, les photos, les horaires, l'accès et les CTA réellement disponibles. Les différences visuelles sont des paramètres déterministes du renderer, jamais une liberté laissée à l'IA.
+
+La direction visuelle de ce prototype est rejetée et ne devient pas une promesse de template. Les familles restent une décision d'architecture réversible ; leur design final, leur localisation et leur validation de contraste sont différés à une passe UI dédiée.
+
+Décision de prototype résolue le 27 août 2026 ; le prototype est jetable et n'autorise aucune génération de production.

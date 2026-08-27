@@ -2,7 +2,7 @@
 
 Parent: ../map.md
 Type: grilling
-Status: open
+Status: resolved
 
 ## Parcours provisoire
 
@@ -49,3 +49,11 @@ Le rapport est rendu progressivement. Dès que l'audit GMB est terminé, il est 
 ## Références stratégiques
 
 Le parcours invariant est [87 — Parcours client de référence](../research/87-parcours-client-reference.md). Les rôles d'agents et le pipeline complet sont dans [83 — Catalogue des agents](../research/83-catalogue-agents-seo-website-factory.md) et [85 — Pipeline audit vers site](../research/85-pipeline-audit-vers-site-website-factory.md).
+
+## Answer
+
+La coordination retenue est bornée par les dépendances : l'identité et le domaine sont validés avant le GMB, la sonde site, le crawl et les mesures ; les règles déterministes précèdent toute interprétation IA ; le rapport final attend les preuves et la revue de cohérence. Chaque branche publie son propre `ProgressCheckpoint`, budget, timeout et état `PARTIAL` éventuel. Le frontend ne déduit jamais la progression d'une animation.
+
+Le rapport GMB peut être livré dès son checkpoint, mais le PDF et `Préparer mon site` attendent le rapport final. Ce CTA demande ensuite un e-mail valide avant le second `PipelineRun`. QA et validation opérateur précèdent toujours l'envoi de la démo. La décision résout la contradiction de séquencement ; l'implémentation et la mesure de latence restent couvertes par le vertical slice.
+
+Décision consolidée le 27 août 2026 dans les sections 1, 4 et 13 de `docs/spec/02-audit-gmb-seo-borné.md`.
