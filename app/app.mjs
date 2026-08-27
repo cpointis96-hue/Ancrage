@@ -340,25 +340,30 @@ function workflowStepEditor(step, index, prompts, contracts, cliProfiles, provid
   const profileOptions = cliProfiles.map(profile => `<option value="${esc(profile.id)}" ${step.profile === profile.id ? 'selected' : ''}>${esc(profile.name ?? profile.id)}</option>`).join('');
   const providerOptions = [...providers, ...(step.provider && !providers.some(provider => provider.id === step.provider) ? [{ id: step.provider, name: step.provider }] : [])].map(provider => `<option value="${esc(provider.id)}" ${step.provider === provider.id ? 'selected' : ''}>${esc(provider.name ?? provider.id)}</option>`).join('');
   const modelOptions = [...models, ...(step.model && !models.some(model => model.id === step.model) ? [{ id: step.model, name: step.model }] : [])].map(model => `<option value="${esc(model.id)}" ${step.model === model.id ? 'selected' : ''}>${esc(model.name ?? model.id)}</option>`).join('');
-  return `<section class="workflow-editor-step" data-workflow-step data-step-trigger="${esc(step.trigger ?? '')}" data-step-approval="${esc(step.approval ?? 'none')}">
-    <header><strong>Étape ${index + 1}</strong>${iconControl(`Supprimer l’étape ${index + 1}`, 'trash', 'data-remove-workflow-step')}</header>
-    <div class="form-grid">
-      <label class="field"><span>Identifiant</span><input value="${esc(step.id ?? '')}" data-step-field="id" placeholder="analyse"></label>
-      <label class="field"><span>Type</span><select data-step-field="kind">${option('deterministic', 'Déterministe')}${option('ai', 'IA')}</select></label>
-      <label class="field span-2"><span>Implémentation</span><input value="${esc(step.implementation ?? '')}" data-step-field="implementation" placeholder="nom-de-l-implementation"></label>
-      <label class="field"><span>Dépend de</span><input value="${esc((step.dependsOn ?? []).join(', '))}" data-step-field="dependsOn" placeholder="étape-précédente"></label>
-      <label class="field"><span>Entrées reçues</span><input value="${esc((step.inputRefs ?? []).join(', '))}" data-step-field="inputRefs" placeholder="étape-précédente"></label>
-      <label class="field span-2"><span>Sorties produites</span><input value="${esc((step.outputRefs ?? []).join(', '))}" data-step-field="outputRefs" placeholder="rapport, preuves"></label>
-      <label class="field"><span>Prompt si étape IA</span><select data-step-field="promptRef"><option value="">Aucun</option>${prompts.map(prompt => `<option value="${esc(prompt.id)}" ${step.promptRef === prompt.id ? 'selected' : ''}>${esc(prompt.name)}</option>`).join('')}</select></label>
-      <label class="field"><span>Acteur</span><input value="${esc(step.actor ?? '')}" data-step-field="actor" placeholder="rôle"></label>
-      <label class="field"><span>Provider</span><select data-step-field="provider" data-step-provider><option value="">Aucun</option>${providerOptions}</select></label>
-      <label class="field"><span>Modèle si étape IA</span><select data-step-field="model" data-step-model><option value="">Choisir un modèle</option>${modelOptions}</select></label>
-      <label class="field"><span>Profil CLI</span><select data-step-field="profile"><option value="">Aucun</option>${profileOptions}</select></label>
-      <label class="field span-2"><span>Contrat de sortie</span><select data-step-field="contractRef"><option value="">Aucun</option>${contractOptions}</select></label>
-      <label class="field"><span>Timeout en ms</span>${numberField(step.timeoutMs ?? 1000, 'data-step-field="timeoutMs"')}</label>
-      <label class="field"><span>Budget maximum</span>${numberField(step.budget ?? 0, 'data-step-field="budget"')}</label>
+  const refs = (items, label, field) => `<div class="step-resource"><small>${label}</small><span>${items.length ? items.map(item => `<button type="button" class="resource-link" data-open-step-field="${field}" title="Modifier ${label.toLowerCase()}">${icon('folder')}${esc(item)}</button>`).join('') : 'Aucune'}</span></div>`;
+  const hasAiFields = step.kind === 'ai';
+  return `<details class="workflow-editor-step" data-workflow-step data-step-trigger="${esc(step.trigger ?? '')}" data-step-approval="${esc(step.approval ?? 'none')}">
+    <summary><span class="step-order">${index + 1}</span><span class="step-summary"><strong>${esc(step.id || `Étape ${index + 1}`)}</strong><small>${step.kind === 'ai' ? 'IA' : 'Déterministe'}${step.implementation ? ` · ${esc(step.implementation)}` : ''}</small></span><span class="step-summary-resources">${refs(step.inputRefs ?? [], 'Entrées', 'inputRefs')}${refs(step.outputRefs ?? [], 'Sorties', 'outputRefs')}</span></summary>
+    <div class="workflow-editor-body">
+      <div class="workflow-editor-actions">${iconControl(`Supprimer l’étape ${index + 1}`, 'trash', 'data-remove-workflow-step')}</div>
+      <div class="form-grid">
+        <label class="field"><span>Identifiant</span><input value="${esc(step.id ?? '')}" data-step-field="id" placeholder="analyse"></label>
+        <label class="field"><span>Type</span><select data-step-field="kind">${option('deterministic', 'Déterministe')}${option('ai', 'IA')}</select></label>
+        <label class="field span-2"><span>Implémentation</span><input value="${esc(step.implementation ?? '')}" data-step-field="implementation" placeholder="nom-de-l-implementation"></label>
+        <label class="field ${step.dependsOn?.length ? '' : 'is-empty'}"><span>Dépend de</span><input value="${esc((step.dependsOn ?? []).join(', '))}" data-step-field="dependsOn" placeholder="étape-précédente"></label>
+        <label class="field"><span>Entrées reçues</span><input value="${esc((step.inputRefs ?? []).join(', '))}" data-step-field="inputRefs" placeholder="étape-précédente"></label>
+        <label class="field span-2"><span>Sorties produites</span><input value="${esc((step.outputRefs ?? []).join(', '))}" data-step-field="outputRefs" placeholder="rapport, preuves"></label>
+        <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Prompt</span><select data-step-field="promptRef"><option value="">Aucun</option>${prompts.map(prompt => `<option value="${esc(prompt.id)}" ${step.promptRef === prompt.id ? 'selected' : ''}>${esc(prompt.name)}</option>`).join('')}</select></label>
+        <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Acteur</span><input value="${esc(step.actor ?? '')}" data-step-field="actor" placeholder="rôle"></label>
+        <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Provider</span><select data-step-field="provider" data-step-provider><option value="">Aucun</option>${providerOptions}</select></label>
+        <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Modèle</span><select data-step-field="model" data-step-model><option value="">Choisir un modèle</option>${modelOptions}</select></label>
+        <label class="field ${step.profile ? '' : 'is-empty'}"><span>Profil CLI</span><select data-step-field="profile"><option value="">Aucun</option>${profileOptions}</select></label>
+        <label class="field ${step.contractRef ? '' : 'is-empty'}"><span>Contrat de sortie</span><select data-step-field="contractRef"><option value="">Aucun</option>${contractOptions}</select></label>
+        <label class="field"><span>Timeout en ms</span>${numberField(step.timeoutMs ?? 1000, 'data-step-field="timeoutMs"')}</label>
+        <label class="field"><span>Budget maximum</span>${numberField(step.budget ?? 0, 'data-step-field="budget"')}</label>
+      </div>
     </div>
-  </section>`;
+  </details>`;
 }
 
 function readWorkflowForm() {
@@ -481,6 +486,14 @@ async function renderConfiguration() {
       if (!providerId || state.configurationModels[providerId]) { render(); return; }
       try { state.configurationModels[providerId] = await api.providerModels(providerId); render(); } catch (error) { notify(error.message); }
     }));
+    bindAll('[data-open-step-field]', (button, event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const step = button.closest('[data-workflow-step]');
+      step.open = true;
+      step.querySelector(`[data-step-field="${button.dataset.openStepField}"]`)?.focus({ preventScroll: true });
+    });
+    document.querySelectorAll('[data-step-field="kind"]').forEach(select => select.addEventListener('change', () => render()));
     bindAll('[data-activate-template]', async button => { const item = templates.find(template => template.id === button.dataset.activateTemplate); const version = item?.versions.at(-1); if (!version) { notify('Créez une version avant activation.'); return; } const result = await perform(button, () => api.activateTemplate(item.id, version.id), 'Template activé.'); if (result.ok) await render(); });
     bindAll('[data-delete-template]', async button => { if (!window.confirm('Supprimer ce template local ?')) return; const result = await perform(button, () => api.deleteTemplate(button.dataset.deleteTemplate), 'Template supprimé.'); if (result.ok) await render(); });
     $('[data-upload-template]')?.addEventListener('click', async event => { const file = $('[data-template-file]').files[0]; const id = $('[data-template-id]').value.trim(); const name = $('[data-template-name]').value.trim() || file?.name || id; if (!file || !id) { notify('Choisissez un fichier et un identifiant.'); return; } const content = await file.text(); const existing = templates.find(item => item.id === id); const result = await perform(event.currentTarget, () => api.saveTemplate(id, { name, content }, existing?.draftHash ?? null), 'Template importé sur disque.'); if (result.ok) { await api.createTemplateVersion(id, result.value.draftHash); await render(); } });
