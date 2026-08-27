@@ -326,6 +326,8 @@ function rememberConfigurationDraft(source, read) {
     try { state.configurationDraft = { ...source, ...read() }; } catch {}
   };
   detail.querySelectorAll('input, textarea, select').forEach(input => {
+    input.addEventListener('pointerdown', event => event.stopPropagation());
+    input.addEventListener('click', event => event.stopPropagation());
     input.addEventListener('input', sync);
     input.addEventListener('change', sync);
   });
