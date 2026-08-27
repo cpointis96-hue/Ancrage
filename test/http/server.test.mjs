@@ -58,6 +58,23 @@ test('crée, versionne et active un workflow via l’API', async () => {
   } finally { await api.close(); }
 });
 
+test('préserve toutes les valeurs éditables d’un workflow lors de la sauvegarde', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
+  const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) });
+  const address = await api.listen();
+  const base = `http://127.0.0.1:${address.port}`;
+  const definition = { id: 'full-workflow', name: 'Workflow complet', version: 3, outputTemplateId: 'site-preview', limits: { urls: 10, minutes: 7, megabytes: 18, dollars: 1.25 }, steps: [{ id: 'analyse', kind: 'ai', trigger: 'start', dependsOn: [], inputRefs: ['dossier'], outputRefs: ['rapport', 'preuves'], implementation: 'provider-chat', promptRef: 'audit-analyst', contractRef: 'audit-report', timeoutMs: 2400, budget: 0.4, approval: 'none', actor: 'analyste', provider: 'openai', model: 'gpt-test', profile: '' }] };
+  try {
+    const savedResponse = await request(`${base}/api/workflows/full-workflow/draft`, { method: 'PUT', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ definition, expectedHash: null }) });
+    assert.equal(savedResponse.status, 200);
+    const saved = JSON.parse(await savedResponse.text());
+    assert.deepEqual(saved.limits, definition.limits);
+    assert.deepEqual(saved.steps[0], definition.steps[0]);
+    const reloaded = await request(`${base}/api/workflows/full-workflow`, { headers: { origin: base } });
+    assert.deepEqual(JSON.parse(await reloaded.text()).steps[0], definition.steps[0]);
+  } finally { await api.close(); }
+});
+
 test('relie les routes contrat, prompt et profil CLI à un workflow', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
   const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) });
