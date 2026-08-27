@@ -49,6 +49,20 @@ function bearer(url, { fetchImpl, token, timeoutMs }) {
   return requestJson(fetchImpl, url, { headers: { authorization: `Bearer ${token}` } }, timeoutMs);
 }
 
+function jsonHeaders(headers = {}) { return { ...headers, 'content-type': 'application/json' }; }
+
+function parseGeneratedJson(body, provider) {
+  const text = body?.choices?.[0]?.message?.content
+    ?? body?.content?.find(item => item.type === 'text')?.text
+    ?? body?.candidates?.[0]?.content?.parts?.find(item => typeof item.text === 'string')?.text;
+  if (typeof text !== 'string') throw Object.assign(new Error(`${provider} returned no text`), { code: 'AI_EMPTY_OUTPUT' });
+  try { return { output: JSON.parse(text), usage: body?.usage ?? null }; } catch { throw Object.assign(new Error(`${provider} returned invalid JSON`), { code: 'AI_INVALID_JSON' }); }
+}
+
+function chatAdapter({ fetchImpl, provider, endpoint, headers, body }) {
+  return requestJson(fetchImpl, endpoint, { method: 'POST', headers: jsonHeaders(headers), body: JSON.stringify(body) }).then(result => parseGeneratedJson(result, provider));
+}
+
 function candidates(query) {
   const label = String(query).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '').slice(0, 63);
   if (!label) throw Object.assign(new Error('Invalid domain query'), { code: 'INVALID_QUERY' });
@@ -64,9 +78,13 @@ function adapter(test, search = null) {
 export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, env = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('fetch is required');
   const openai = adapter(({ secret }) => bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
+  openai.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' } } });
   const anthropic = adapter(({ secret }) => requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
+  anthropic.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' }, body: { model, max_tokens: 4096, system, messages: [{ role: 'user', content: JSON.stringify(input) }] } });
   const googleGemini = adapter(({ secret }) => requestJson(fetchImpl, 'https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': credential(secret).key } }, timeoutMs));
+  googleGemini.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'google-gemini', endpoint: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, headers: { 'x-goog-api-key': credential(secret).key }, body: { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }], generationConfig: { responseMimeType: 'application/json' } } });
   const openrouter = adapter(({ secret }) => bearer('https://openrouter.ai/api/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
+  openrouter.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'openrouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' } } });
   const dataforseo = adapter(({ secret }) => dataForSeoRequest(fetchImpl, secret, 'appendix/user_data', {}, timeoutMs));
   dataforseo.serp = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpMaps = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/task_post', { method: 'POST', body: tasks }, timeoutMs);
@@ -125,5 +143,5 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
     return body?.results ?? [];
   });
 
-  return { anthropic, cloudflare, dataforseo, dynadot, googleGemini, nameCom, namesilo, openai, openrouter };
+  return { anthropic, cloudflare, dataforseo, dynadot, googleGemini, 'google-gemini': googleGemini, nameCom, namesilo, openai, openrouter };
 }

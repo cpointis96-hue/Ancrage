@@ -59,5 +59,13 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
     if (enabled && (!provider.configured || provider.health !== 'healthy')) throw new ConflictError('Le provider doit être configuré et testé avec succès.');
     await saveStatus(id, { enabled: Boolean(enabled) }); return (await list()).find(item => item.id === id);
   }
-  return { deleteSecret, list, saveSecret, setEnabled, testConnection };
+  async function executionContext(id) {
+    const provider = (await list()).find(item => item.id === id);
+    if (!provider) throw new NotFoundError(`Provider introuvable : ${id}`);
+    if (!provider.configured || provider.health !== 'healthy' || !provider.enabled) throw new ConflictError(`Le provider ${id} doit être configuré, testé et activé.`);
+    const secret = await secretStore.get(SECRET_REF(id));
+    if (!secret) throw new ValidationError('Secret provider absent.');
+    return { provider, secret };
+  }
+  return { deleteSecret, executionContext, list, saveSecret, setEnabled, testConnection };
 }

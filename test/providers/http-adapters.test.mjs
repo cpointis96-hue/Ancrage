@@ -39,6 +39,25 @@ test('accepte les credentials structurés nécessaires aux APIs composites', asy
   assert.match(calls[1].options.headers.authorization, /^Basic /);
 });
 
+test('génère du JSON avec les adapters IA autorisés', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    const body = String(url).includes('anthropic') ? { content: [{ type: 'text', text: '{"sections":[]}' }], usage: { input_tokens: 2 } } : String(url).includes('generativelanguage') ? { candidates: [{ content: { parts: [{ text: '{"sections":[]}' }] } }] } : { choices: [{ message: { content: '{"sections":[]}' } }], usage: { total_tokens: 3 } };
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  } });
+  const outputs = [];
+  for (const [id, adapter] of [['openai', adapters.openai], ['anthropic', adapters.anthropic], ['google-gemini', adapters['google-gemini']], ['openrouter', adapters.openrouter]]) {
+    const result = await adapter.generate({ secret: `${id}-key`, model: 'model-test', system: 'Retourne JSON.', input: { value: 1 } });
+    assert.deepEqual(result.output, { sections: [] });
+    outputs.push(result);
+  }
+  assert.equal(calls.length, 4);
+  assert.equal(JSON.stringify(calls).includes('model-test'), true);
+  assert.equal(calls.some(call => call.url.includes('gemini-key')), false);
+  assert.equal(JSON.stringify(outputs).includes('-key'), false);
+});
+
 test('utilise un seul credential DataForSEO pour les capacités SEO', async () => {
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: fakeFetch(calls) });

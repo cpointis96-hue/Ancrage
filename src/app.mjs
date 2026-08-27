@@ -13,7 +13,7 @@ import { createKeychainSecretStore } from './providers/keychain-secret-store.mjs
 import { createProviderRegistry } from './providers/provider-registry.mjs';
 import { createArtifactRegistry } from './runs/artifact-registry.mjs';
 import { createLocalOpener } from './system/local-opener.mjs';
-import { defaultImplementations } from './workflows/implementations.mjs';
+import { createProviderChatImplementation, defaultImplementations } from './workflows/implementations.mjs';
 import { createWorkflowEngine } from './workflows/workflow-engine.mjs';
 import { clientSiteWorkflow, createClientSiteSimulation, createSimulationImplementations } from './simulation/client-site-simulation.mjs';
 import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
@@ -71,7 +71,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const providers = createProviderRegistry({ store, secretStore, adapters: providerAdapters });
   const dossiers = createDossierRegistry({ store, opener });
   const faults = new Set();
-  const implementations = { ...defaultImplementations, ...createSimulationImplementations({ store, faults }), 'domain-candidates': createDomainCandidatesImplementation({ providers, adapters: providerAdapters, secretStore, fallback: query => ({ domain: `${String(query).toLowerCase().replace(/[^a-z0-9]+/g, '')}.com`, source: 'local-candidate-generator', availability: 'unknown' }) }) };
+  const implementations = { ...defaultImplementations, 'provider-chat': createProviderChatImplementation({ providers, adapters: providerAdapters }), ...createSimulationImplementations({ store, faults }), 'domain-candidates': createDomainCandidatesImplementation({ providers, adapters: providerAdapters, secretStore, fallback: query => ({ domain: `${String(query).toLowerCase().replace(/[^a-z0-9]+/g, '')}.com`, source: 'local-candidate-generator', availability: 'unknown' }) }) };
   const runs = createWorkflowEngine({ store, promptRegistry: prompts, workflowRegistry: workflows, contractRegistry: contracts, cliProfileRegistry: cliProfiles, templateRegistry: templates, implementations });
   const simulation = createClientSiteSimulation({ store, engine: runs, dossiers, faults });
   const artifacts = createArtifactRegistry({ store, runs });

@@ -41,6 +41,7 @@ export function createWorkflowEngine({ store, promptRegistry, workflowRegistry =
       const prompt = step.kind === 'ai' ? await promptRegistry.get(step.promptRef) : null;
       if (prompt && !prompt.activeVersionId) throw new ValidationError(`Aucune version active pour le prompt : ${step.promptRef}`);
       const promptVersion = prompt?.versions.find(item => item.id === prompt.activeVersionId) ?? null;
+      const promptText = prompt && promptRegistry?.resolveRevision ? await promptRegistry.resolveRevision(prompt.id, prompt.activeVersionId) : null;
       const contractRef = step.contractRef ?? prompt?.outputContract ?? null;
       const contract = contractRef && contractRegistry ? await contractRegistry.get(normalizeContractId(contractRef)) : null;
       if (contract && !contract.activeVersionId) throw new ValidationError(`Aucune version active pour le contrat : ${normalizeContractId(contractRef)}`);
@@ -49,7 +50,7 @@ export function createWorkflowEngine({ store, promptRegistry, workflowRegistry =
       const profile = step.profile && cliProfileRegistry ? await cliProfileRegistry.get(step.profile) : null;
       if (profile && !profile.activeVersionId) throw new ValidationError(`Aucune version active pour le profil CLI : ${step.profile}`);
       const profileVersion = profile?.versions.find(item => item.id === profile.activeVersionId) ?? null;
-      return { id: step.id, kind: step.kind, promptRef: prompt?.id ?? null, promptVersionId: promptVersion?.id ?? null, promptHash: promptVersion?.hash ?? null, model: step.model ?? null, contractRef: contract ? normalizeContractId(contractRef) : contractRef, contractVersionId: contractVersion?.id ?? null, contractHash: contractVersion?.hash ?? null, contractSchema: contractSnapshot?.schema ?? null, profile: step.profile ?? null, profileVersionId: profileVersion?.id ?? null, profileHash: profileVersion?.hash ?? null, provider: step.provider ?? null, actor: step.actor ?? null };
+      return { id: step.id, kind: step.kind, promptRef: prompt?.id ?? null, promptVersionId: promptVersion?.id ?? null, promptHash: promptVersion?.hash ?? null, promptText, model: step.model ?? null, contractRef: contract ? normalizeContractId(contractRef) : contractRef, contractVersionId: contractVersion?.id ?? null, contractHash: contractVersion?.hash ?? null, contractSchema: contractSnapshot?.schema ?? null, profile: step.profile ?? null, profileVersionId: profileVersion?.id ?? null, profileHash: profileVersion?.hash ?? null, provider: step.provider ?? null, actor: step.actor ?? null };
     }));
     const template = definition.outputTemplateId && templateRegistry?.getActiveVersion ? await templateRegistry.getActiveVersion(definition.outputTemplateId) : null;
     const id = idFactory('run');
@@ -71,9 +72,12 @@ export function createWorkflowEngine({ store, promptRegistry, workflowRegistry =
         const implementation = implementations[step.implementation]; if (!implementation) throw new ValidationError(`Implémentation absente : ${step.implementation}`);
         const result = await Promise.race([Promise.resolve(implementation({ input, step, run, store })), new Promise((_, reject) => { const timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), step.timeoutMs); timer.unref?.(); })]);
         if (!result || typeof result !== 'object') throw new ValidationError('Sortie d’étape invalide.');
+        const output = Object.prototype.hasOwnProperty.call(result, '__output') ? result.__output : result;
+        if (!output || typeof output !== 'object') throw new ValidationError('Sortie d’étape invalide.');
         const snapshotStep = run.snapshot.steps.find(item => item.id === step.id);
-        if (snapshotStep?.contractSchema) validateJsonSchema(snapshotStep.contractSchema, result);
-        const outputHash = store.hashText(JSON.stringify(result)); attempt.status = 'SUCCEEDED'; attempt.outputHash = outputHash; attempt.finishedAt = clock().toISOString(); run.steps = [...run.steps.filter(item => item.id !== step.id), { id: step.id, status: 'SUCCEEDED', outputHash }]; outputs[step.id] = result; await store.writeJson(`${runPath(run.id)}/steps/${step.id}/step-run.json`, { stepId: step.id, output: result, outputHash, attemptId: attempt.id }, { expectedHash: null }); await event(run.id, 'STEP_SUCCEEDED', { stepId: step.id, outputHash });
+        if (snapshotStep?.contractSchema) validateJsonSchema(snapshotStep.contractSchema, output);
+        if (result.__execution) attempt.execution = result.__execution;
+        const outputHash = store.hashText(JSON.stringify(output)); attempt.status = 'SUCCEEDED'; attempt.outputHash = outputHash; attempt.finishedAt = clock().toISOString(); run.steps = [...run.steps.filter(item => item.id !== step.id), { id: step.id, status: 'SUCCEEDED', outputHash }]; outputs[step.id] = output; await store.writeJson(`${runPath(run.id)}/steps/${step.id}/step-run.json`, { stepId: step.id, output, outputHash, attemptId: attempt.id }, { expectedHash: null }); await event(run.id, 'STEP_SUCCEEDED', { stepId: step.id, outputHash });
       } catch (error) { attempt.status = 'FAILED'; attempt.errorCode = error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'VALIDATION_ERROR' ? 'INVALID_OUTPUT' : 'STEP_FAILED'; attempt.finishedAt = clock().toISOString(); run.status = 'FAILED'; await event(run.id, 'STEP_FAILED', { stepId: step.id, errorCode: attempt.errorCode }); run.attempts.push(attempt); run.updatedAt = clock().toISOString(); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run); return run; }
       run.attempts.push(attempt); run.updatedAt = clock().toISOString(); await store.writeJson(`${runPath(run.id)}/run-manifest.json`, run);
     }

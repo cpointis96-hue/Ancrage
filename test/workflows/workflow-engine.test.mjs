@@ -12,6 +12,7 @@ import { createWorkflowRegistry } from '../../src/config/workflow-registry.mjs';
 import { createContractRegistry } from '../../src/config/contract-registry.mjs';
 import { createCliProfileRegistry } from '../../src/config/cli-profile-registry.mjs';
 import { createTemplateRegistry } from '../../src/config/template-registry.mjs';
+import { createProviderChatImplementation } from '../../src/workflows/implementations.mjs';
 
 const definition = { id: 'test-flow', version: 1, steps: [
   { id: 'one', kind: 'deterministic', dependsOn: [], inputRefs: [], outputRefs: ['value'], implementation: 'one', timeoutMs: 1000, budget: 0 },
@@ -60,6 +61,11 @@ test('fige et consomme le template actif sélectionné par le workflow', async (
   const workflows = createWorkflowRegistry({ store }); await workflows.save(flow.id, flow, { expectedHash: null }); const current = await workflows.get(flow.id); const flowVersion = await workflows.createVersion(flow.id, { expectedDraftHash: current.hash }); await workflows.activate(flow.id, flowVersion.id);
   const engine = createWorkflowEngine({ store, workflowRegistry: workflows, templateRegistry: templates, implementations: { produce: async () => ({ result: 'ok' }) } });
   const run = await engine.start(flow.id); assert.equal(run.status, 'SUCCEEDED'); assert.equal(run.snapshot.template.versionId, version.id); assert.equal(run.snapshot.template.hash, version.hash);
+});
+
+test('bloque une génération IA si le provider n’est pas activé', async () => {
+  const implementation = createProviderChatImplementation({ providers: { executionContext: async () => { throw Object.assign(new Error('provider désactivé'), { code: 'CONFLICT' }); } }, adapters: { openai: { generate: async () => ({ output: { sections: [] } }) } } });
+  await assert.rejects(() => implementation({ step: { id: 'ai', provider: 'openai', model: 'model-test' }, run: { snapshot: { steps: [{ id: 'ai', model: 'model-test', promptText: 'JSON' }] } }, input: {} }), /provider désactivé/);
 });
 
 test('fige les versions du workflow, du prompt et le modèle choisi', async () => {
