@@ -11,7 +11,7 @@ Fournir le premier contrat exécutable de l’audit SEO local : valider une cibl
 
 `validatePublicTarget(target)` vérifie la politique de cible publique. `crawlSite({ target, fetchImpl, lookup, maxPages, maxBytes, timeoutMs })` capture uniquement du HTML même-origin, avec limites de pages/octets et blocage des cibles privées ou redirections interdites. `analyzeSeoAudit({ target, pages, observedAt, maxPages })` applique ensuite les règles aux pages capturées. Une page contient `url`, `status`, `html` et `crawlStatus`.
 
-Le résultat contient `schemaVersion`, `ruleVersion`, `target`, `observedAt`, `status`, `summary`, les pages analysées et les findings. Chaque finding porte `classification: CALCULATED` et une preuve avec `sourceType`, URL, date et règle.
+Le résultat contient `schemaVersion`, `ruleVersion`, `target`, `observedAt`, `status`, `summary`, les pages analysées et les findings. Chaque finding porte `classification: CALCULATED` et un `EvidenceSnapshot` avec identifiant déterministe, URL canonique, date, paramètres sans secret, hash SHA-256 du payload capturé, règle et classe de rétention. Le HTML brut n’est jamais inclus dans le résultat persisté.
 
 ## Règles V1
 
@@ -43,7 +43,7 @@ Preuve : `test/audit/seo-audit.test.mjs` et `test/audit/vertical-slice.test.mjs`
 
 ## Intégration Control Plane locale
 
-Le registre `createSeoAuditRegistry` persiste chaque résultat et son rapport séparé sous `audits/<auditId>/`. Les routes locales sont :
+Le registre `createSeoAuditRegistry` persiste chaque résultat et son rapport séparé sous `audits/<auditId>/`. Une requête peut fournir une clé `Idempotency-Key` (ou `idempotencyKey` dans le JSON) : une reprise avec la même empreinte retourne le même audit sans nouveau crawl ; une empreinte différente est refusée. Les routes locales sont :
 
 - `POST /api/audits/seo` pour lancer un audit borné ;
 - `GET /api/audits/seo` pour lister les audits persistés ;
@@ -54,4 +54,4 @@ Cette intégration ne déclenche rien au démarrage : le crawl n’a lieu qu’�
 
 ## Limites explicites
 
-La résolution DNS/SSRF, le crawl HTTP borné et le même-origin sont couverts au niveau unitaire avec dépendances injectées ; leur validation intégrée sur une cible réelle reste ouverte. La persistance locale du résultat et du rapport est couverte ; elle ne constitue pas encore une politique complète d’immutabilité métier, de rétention ou de suppression vérifiée. Cette tranche ne réalise pas le rendu JavaScript, Lighthouse, Axe, DataForSEO, GMB, `CostEvent`, la persistance R2/Neon, la suppression, la restauration ou l’envoi e-mail. Elle ne remplace donc pas le vertical slice autorisé de l’issue 73 et ne constitue pas une capacité commercialisable.
+La résolution DNS/SSRF, le crawl HTTP borné et le même-origin sont couverts au niveau unitaire avec dépendances injectées ; leur validation intégrée sur une cible réelle reste ouverte. La persistance locale du résultat, du rapport et de la clé d’idempotence est couverte ; elle ne constitue pas encore une politique complète de rétention ou de suppression vérifiée. Cette tranche ne réalise pas le rendu JavaScript, Lighthouse, Axe, DataForSEO, GMB, `CostEvent` d’un appel provider, la persistance R2/Neon, la suppression, la restauration ou l’envoi e-mail. Elle ne remplace donc pas le vertical slice autorisé de l’issue 73 et ne constitue pas une capacité commercialisable.

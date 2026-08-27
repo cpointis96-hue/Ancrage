@@ -117,13 +117,17 @@ test('expose un audit SEO local, son rapport, puis le recharge', async () => {
   const address = await server.listen();
   const base = `http://127.0.0.1:${address.port}`;
   try {
-    const createdResponse = await request(`${base}/api/audits/seo`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ target: 'https://example.com', observedAt: '2026-08-27T00:00:00.000Z' }) });
+    const createdResponse = await request(`${base}/api/audits/seo`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json', 'idempotency-key': 'audit-route-1' }, body: JSON.stringify({ target: 'https://example.com', observedAt: '2026-08-27T00:00:00.000Z' }) });
     assert.equal(createdResponse.status, 201);
     const created = JSON.parse(await createdResponse.text());
     assert.match(created.id, /^audit-/);
     assert.equal(created.status, 'SUCCEEDED');
     assert.equal(Object.hasOwn(created, 'html'), false);
     assert.equal(created.crawlSummary.pagesCompleted, 1);
+
+    const replayResponse = await request(`${base}/api/audits/seo`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json', 'idempotency-key': 'audit-route-1' }, body: JSON.stringify({ target: 'https://example.com', observedAt: '2026-08-27T00:00:00.000Z' }) });
+    assert.equal(replayResponse.status, 201);
+    assert.equal(JSON.parse(await replayResponse.text()).id, created.id);
 
     const listed = await request(`${base}/api/audits/seo`, { headers: { origin: base } });
     assert.deepEqual(JSON.parse(await listed.text()).map(item => item.id), [created.id]);

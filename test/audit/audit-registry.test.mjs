@@ -17,3 +17,14 @@ test('persiste séparément le JSON d’audit et le rapport, sans écrasement', 
   assert.match((await registry.readReport(created.id)).value, /audit-fixed/);
   await assert.rejects(() => registry.create({ target: result.target, observedAt: result.observedAt }), error => error.code === 'CONFLICT');
 });
+
+test('rend la création rejouable avec une clé d’idempotence et bloque les divergences', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-audit-idempotency-'));
+  let runs = 0;
+  const registry = createSeoAuditRegistry({ store: createAtomicStore(root), runner: async () => { runs += 1; return result; }, renderer: audit => `<html><body>${audit.id}</body></html>`, idFactory: prefix => `${prefix}-fixed`, clock: () => new Date('2026-08-27T00:00:00.000Z') });
+  const first = await registry.create({ target: result.target, observedAt: result.observedAt, idempotencyKey: 'request-1' });
+  const replay = await registry.create({ target: result.target, observedAt: result.observedAt, idempotencyKey: 'request-1' });
+  assert.equal(replay.id, first.id);
+  assert.equal(runs, 1);
+  await assert.rejects(() => registry.create({ target: 'https://other.example/', observedAt: result.observedAt, idempotencyKey: 'request-1' }), error => error.code === 'CONFLICT');
+});

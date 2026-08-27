@@ -1,4 +1,5 @@
 import { ValidationError } from '../core/errors.mjs';
+import { createEvidenceSnapshot } from './evidence.mjs';
 
 export const SEO_RULE_VERSION = 'seo-rules-v1';
 const DEFAULT_MAX_PAGES = 50;
@@ -30,13 +31,13 @@ function hasLink(html, rel) {
   return [...html.matchAll(/<link\b[^>]*>/gi)].some(match => attributes(match[0]).rel?.toLowerCase().split(/\s+/).includes(rel));
 }
 
-function finding(code, severity, url, observedAt, detail) {
+function finding(code, severity, url, observedAt, detail, rawPayload = '') {
   return {
     code,
     severity,
     classification: 'CALCULATED',
     detail,
-    evidence: { sourceType: 'crawl', url, observedAt, ruleVersion: SEO_RULE_VERSION },
+    evidence: createEvidenceSnapshot({ canonicalUrl: url, observedAt, rawPayload, ruleVersion: SEO_RULE_VERSION }),
   };
 }
 
@@ -45,7 +46,7 @@ function analyzePage(page, observedAt) {
   if (page.crawlStatus === 'blocked') {
     return {
       page: { url, status: page.status ?? null, crawlStatus: 'blocked', findingsCount: 1 },
-      findings: [finding('CRAWL_BLOCKED', 'WARN', url, observedAt, 'La page n’a pas pu être analysée.')],
+      findings: [finding('CRAWL_BLOCKED', 'WARN', url, observedAt, 'La page n’a pas pu être analysée.', '')],
     };
   }
   if (typeof page.html !== 'string') throw new ValidationError('page.html est invalide.', { field: 'page.html' });
@@ -57,14 +58,14 @@ function analyzePage(page, observedAt) {
     return alt === undefined || !alt;
   }).length;
   const findings = [];
-  if (!title) findings.push(finding('MISSING_TITLE', 'WARN', url, observedAt, 'La page ne contient pas de title exploitable.'));
-  if (!hasMeta(html, 'description')) findings.push(finding('MISSING_META_DESCRIPTION', 'WARN', url, observedAt, 'La page ne contient pas de meta description.'));
-  if (!hasMeta(html, 'viewport')) findings.push(finding('MISSING_VIEWPORT', 'WARN', url, observedAt, 'La page ne contient pas de viewport.'));
-  if (!hasLink(html, 'canonical')) findings.push(finding('MISSING_CANONICAL', 'WARN', url, observedAt, 'La page ne contient pas de canonical.'));
-  if (!/<html\b[^>]*\blang\s*=/i.test(html)) findings.push(finding('MISSING_HTML_LANG', 'WARN', url, observedAt, 'La langue du document n’est pas déclarée.'));
-  if (!/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html)) findings.push(finding('MISSING_STRUCTURED_DATA', 'WARN', url, observedAt, 'Aucune donnée structurée JSON-LD observée.'));
-  if (h1Count > 1) findings.push(finding('MULTIPLE_H1', 'WARN', url, observedAt, `${h1Count} balises h1 observées.`));
-  if (missingImageAlt > 0) findings.push(finding('MISSING_IMAGE_ALT', 'WARN', url, observedAt, `${missingImageAlt} image(s) sans attribut alt exploitable.`));
+  if (!title) findings.push(finding('MISSING_TITLE', 'WARN', url, observedAt, 'La page ne contient pas de title exploitable.', html));
+  if (!hasMeta(html, 'description')) findings.push(finding('MISSING_META_DESCRIPTION', 'WARN', url, observedAt, 'La page ne contient pas de meta description.', html));
+  if (!hasMeta(html, 'viewport')) findings.push(finding('MISSING_VIEWPORT', 'WARN', url, observedAt, 'La page ne contient pas de viewport.', html));
+  if (!hasLink(html, 'canonical')) findings.push(finding('MISSING_CANONICAL', 'WARN', url, observedAt, 'La page ne contient pas de canonical.', html));
+  if (!/<html\b[^>]*\blang\s*=/i.test(html)) findings.push(finding('MISSING_HTML_LANG', 'WARN', url, observedAt, 'La langue du document n’est pas déclarée.', html));
+  if (!/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html)) findings.push(finding('MISSING_STRUCTURED_DATA', 'WARN', url, observedAt, 'Aucune donnée structurée JSON-LD observée.', html));
+  if (h1Count > 1) findings.push(finding('MULTIPLE_H1', 'WARN', url, observedAt, `${h1Count} balises h1 observées.`, html));
+  if (missingImageAlt > 0) findings.push(finding('MISSING_IMAGE_ALT', 'WARN', url, observedAt, `${missingImageAlt} image(s) sans attribut alt exploitable.`, html));
   return { page: { url, status: page.status ?? 200, crawlStatus: 'complete', findingsCount: findings.length }, findings };
 }
 

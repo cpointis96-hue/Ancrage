@@ -49,6 +49,10 @@ test('détecte les signaux SEO déterministes sans inventer de conclusion', () =
   ]);
   assert.equal(audit.findings.every(finding => finding.classification === 'CALCULATED'), true);
   assert.equal(audit.findings.every(finding => finding.evidence.url === target), true);
+  assert.equal(audit.findings.every(finding => finding.evidence.canonicalUrl === target), true);
+  assert.equal(audit.findings.every(finding => /^sha256:[a-f0-9]{64}$/.test(finding.evidence.rawPayloadHash)), true);
+  assert.equal(audit.findings.every(finding => /^evidence-[a-f0-9]{24}$/.test(finding.evidence.id)), true);
+  assert.equal(audit.findings.every(finding => Object.hasOwn(finding.evidence, 'requestParameters') && Object.hasOwn(finding.evidence, 'retentionClass')), true);
   assert.equal(JSON.stringify(audit).includes('classement'), false);
 });
 
