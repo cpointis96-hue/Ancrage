@@ -38,5 +38,11 @@ export const api = {
   testProvider: id => call(`/providers/${id}/test`, { method: 'POST' }),
   testProviderSecret: (id, secret) => call(`/providers/${id}/test-secret`, { method: 'POST', body: JSON.stringify({ secret }) }),
   activateWorkflow: (id, versionId) => call(`/workflows/${id}/activate`, { method: 'POST', body: JSON.stringify({ versionId }) }),
+  activateTemplate: (id, versionId) => call(`/templates/${id}/activate`, { method: 'POST', body: JSON.stringify({ versionId }) }),
+  createTemplateVersion: (id, expectedDraftHash) => call(`/templates/${id}/versions`, { method: 'POST', body: JSON.stringify({ expectedDraftHash }) }),
+  deleteTemplate: id => call(`/templates/${id}`, { method: 'DELETE' }),
+  getTemplate: id => call(`/templates/${id}`),
+  saveTemplate: (id, payload, expectedHash) => call(`/templates/${id}/draft`, { method: 'PUT', body: JSON.stringify({ ...payload, expectedHash }) }),
+  templates: () => call('/templates'),
   workflows: () => call('/workflows'),
 };
