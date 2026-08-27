@@ -3,7 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, audits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, dossiers = null, providers, prompts, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -46,6 +46,15 @@ export function createRouter({ artifacts = null, audits = null, dossiers = null,
         if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.save(workflowId, body.definition, { expectedHash: body.expectedHash })); }
         if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.createVersion(workflowId, { expectedDraftHash: body.expectedDraftHash })); }
         if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.activate(workflowId, body.versionId)); }
+      }
+      if (parts[1] === 'templates' && templates) {
+        if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await templates.list());
+        const templateId = id(parts[2]);
+        if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await templates.get(templateId));
+        if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await templates.save(templateId, body, { expectedHash: body.expectedHash })); }
+        if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await templates.createVersion(templateId, { expectedDraftHash: body.expectedDraftHash })); }
+        if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await templates.activate(templateId, body.versionId)); }
+        if (parts.length === 3 && method === 'DELETE') return sendJson(response, 200, await templates.remove(templateId));
       }
       if (parts[1] === 'runs') {
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await runs.list());
