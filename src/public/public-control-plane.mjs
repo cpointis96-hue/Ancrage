@@ -72,6 +72,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
       const reports = await auditStarter({ request: response(request), decision });
       if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html });
       if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
+      if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
     }
     return saveRequest(request);
   }

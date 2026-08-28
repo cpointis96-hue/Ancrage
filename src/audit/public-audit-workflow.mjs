@@ -141,7 +141,7 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       intent: item?.search_intent_info?.main_intent ?? item?.keyword_data?.search_intent_info?.main_intent ?? null,
     })).filter(item => item.keyword);
   }
-  async function create(input = {}) {
+  async function create(input = {}, options = {}) {
     const runStarted = Date.now();
     const name = text(input.name, 'name');
     const city = input.city;
@@ -176,6 +176,16 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return result;
     }
+    const seoBasePromise = domain ? (async () => {
+      const seoStarted = Date.now();
+      try {
+        const module = await runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile });
+        module.external = { onPage: 'NOT_RUN', cause: 'ASYNC_RESULT_RETRIEVAL_NOT_IMPLEMENTED' };
+        return { module, durationMs: Date.now() - seoStarted };
+      } catch (error) {
+        return { module: { status: 'PARTIAL', cause: error.code ?? 'SEO_AUDIT_FAILED' }, durationMs: Date.now() - seoStarted };
+      }
+    })() : Promise.resolve({ module: { status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED' }, durationMs: 0 });
     const [discovered, gmb] = await Promise.all([
       call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced }),
       call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
@@ -183,15 +193,8 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     result.stages.push(stage('site-discovery', discovered.status, { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: normalizeCandidates(discovered) };
     result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
     await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
-    if (domain) {
-      const seoStarted = Date.now();
-      try {
-        result.modules.seo = await runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile });
-        result.modules.seo.external = { onPage: 'NOT_RUN', cause: 'ASYNC_RESULT_RETRIEVAL_NOT_IMPLEMENTED' };
-        result.stages.push(stage('seo-audit', result.modules.seo.status, { cause: null, durationMs: Date.now() - seoStarted }));
-      }
-      catch (error) { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: error.code ?? 'SEO_AUDIT_FAILED', durationMs: Date.now() - seoStarted })); result.modules.seo = { status: 'PARTIAL' }; }
-    } else { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: 'SITE_NOT_CONFIRMED', durationMs: 0 })); result.modules.seo = { status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED' }; }
+    const continueAfterGmb = async () => {
+    const seoBase = await seoBasePromise; result.modules.seo = seoBase.module; result.stages.push(stage('seo-audit', seoBase.module.status, { cause: seoBase.module.cause ?? null, durationMs: seoBase.durationMs }));
     const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
     const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.keywordOverview });
     const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.serpCompetitors });
@@ -201,6 +204,9 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
     if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
     return result;
+    };
+    if (options.waitFor === 'gmb') return { ...result, completion: continueAfterGmb() };
+    return continueAfterGmb();
   }
   return { create, get, list, readReport };
 }

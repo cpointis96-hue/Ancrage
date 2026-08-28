@@ -39,6 +39,7 @@ function reportLinks(request) {
   preparationForm.hidden = request.state !== 'FINAL_REPORT_READY';
 }
 function parseMenu(value) { return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...price] = line.split('—'); return { name: name.trim(), price: price.join('—').trim() }; }); }
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function digest(file) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
 function dataUrl(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Lecture de la photo impossible.')); reader.readAsDataURL(file); }); }
 function options(target, items, type) {
@@ -112,7 +113,8 @@ form.addEventListener('submit', async event => {
     }
     publicRequest = await jsonRequest('/api/public/requests', { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('public-request') }, body: JSON.stringify({ name: payload.name, city: payload.city, domain: payload.domain ?? null }) });
     publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/match-decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'CONFIRM' }) });
-    state.textContent = 'Audit terminé.'; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = `${publicRequest.input.city.label} · ${publicRequest.state}`; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Rapport disponible.' : 'Audit partiel.'; reportLinks(publicRequest);
+    state.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Audit terminé.' : 'Rapport GMB disponible.'; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = `${publicRequest.input.city.label} · ${publicRequest.state}`; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Rapport disponible.' : 'Audit final en cours.'; reportLinks(publicRequest);
+    for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && attempt < 30; attempt += 1) { await wait(1000); publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`); reportLinks(publicRequest); if (publicRequest.state === 'FINAL_REPORT_READY') { state.textContent = 'Audit terminé.'; publicFlowState.textContent = 'Rapport disponible.'; } }
   } catch (error) { state.textContent = error.message; } finally { button.disabled = false; progress.hidden = true; }
 });
 

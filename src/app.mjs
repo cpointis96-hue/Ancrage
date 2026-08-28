@@ -130,7 +130,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         city: { id: request.input.city.id, label: request.input.city.label, country: request.input.city.countryCode },
         domain: request.input.domain ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
-      });
+      }, { waitFor: 'gmb' });
       const reports = {};
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
@@ -140,7 +140,10 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       if (!reports.gmb) {
         reports.gmb = { html: `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Rapport GMB · ${request.input.name}</title></head><body><h1>${request.input.name}</h1><p>${request.input.city.label}</p><p>Rapport GMB partiel : le provider public n’a pas livré de résultat exploitable.</p></body></html>` };
       }
-      if (!reports.final) {
+      if (!reports.final && audit.completion) {
+        reports.completion = audit.completion.then(async completed => ({ html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
+      }
+      if (!reports.final && !reports.completion) {
         const localAudit = request.input.domain ? await auditRunner({ target: request.input.domain, observedAt: new Date().toISOString(), fetchImpl: auditFetchImpl, lookup: auditLookup }) : { status: 'PARTIAL', target: `${request.input.name} · ${request.input.city.label}`, observedAt: new Date().toISOString(), ruleVersion: 'local-demo-v1', summary: { pagesAnalyzed: 0, pagesSkipped: 0 }, findings: [] };
         reports.final = { html: renderSeoAuditReport(localAudit) };
       }
