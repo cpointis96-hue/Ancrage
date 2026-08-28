@@ -683,10 +683,11 @@ a { color: var(--moss); }
 .workflow-editor { display: grid; gap: 4px; margin: 14px 0; border-block: 1px solid var(--line-strong); }
 .workflow-editor-step { min-width: 0; border-bottom: 1px solid var(--line); background: transparent; }
 .workflow-editor-step:last-child { border-bottom: 0; }
-.workflow-editor-step summary { display: grid; grid-template-columns: 26px minmax(120px, .8fr) minmax(0, 1.4fr) 18px; align-items: center; gap: 12px; min-height: 58px; padding: 8px 0; cursor: pointer; list-style: none; }
-.workflow-editor-step summary::-webkit-details-marker { display: none; }
-.workflow-editor-step summary::after { content: ''; width: 7px; height: 7px; border-right: 1.5px solid var(--moss); border-bottom: 1.5px solid var(--moss); transform: rotate(45deg) translateY(-2px); }
-.workflow-editor-step[open] summary::after { transform: rotate(225deg) translate(-2px, -2px); }
+.workflow-editor-toggle { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.4fr); align-items: center; gap: 12px; min-height: 58px; padding: 8px 0; }
+.step-main { display: grid; grid-template-columns: 26px minmax(0, 1fr) 18px; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.step-main:focus-visible { outline: 2px solid var(--moss); outline-offset: 3px; }
+.step-toggle { width: 7px; height: 7px; border-right: 1.5px solid var(--moss); border-bottom: 1.5px solid var(--moss); transform: rotate(45deg) translateY(-2px); }
+.workflow-editor-step.is-open .step-toggle { transform: rotate(225deg) translate(-2px, -2px); }
 .step-order { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--moss); font-size: 11px; font-variant-numeric: tabular-nums; }
 .step-summary, .step-resource { min-width: 0; }
 .step-summary strong, .step-summary small, .step-resource small { display: block; overflow-wrap: anywhere; }
@@ -698,6 +699,7 @@ a { color: var(--moss); }
 .resource-link:hover { color: var(--moss); }
 .resource-link svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .workflow-editor-body { position: relative; padding: 12px 0 16px 38px; border-top: 1px solid var(--line); }
+.workflow-editor-step:not(.is-open) .workflow-editor-body { display: none; }
 .workflow-editor-actions { position: absolute; top: 10px; right: 0; }
 .workflow-editor-actions .icon-control { width: 32px; min-width: 32px; height: 32px; min-height: 32px; }
 .workflow-editor-body .form-grid { padding-right: 44px; }
@@ -734,8 +736,9 @@ a { color: var(--moss); }
   .event-row { grid-template-columns: 1fr; gap: 2px; padding: 9px 0; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .span-2 { grid-column: auto; }
-  .workflow-editor-step summary { grid-template-columns: 26px minmax(0, 1fr) 18px; gap: 9px; }
-  .step-summary-resources { grid-column: 2; }
+  .workflow-editor-toggle { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .step-main { grid-template-columns: 26px minmax(0, 1fr) 18px; gap: 9px; }
+  .step-summary-resources { grid-column: auto; }
   .workflow-editor-body { padding-left: 0; }
   .workflow-editor-body .form-grid { padding-right: 0; padding-top: 34px; }
   .version-row { align-items: flex-start; }

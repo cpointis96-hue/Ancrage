@@ -56,9 +56,20 @@ async function seedContract(store, contracts, id) {
 async function seedTemplate(store, templates, id) {
   if (await store.readText(`config/templates/${id}/draft.html`, null) !== null) return;
   const content = await readFile(new URL(`templates/${id}.html`, defaultsRoot), 'utf8');
-  const saved = await templates.save(id, { name: 'Site preview', content }, { expectedHash: null });
+  const names = { 'site-preview': 'Site preview', 'audit-initial': 'Premier audit', 'audit-gmb': 'Audit GMB' };
+  const saved = await templates.save(id, { name: names[id] ?? id, content }, { expectedHash: null });
   const version = await templates.createVersion(id, { expectedDraftHash: saved.draftHash });
   await templates.activate(id, version.id);
+}
+
+async function ensureClientAuditTemplates(workflows) {
+  const current = await workflows.get('client-site-simulation');
+  const templateByStep = { 'dossier-validation': 'audit-initial', 'report-build': 'audit-gmb' };
+  const steps = current.steps.map(step => templateByStep[step.id] && !step.outputTemplateId ? { ...step, outputTemplateId: templateByStep[step.id] } : step);
+  if (steps.every((step, index) => step === current.steps[index])) return;
+  const saved = await workflows.save(current.id, { ...current, steps }, { expectedHash: current.hash });
+  const version = await workflows.createVersion(current.id, { expectedDraftHash: saved.hash });
+  await workflows.activate(current.id, version.id);
 }
 
 export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined } = {}) {
@@ -90,6 +101,9 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedPrompt(store, prompts, 'audit-analyst');
     await seedPrompt(store, prompts, 'copywriter');
     await seedTemplate(store, templates, 'site-preview');
+    await seedTemplate(store, templates, 'audit-initial');
+    await seedTemplate(store, templates, 'audit-gmb');
+    await ensureClientAuditTemplates(workflows);
   })();
   return { artifacts, audits, cliProfiles, contracts, demos, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
 }

@@ -18,6 +18,7 @@ const state = {
   configurationTab: 'workflows',
   configurationCreating: null,
   configurationDraft: null,
+  configurationOpenSteps: new Set(),
   configurationModels: {},
   internetQuery: '',
   internetResult: null,
@@ -334,7 +335,7 @@ function rememberConfigurationDraft(source, read) {
   });
 }
 
-function workflowStepEditor(step, index, prompts, contracts, cliProfiles, providers, models) {
+function workflowStepEditor(step, index, prompts, contracts, cliProfiles, providers, models, templates) {
   const option = (value, label) => `<option value="${value}" ${step.kind === value ? 'selected' : ''}>${label}</option>`;
   const contractOptions = contracts.map(contract => `<option value="${esc(contract.id)}" ${contractId(step.contractRef) === contract.id ? 'selected' : ''}>${esc(contract.name ?? contract.id)}</option>`).join('');
   const profileOptions = cliProfiles.map(profile => `<option value="${esc(profile.id)}" ${step.profile === profile.id ? 'selected' : ''}>${esc(profile.name ?? profile.id)}</option>`).join('');
@@ -342,8 +343,8 @@ function workflowStepEditor(step, index, prompts, contracts, cliProfiles, provid
   const modelOptions = [...models, ...(step.model && !models.some(model => model.id === step.model) ? [{ id: step.model, name: step.model }] : [])].map(model => `<option value="${esc(model.id)}" ${step.model === model.id ? 'selected' : ''}>${esc(model.name ?? model.id)}</option>`).join('');
   const refs = (items, label, field) => `<div class="step-resource"><small>${label}</small><span>${items.length ? items.map(item => `<button type="button" class="resource-link" data-open-step-field="${field}" title="Modifier ${label.toLowerCase()}">${icon('folder')}${esc(item)}</button>`).join('') : 'Aucune'}</span></div>`;
   const hasAiFields = step.kind === 'ai';
-  return `<details class="workflow-editor-step" data-workflow-step data-step-trigger="${esc(step.trigger ?? '')}" data-step-approval="${esc(step.approval ?? 'none')}">
-    <summary><span class="step-order">${index + 1}</span><span class="step-summary"><strong>${esc(step.id || `Étape ${index + 1}`)}</strong><small>${step.kind === 'ai' ? 'IA' : 'Déterministe'}${step.implementation ? ` · ${esc(step.implementation)}` : ''}</small></span><span class="step-summary-resources">${refs(step.inputRefs ?? [], 'Entrées', 'inputRefs')}${refs(step.outputRefs ?? [], 'Sorties', 'outputRefs')}</span></summary>
+  return `<section class="workflow-editor-step ${step.open ? 'is-open' : ''}" data-workflow-step data-step-trigger="${esc(step.trigger ?? '')}" data-step-approval="${esc(step.approval ?? 'none')}">
+    <div class="workflow-editor-toggle"><button class="step-main" type="button" aria-expanded="${step.open ? 'true' : 'false'}"><span class="step-order">${index + 1}</span><span class="step-summary"><strong>${esc(step.id || `Étape ${index + 1}`)}</strong><small>${step.kind === 'ai' ? 'IA' : 'Déterministe'}${step.implementation ? ` · ${esc(step.implementation)}` : ''}</small></span><span class="step-toggle" aria-hidden="true"></span></button><span class="step-summary-resources">${refs(step.inputRefs ?? [], 'Entrées', 'inputRefs')}${refs(step.outputRefs ?? [], 'Sorties', 'outputRefs')}</span></div>
     <div class="workflow-editor-body">
       <div class="workflow-editor-actions">${iconControl(`Supprimer l’étape ${index + 1}`, 'trash', 'data-remove-workflow-step')}</div>
       <div class="form-grid">
@@ -358,12 +359,13 @@ function workflowStepEditor(step, index, prompts, contracts, cliProfiles, provid
         <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Provider</span><select data-step-field="provider" data-step-provider><option value="">Aucun</option>${providerOptions}</select></label>
         <label class="field ${hasAiFields ? '' : 'is-conditional'}"><span>Modèle</span><select data-step-field="model" data-step-model><option value="">Choisir un modèle</option>${modelOptions}</select></label>
         <label class="field ${step.profile ? '' : 'is-empty'}"><span>Profil CLI</span><select data-step-field="profile"><option value="">Aucun</option>${profileOptions}</select></label>
+        <label class="field ${step.outputTemplateId ? '' : 'is-empty'}"><span>Template de sortie</span><select data-step-field="outputTemplateId"><option value="">Aucun</option>${templates.map(template => `<option value="${esc(template.id)}" ${step.outputTemplateId === template.id ? 'selected' : ''}>${esc(template.name ?? template.id)}</option>`).join('')}</select></label>
         <label class="field ${step.contractRef ? '' : 'is-empty'}"><span>Contrat de sortie</span><select data-step-field="contractRef"><option value="">Aucun</option>${contractOptions}</select></label>
         <label class="field"><span>Timeout en ms</span>${numberField(step.timeoutMs ?? 1000, 'data-step-field="timeoutMs"')}</label>
         <label class="field"><span>Budget maximum</span>${numberField(step.budget ?? 0, 'data-step-field="budget"')}</label>
       </div>
     </div>
-  </details>`;
+  </section>`;
 }
 
 function readWorkflowForm() {
@@ -372,7 +374,7 @@ function readWorkflowForm() {
     const step = {
       id: value('id'), kind: value('kind'), trigger: row.dataset.stepTrigger || (index === 0 ? 'start' : 'ready'),
       dependsOn: csv(value('dependsOn')), inputRefs: csv(value('inputRefs')), outputRefs: csv(value('outputRefs')),
-      implementation: value('implementation'), timeoutMs: Number(value('timeoutMs')), budget: Number(value('budget')), approval: row.dataset.stepApproval || 'none', actor: value('actor'), provider: value('provider'), profile: value('profile'),
+      implementation: value('implementation'), timeoutMs: Number(value('timeoutMs')), budget: Number(value('budget')), approval: row.dataset.stepApproval || 'none', actor: value('actor'), provider: value('provider'), profile: value('profile'), outputTemplateId: value('outputTemplateId'),
     };
     if (value('promptRef')) step.promptRef = value('promptRef');
     if (value('model')) step.model = value('model');
@@ -471,7 +473,7 @@ async function renderConfiguration() {
     detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><h2>${creating ? 'Nouveau workflow' : esc(workflow.name || workflow.id)}</h2><p>Centre de configuration</p></div><div class="detail-actions">${action}</div></header>
       <section class="panel"><div class="section-label">Workflow</div><div class="form-grid"><label class="field"><span>Identifiant</span><input value="${esc(workflow.id)}" data-workflow-id ${creating ? '' : 'readonly'}></label><label class="field"><span>Nom</span><input value="${esc(workflow.name ?? '')}" data-workflow-name></label><label class="field"><span>Template de sortie</span><span class="select-wrap"><select class="select-control" data-workflow-template>${templates.map(item => `<option value="${esc(item.id)}" ${item.id === (workflow.outputTemplateId ?? template?.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></span></label><label class="field"><span>Version</span>${numberField(workflow.version ?? 1, 'data-workflow-version')}</label></div></section>
       <section class="panel"><div class="section-label">Limites par défaut</div><div class="limit-grid"><label class="field"><span>URL</span>${numberField(limits.urls, 'data-limit="urls"')}</label><label class="field"><span>Minutes</span>${numberField(limits.minutes, 'data-limit="minutes"')}</label><label class="field"><span>Mo</span>${numberField(limits.megabytes, 'data-limit="megabytes"')}</label><label class="field"><span>USD</span>${numberField(limits.dollars, 'data-limit="dollars"')}</label></div></section>
-      <div class="workflow-editor">${workflow.steps.map((step, index) => workflowStepEditor({ ...step, actor: step.actor ?? '', provider: step.provider ?? '', profile: step.profile ?? '' }, index, prompts, contracts, cliProfiles, providers.filter(provider => provider.kind === 'ai' && provider.configured && provider.enabled && provider.health === 'healthy'), state.configurationModels[step.provider] ?? [])).join('')}</div><button class="btn" type="button" data-add-workflow-step>${icon('plus')} Ajouter une étape</button>
+      <div class="workflow-editor">${workflow.steps.map((step, index) => workflowStepEditor({ ...step, open: state.configurationOpenSteps.has(step.id), actor: step.actor ?? '', provider: step.provider ?? '', profile: step.profile ?? '' }, index, prompts, contracts, cliProfiles, providers.filter(provider => provider.kind === 'ai' && provider.configured && provider.enabled && provider.health === 'healthy'), state.configurationModels[step.provider] ?? [], templates)).join('')}</div><button class="btn" type="button" data-add-workflow-step>${icon('plus')} Ajouter une étape</button>
       <section class="panel"><div class="section-label">Templates de sortie</div><div class="template-list">${templates.map(item => `<div class="template-row"><span><strong>${esc(item.name)}</strong><small>${esc(item.id)} · ${item.versions.length} versions${item.activeVersionId ? ' · actif' : ''}</small></span><span class="template-actions">${item.activeVersionId ? '' : `<button class="btn compact" type="button" data-activate-template="${esc(item.id)}">Activer</button>`}<button class="btn compact" type="button" data-edit-template="${esc(item.id)}">Modifier</button><button class="btn compact danger" type="button" data-delete-template="${esc(item.id)}">Supprimer</button></span></div>`).join('')}</div><div class="template-create"><input data-template-id placeholder="identifiant" aria-label="Identifiant du template"><input data-template-name placeholder="nom" aria-label="Nom du template"><input type="file" data-template-file accept=".html,.htm,.txt"><button class="btn" type="button" data-upload-template>Importer</button></div></section>
       ${creating ? '' : `<section class="panel"><div class="section-label">Versions</div>${workflow.versions.length ? [...workflow.versions].reverse().map(version => `<div class="version-row"><span><strong>${esc(version.id)}</strong><small>${formatDate(version.createdAt)}</small></span>${workflow.activeVersionId === version.id ? '<span class="version-active">Version active</span>' : `<button class="btn compact" type="button" data-activate-workflow="${version.id}">Activer</button>`}</div>`).join('') : '<p class="muted">Enregistrez puis créez une première version.</p>'}</section>`}
     </div>`;
@@ -490,8 +492,20 @@ async function renderConfiguration() {
       event.preventDefault();
       event.stopPropagation();
       const step = button.closest('[data-workflow-step]');
-      step.open = true;
+      step.classList.add('is-open');
+      step.querySelector('.step-main')?.setAttribute('aria-expanded', 'true');
+      state.configurationOpenSteps.add(step.querySelector('[data-step-field="id"]')?.value ?? '');
       step.querySelector(`[data-step-field="${button.dataset.openStepField}"]`)?.focus({ preventScroll: true });
+    });
+    detail.addEventListener('click', event => {
+      const button = event.target.closest('[data-workflow-step] .step-main');
+      if (!button || event.target.closest('[data-open-step-field]')) return;
+      const step = button.closest('[data-workflow-step]');
+      const id = step.querySelector('[data-step-field="id"]')?.value ?? '';
+      const open = !step.classList.contains('is-open');
+      step.classList.toggle('is-open', open);
+      button.setAttribute('aria-expanded', String(open));
+      if (open) state.configurationOpenSteps.add(id); else state.configurationOpenSteps.delete(id);
     });
     document.querySelectorAll('[data-step-field="kind"]').forEach(select => select.addEventListener('change', () => render()));
     bindAll('[data-activate-template]', async button => { const item = templates.find(template => template.id === button.dataset.activateTemplate); const version = item?.versions.at(-1); if (!version) { notify('Créez une version avant activation.'); return; } const result = await perform(button, () => api.activateTemplate(item.id, version.id), 'Template activé.'); if (result.ok) await render(); });
