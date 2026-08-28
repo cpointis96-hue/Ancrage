@@ -180,7 +180,6 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       const seoStarted = Date.now();
       try {
         const module = await runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile });
-        module.external = { onPage: 'NOT_RUN', cause: 'ASYNC_RESULT_RETRIEVAL_NOT_IMPLEMENTED' };
         return { module, durationMs: Date.now() - seoStarted };
       } catch (error) {
         return { module: { status: 'PARTIAL', cause: error.code ?? 'SEO_AUDIT_FAILED' }, durationMs: Date.now() - seoStarted };
@@ -194,7 +193,15 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
     await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     const continueAfterGmb = async () => {
-    const seoBase = await seoBasePromise; result.modules.seo = seoBase.module; result.stages.push(stage('seo-audit', seoBase.module.status, { cause: seoBase.module.cause ?? null, durationMs: seoBase.durationMs }));
+    const [seoBase, onPage] = await Promise.all([
+      seoBasePromise,
+      domain
+        ? call({ runId: id, ledger: actualLedger, ready, stepId: 'seo-audit', capability: 'on_page/instant_pages', endpoint: 'onPageInstantPages', tasks: [{ url: domain }] , estimate: costs.onPage })
+        : Promise.resolve({ status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED', durationMs: 0 }),
+    ]);
+    result.modules.seo = { ...seoBase.module, external: { onPage: onPage.status, cause: onPage.cause ?? null } };
+    if (onPage.evidence) result.evidence.push(onPage.evidence);
+    result.stages.push(stage('seo-audit', seoBase.module.status, { cause: seoBase.module.cause ?? null, durationMs: seoBase.durationMs + onPage.durationMs }));
     const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
     const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.keywordOverview });
     const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.serpCompetitors });
