@@ -2,7 +2,8 @@ import { NotFoundError } from '../core/errors.mjs';
 
 const KINDS = {
   site: { stepId: 'site-build', contentType: 'text/html; charset=utf-8' },
-  report: { stepId: 'report-build', contentType: 'text/html; charset=utf-8' },
+  'gmb-report': { stepId: 'gmb-audit-report', contentType: 'text/html; charset=utf-8' },
+  'seo-report': { stepId: 'seo-competition-report', contentType: 'text/html; charset=utf-8' },
 };
 
 export function createArtifactRegistry({ store, runs }) {

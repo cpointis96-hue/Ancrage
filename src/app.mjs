@@ -31,7 +31,8 @@ const implementationFiles = {
   'simulation-dossier-validation': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
   'simulation-content-plan': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
   'simulation-site-build': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
-  'simulation-report-build': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-gmb-audit-report': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-seo-competition-report': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
   'simulation-quality-gate': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
 };
 
@@ -67,7 +68,7 @@ async function seedContract(store, contracts, id) {
 async function seedTemplate(store, templates, id) {
   if (await store.readText(`config/templates/${id}/draft.html`, null) !== null) return;
   const content = await readFile(new URL(`templates/${id}.html`, defaultsRoot), 'utf8');
-  const names = { 'site-preview': 'Site preview', 'audit-initial': 'Premier audit', 'audit-gmb': 'Audit GMB' };
+  const names = { 'site-preview': 'Site preview', 'audit-initial': 'Premier audit', 'audit-gmb': 'Audit GMB', 'audit-seo': 'Audit SEO et concurrence' };
   const saved = await templates.save(id, { name: names[id] ?? id, content }, { expectedHash: null });
   const version = await templates.createVersion(id, { expectedDraftHash: saved.draftHash });
   await templates.activate(id, version.id);
@@ -75,15 +76,19 @@ async function seedTemplate(store, templates, id) {
 
 async function ensureClientAuditTemplates(workflows) {
   const current = await workflows.get('client-site-simulation');
-  const templateByStep = { 'dossier-validation': 'audit-initial', 'report-build': 'audit-gmb' };
-  const steps = current.steps.map(step => {
+  const templateByStep = { 'dossier-validation': 'audit-initial', 'gmb-audit-report': 'audit-gmb', 'seo-competition-report': 'audit-seo' };
+  const legacySimulation = current.steps.length === 5
+    && current.steps.some(step => step.id === 'report-build' && step.implementation === 'simulation-report-build')
+    && !current.steps.some(step => step.id === 'gmb-audit-report' || step.id === 'seo-competition-report');
+  const sourceSteps = legacySimulation ? clientSiteWorkflow.steps : current.steps;
+  const steps = sourceSteps.map(step => {
     const withTemplate = templateByStep[step.id] && !step.outputTemplateId ? { ...step, outputTemplateId: templateByStep[step.id] } : step;
     if (withTemplate.kind === 'ai') return withTemplate;
     if (!['actor', 'model', 'promptRef', 'provider'].some(field => Object.hasOwn(withTemplate, field))) return withTemplate;
     const { actor: _actor, model: _model, promptRef: _promptRef, provider: _provider, ...deterministicStep } = withTemplate;
     return deterministicStep;
   });
-  if (steps.every((step, index) => step === current.steps[index])) return;
+  if (JSON.stringify(steps) === JSON.stringify(current.steps)) return;
   const { hash: _hash, activeVersionId: _activeVersionId, versions: _versions, ...definition } = current;
   const saved = await workflows.save(current.id, { ...definition, steps }, { expectedHash: current.hash });
   const version = await workflows.createVersion(current.id, { expectedDraftHash: saved.hash });
@@ -121,6 +126,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedTemplate(store, templates, 'site-preview');
     await seedTemplate(store, templates, 'audit-initial');
     await seedTemplate(store, templates, 'audit-gmb');
+    await seedTemplate(store, templates, 'audit-seo');
     await ensureClientAuditTemplates(workflows);
   })();
   return { artifacts, audits, cliProfiles, contracts, demos, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
