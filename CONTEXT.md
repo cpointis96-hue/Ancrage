@@ -138,6 +138,14 @@ _Avoid_: conseil générique sans fait associé
 Livrable consultable présentant un `SEOAudit` dans un langage compréhensible, avec résumé, priorités, preuves, périmètre et limites.
 _Avoid_: CSV livré sans interprétation, rapport culpabilisant
 
+**GMBAuditReport**:
+Livrable consultable présentant les observations publiques et sourcées d'une fiche d'établissement, ses limites et les éléments restant à confirmer.
+_Avoid_: fiche Google copiée sans décision, preuve de propriété
+
+**ProgressiveAudit**:
+Audit local qui livre d'abord un `GMBAuditReport` exploitable, puis un `SEOReport` approfondi avec mots-clés et pistes concurrentielles, les deux restant rattachés au même `AuditRun`.
+_Avoid_: deux audits indépendants, rapport final prématuré
+
 **ReportDelivery**:
 Livraison contrôlée d'un `SEOReport` par lien signé, e-mail ou téléchargement, avec consentement, expiration, statut de livraison et demande de suppression.
 _Avoid_: rapport public permanent, e-mail non traçable
