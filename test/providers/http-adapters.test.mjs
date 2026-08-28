@@ -39,6 +39,20 @@ test('accepte les credentials structurés nécessaires aux APIs composites', asy
   assert.match(calls[1].options.headers.authorization, /^Basic /);
 });
 
+test('recherche un établissement et demande uniquement ses détails d’adresse', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    const body = String(url).includes('/places:autocomplete') ? { suggestions: [] } : { id: 'places/ChIJtest', displayName: { text: 'Chez Test' }, addressComponents: [] };
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  } });
+  await adapters.googlePlaces.autocomplete({ secret: 'places-key', input: 'Chez Test', mode: 'establishment' });
+  await adapters.googlePlaces.details({ secret: 'places-key', placeId: 'ChIJtest' });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { input: 'Chez Test', includedPrimaryTypes: ['establishment'] });
+  assert.match(calls[1].url, /places\/ChIJtest$/);
+  assert.equal(calls[1].options.headers['x-goog-fieldmask'], 'id,displayName,formattedAddress,addressComponents,websiteUri');
+});
+
 test('génère du JSON avec les adapters IA autorisés', async () => {
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {

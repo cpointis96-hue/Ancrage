@@ -9,7 +9,10 @@ async function requestJson(fetchImpl, url, options = {}, timeoutMs = DEFAULT_TIM
   const text = await response.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = null; }
-  if (!response.ok) throw Object.assign(new Error(`Provider returned ${response.status}`), { code: `HTTP_${response.status}` });
+  if (!response.ok) {
+    const providerCode = body?.error?.status ?? body?.error?.details?.find?.(item => item['@type']?.includes('ErrorInfo'))?.reason ?? null;
+    throw Object.assign(new Error(`Provider returned ${response.status}`), { code: `HTTP_${response.status}`, providerCode });
+  }
   return body;
 }
 
@@ -115,6 +118,12 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   dataforseo.onPage = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'on_page/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.onPageInstantPages = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'on_page/instant_pages', { method: 'POST', body: tasks }, timeoutMs);
 
+  const googlePlacesRequest = ({ secret, body }) => requestJson(fetchImpl, 'https://places.googleapis.com/v1/places:autocomplete', { method: 'POST', headers: { 'x-goog-api-key': credential(secret).key, 'content-type': 'application/json' }, body: JSON.stringify(body) }, timeoutMs);
+  const googlePlacesDetailsRequest = ({ secret, placeId }) => { const resource = String(placeId).startsWith('places/') ? String(placeId) : `places/${placeId}`; return requestJson(fetchImpl, `https://places.googleapis.com/v1/${resource}`, { headers: { 'x-goog-api-key': credential(secret).key, 'x-goog-fieldmask': 'id,displayName,formattedAddress,addressComponents,websiteUri' } }, timeoutMs); };
+  const googlePlaces = adapter(({ secret }) => googlePlacesRequest({ secret, body: { input: 'Paris', includedPrimaryTypes: ['(cities)'], includedRegionCodes: ['fr'] } }));
+  googlePlaces.autocomplete = ({ secret, input, countryCode, mode = 'city' }) => googlePlacesRequest({ secret, body: { input, ...(mode === 'establishment' ? { includedPrimaryTypes: ['establishment'] } : { includedPrimaryTypes: ['(cities)'] }), ...(countryCode ? { includedRegionCodes: [countryCode.toLowerCase()] } : {}) } });
+  googlePlaces.details = ({ secret, placeId }) => googlePlacesDetailsRequest({ secret, placeId });
+
   const cloudflare = adapter(({ secret }) => {
     const value = credential(secret);
     const accountId = value.accountId ?? env.CLOUDFLARE_ACCOUNT_ID;
@@ -158,5 +167,5 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
     return body?.results ?? [];
   });
 
-  return { anthropic, cloudflare, dataforseo, dynadot, googleGemini, 'google-gemini': googleGemini, nameCom, namesilo, openai, openrouter };
+  return { anthropic, cloudflare, dataforseo, dynadot, googleGemini, 'google-gemini': googleGemini, googlePlaces, 'google-places': googlePlaces, nameCom, namesilo, openai, openrouter };
 }
