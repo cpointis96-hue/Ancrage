@@ -102,6 +102,7 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   openrouter.models = async ({ secret }) => normalizeModels(await bearer('https://openrouter.ai/api/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openrouter.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'openrouter', endpoint: 'https://openrouter.ai/api/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' } } });
   const dataforseo = adapter(({ secret }) => dataForSeoRequest(fetchImpl, secret, 'appendix/user_data', {}, timeoutMs));
+  dataforseo.executionType = 'http';
   dataforseo.serp = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpMaps = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpMapsLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/live/advanced', { method: 'POST', body: tasks }, timeoutMs);

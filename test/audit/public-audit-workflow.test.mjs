@@ -47,8 +47,59 @@ test('bloque la découverte essentielle sans provider DataForSEO prêt, sans fal
   });
   const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' } });
   assert.equal(result.status, 'BLOCKED');
-  assert.equal(result.stages[0].cause, 'DATAFORSEO_NOT_READY');
+  assert.equal(result.stages[0].cause, 'DATAFORSEO_UNHEALTHY');
+  assert.equal(result.provider.readiness, 'unhealthy');
   assert.deepEqual(result.modules.establishment.candidates, []);
   assert.equal(calls.length, 0);
   assert.equal(JSON.stringify(result).includes('example.com'), false);
+});
+
+test('sépare les états provider et distingue un adapter de test sans réseau', async () => {
+  const cases = [
+    ['absent', null, 'DATAFORSEO_ABSENT'],
+    ['not-configured', { id: 'dataforseo', kind: 'seo', configured: false, enabled: false, health: 'unknown' }, 'DATAFORSEO_NOT_CONFIGURED'],
+    ['unhealthy', { id: 'dataforseo', kind: 'seo', configured: true, enabled: false, health: 'unhealthy' }, 'DATAFORSEO_UNHEALTHY'],
+    ['disabled', { id: 'dataforseo', kind: 'seo', configured: true, enabled: false, health: 'healthy' }, 'DATAFORSEO_DISABLED'],
+  ];
+  for (const [state, provider, cause] of cases) {
+    const calls = [];
+    const workflow = createPublicAuditWorkflow({
+      store: createAtomicStore(await mkdtemp(path.join(tmpdir(), `ancrage-public-audit-${state}-`))),
+      providers: { async list() { return provider ? [provider] : []; } },
+      adapters: adapters(calls),
+      secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
+    });
+    const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' } });
+    assert.equal(result.provider.readiness, state);
+    assert.equal(result.stages[0].cause, cause);
+    assert.equal(result.stages[0].execution, 'not-run');
+    assert.equal(calls.length, 0);
+  }
+
+  const calls = [];
+  const workflow = createPublicAuditWorkflow({ store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-adapter-'))), providers: providerState(), adapters: adapters(calls), secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }) });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com' });
+  assert.equal(result.provider.adapter, 'adapter');
+  assert.equal(result.stages[0].execution, 'adapter-call-no-network');
+  assert.equal(result.modules.keywords.execution.ideas, 'adapter-call-no-network');
+});
+
+test('bloque le crawl local et OnPage sans domaine confirmé sans inventer de site', async () => {
+  const calls = [];
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-no-domain-'))),
+    providers: providerState(),
+    adapters: adapters(calls),
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
+    fetchImpl: async () => { throw new Error('Le crawl local ne doit pas démarrer.'); },
+  });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' } });
+  assert.equal(result.status, 'PARTIAL');
+  assert.equal(result.modules.site.confirmation.status, 'NOT_CONFIRMED');
+  assert.equal(result.modules.seo.execution, 'not-run');
+  assert.equal(result.modules.seo.external.crawl, 'BLOCKED');
+  assert.equal(result.modules.seo.external.onPage, 'BLOCKED');
+  assert.equal(result.stages.find(item => item.id === 'seo-audit').status, 'BLOCKED');
+  assert.equal(calls.some(item => item.name === 'onPageInstantPages'), false);
+  assert.doesNotMatch((await workflow.readReport(result.id, 'final')).value, /https:\/\/example\.com/);
 });

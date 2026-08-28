@@ -82,6 +82,11 @@ function badge(value) {
   return `<span class="badge ${statusTone(value)}"><span class="state-dot" aria-hidden="true"></span>${esc(label)}</span>`;
 }
 
+function stateIndicator(value) {
+  const label = statusLabel(value);
+  return `<span class="badge ${statusTone(value)}" aria-label="${esc(label)}" title="${esc(label)}"><span class="state-dot" aria-hidden="true"></span></span>`;
+}
+
 function statusTone(value) {
   if (['SUCCEEDED', 'PASS', 'APPROVED', 'healthy', 'INTAKE_COMPLETE'].includes(value)) return 'pass';
   if (['FAILED', 'BLOCKED', 'CHANGES_REQUESTED', 'unhealthy'].includes(value)) return 'block';
@@ -173,22 +178,45 @@ function inboxDescriptor(dossier, run) {
   return null;
 }
 
+function publicInboxDescriptor(item) {
+  const status = item.preparation?.status;
+  if (status === 'READY_FOR_OWNER_REVIEW') return { action: 'Valider la démo', phase: 'Validation opérateur', status: 'WARN' };
+  if (status === 'READY_FOR_PROSPECT') return { action: 'Ouvrir la démo', phase: 'Démo validée', status: 'APPROVED' };
+  if (status === 'NEEDS_CORRECTION') return { action: 'Voir les corrections', phase: 'Corrections demandées', status: 'CHANGES_REQUESTED' };
+  return { action: 'Vérifier la préparation', phase: 'Préparation reçue', status: 'WARN' };
+}
+
 async function renderInbox() {
-  const [dossiers, runs] = await Promise.all([api.dossiers(), api.runs()]);
+  const [dossiers, runs, publicDemoRequests] = await Promise.all([api.dossiers(), api.runs(), api.publicDemoRequests()]);
   const latest = latestRunsByDossier(runs);
-  const items = dossiers.map(dossier => ({ dossier, run: latest.get(dossier.id) ?? null })).map(item => ({ ...item, descriptor: inboxDescriptor(item.dossier, item.run) })).filter(item => item.descriptor);
+  const items = [
+    ...dossiers.map(dossier => ({ kind: 'local', dossier, run: latest.get(dossier.id) ?? null })).map(item => ({ ...item, descriptor: inboxDescriptor(item.dossier, item.run) })).filter(item => item.descriptor),
+    ...publicDemoRequests.map(publicItem => ({ kind: 'public', publicItem, descriptor: publicInboxDescriptor(publicItem) })),
+  ];
   list.innerHTML = listHeader('À traiter') + (items.length ? items.map(item => `
-    <button class="list-row ${state.selected.inbox === item.dossier.id ? 'active' : ''}" type="button" data-inbox-select="${item.dossier.id}">
-      <span class="row-top"><strong>${esc(item.dossier.name)}</strong>${badge(item.descriptor.status)}</span>
+    <button class="list-row ${state.selected.inbox === (item.kind === 'public' ? `public:${item.publicItem.preparation.id}` : item.dossier.id) ? 'active' : ''}" type="button" data-inbox-select="${item.kind === 'public' ? `public:${item.publicItem.preparation.id}` : item.dossier.id}">
+      <span class="row-top"><strong>${esc(item.kind === 'public' ? item.publicItem.request.input.name : item.dossier.name)}</strong>${item.kind === 'public' ? stateIndicator(item.descriptor.status) : badge(item.descriptor.status)}</span>
       <span class="row-meta">${esc(item.descriptor.action)}</span>
     </button>`).join('') : '<p class="list-empty">Aucune décision en attente.</p>');
   if (!items.length) {
     detail.innerHTML = emptyState('Tout est à jour', 'Un nouveau dossier apparaîtra ici dès que l’intake aura été validé.', '<a class="btn primary" href="/intake.html" target="_blank" rel="noopener">Ouvrir l’intake</a>');
     return;
   }
-  const selected = items.find(item => item.dossier.id === state.selected.inbox) ?? items[0];
-  state.selected.inbox = selected.dossier.id;
-  document.querySelector(`[data-inbox-select="${selected.dossier.id}"]`)?.classList.add('active');
+  const selected = items.find(item => (item.kind === 'public' ? `public:${item.publicItem.preparation.id}` : item.dossier.id) === state.selected.inbox) ?? items[0];
+  const selectedKey = selected.kind === 'public' ? `public:${selected.publicItem.preparation.id}` : selected.dossier.id;
+  state.selected.inbox = selectedKey;
+  document.querySelector(`[data-inbox-select="${selectedKey}"]`)?.classList.add('active');
+  if (selected.kind === 'public') {
+    const { request, preparation } = selected.publicItem;
+    const checks = Object.entries(preparation.checklist ?? {}).map(([label, value]) => ({ label, status: value ? 'PASS' : 'WARN' }));
+    const actions = preparation.status === 'READY_FOR_OWNER_REVIEW'
+      ? '<button class="btn primary" type="button" data-public-decision="APPROVED">Valider</button><button class="btn" type="button" data-public-decision="CHANGES_REQUESTED">Renvoyer en correction</button>'
+      : preparation.presentation?.href ? `<a class="btn primary" href="${esc(preparation.presentation.href)}" target="_blank" rel="noopener">Ouvrir la démo</a>` : '';
+    detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><div><h2>${esc(request.input.name)}</h2><p>${esc(selected.descriptor.phase)}</p></div><div class="detail-actions inbox-actions">${actions}</div></header><section class="panel"><div class="section-label">À faire</div><strong>${esc(selected.descriptor.action)}</strong></section><section class="panel"><div class="section-label">État vérifié</div>${checks.map(check => `<div class="step-row"><span>${esc(check.label)}</span>${stateIndicator(check.status)}</div>`).join('')}</section></div>`;
+    bindAll('[data-inbox-select]', button => { state.selected.inbox = button.dataset.inboxSelect; render(); });
+    bindAll('[data-public-decision]', async button => { const result = await perform(button, () => api.publicDecision(preparation.id, button.dataset.publicDecision), button.dataset.publicDecision === 'APPROVED' ? 'Démo validée.' : 'Correction demandée.'); if (result.ok) await render(); });
+    return;
+  }
   const checks = selected.run ? selected.run.steps.map(step => ({ label: step.id, status: step.status })) : [
     { label: 'Histoire', status: selected.dossier.hasStory ? 'PASS' : 'WARN' },
     { label: 'Menu', status: selected.dossier.menuItemCount ? 'PASS' : 'WARN' },

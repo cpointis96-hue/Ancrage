@@ -27,6 +27,14 @@ function publicDomain(value) {
   return parsed.toString().replace(/\/$/, '');
 }
 
+function publicIdentity(value) {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== 'object') throw new ValidationError('identity est invalide.', { field: 'identity' });
+  if (value.source === 'google-places') return { source: value.source, placeId: text(value.placeId, 'identity.placeId', 200), address: text(value.address, 'identity.address', 500) };
+  if (value.source === 'manual') return { source: value.source, address: value.address && typeof value.address === 'object' ? response(value.address) : text(value.address, 'identity.address', 500) };
+  throw new ValidationError('identity est invalide.', { field: 'identity' });
+}
+
 function nextAction(kind, reasonCode) { return { kind, reasonCode }; }
 
 export function createPublicControlPlane({ store, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, pipelineStarter = null, demoPresenter = null } = {}) {
@@ -57,7 +65,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function createRequest(input = {}) {
     const name = text(input.name, 'name'); const city = input.city;
     if (!city || typeof city !== 'object') throw new ValidationError('city est invalide.', { field: 'city' });
-    const normalized = { name, city: { id: text(city.id, 'city.id', 120), label: text(city.label, 'city.label'), countryCode: text(city.countryCode, 'city.countryCode', 3).toUpperCase() }, domain: publicDomain(input.domain) };
+    const normalized = { name, city: { id: text(city.id, 'city.id', 120), label: text(city.label, 'city.label'), countryCode: text(city.countryCode, 'city.countryCode', 3).toUpperCase() }, domain: publicDomain(input.domain), identity: publicIdentity(input.identity) };
     const key = requireKey(input.idempotencyKey); const fp = fingerprint(normalized); const previous = await store.readJson(idempotencyPath('request', key), null);
     if (previous) { if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre requête.'); return projectRequest(await readRequest(previous.requestId)); }
     const now = clock().toISOString(); const request = { id: idFactory('public-request'), schemaVersion: 'public-control-plane-v1', state: 'MATCHING', status: 'RUNNING', input: normalized, reports: [], checkpoints: [], nextAction: nextAction('DECIDE_MATCH', 'MATCH_REVIEW_REQUIRED'), warnings: [], errors: [], createdAt: now, updatedAt: now };
@@ -70,9 +78,11 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
     request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS'); await saveRequest(request);
     if (typeof auditStarter === 'function') {
       const reports = await auditStarter({ request: response(request), decision });
+      if (reports?.audit) request.audit = response(reports.audit);
       if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html });
       if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
-      if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
+      if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.audit) request.audit = response(finalReport.audit); if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
+      if (!reports?.gmb?.html && !reports?.final?.html && !(reports?.completion instanceof Promise)) { request.status = reports?.audit?.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'; request.errors.push({ code: reports?.audit?.status === 'BLOCKED' ? 'AUDIT_BLOCKED' : 'AUDIT_REPORT_NOT_AVAILABLE' }); }
     }
     return saveRequest(request);
   }
@@ -83,9 +93,12 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
     if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport invalide.');
     const reportId = idFactory(`${kind}-report`); const htmlPath = `public-control-plane/reports/${reportId}.html`; await store.writeText(htmlPath, html, { immutable: true });
     let pdfPath = null; if (kind === 'final' && typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
-    const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString() }); const finalReady = request.reports.some(report => report.kind === 'final'); request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; request.status = 'SUCCEEDED'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
+    const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString() }); const finalReady = request.reports.some(report => report.kind === 'final'); request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; request.status = finalReady ? 'SUCCEEDED' : 'RUNNING'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }
+  async function getDemoRequest(id) { return projectPreparation(await readPreparation(id)); }
+  async function listRequests() { return Promise.all((await store.readJson(REQUEST_INDEX, [])).map(async requestId => projectRequest(await readRequest(requestId)))); }
+  async function listDemoRequests() { const requests = await listRequests(); return Promise.all(requests.filter(request => request.demoRequestId).map(async request => ({ request, preparation: await getDemoRequest(request.demoRequestId) }))); }
   async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: request.reports.map(({ id, kind, status, createdAt, expiresAt }) => ({ id, kind, status, createdAt, expiresAt })) }; }
   async function readReport(requestId, reportId, format = 'html') {
     const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError(); if (report.expiresAt && new Date(report.expiresAt).getTime() <= clock().getTime()) throw new AppError('Le rapport a expiré.', { code: 'REPORT_EXPIRED', status: 410 });
@@ -128,5 +141,5 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   }
   async function start(id) { const preparation = await readPreparation(id); preparation.checklist = checklist(preparation); if (!preparation.checklist.criticalComplete || !preparation.checklist.locale || !preparation.checklist.photos || !preparation.checklist.rights) throw new AppError('La préparation est incomplète.', { code: 'PREPARATION_INCOMPLETE', status: 409 }); if (typeof pipelineStarter !== 'function') throw new AppError('Le pipeline de démo n’est pas configuré.', { code: 'PIPELINE_NOT_CONFIGURED', status: 503 }); const request = await readRequest(preparation.requestId); const started = await pipelineStarter({ request: response(request), preparation }); if (!started?.runId) throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 }); preparation.pipelineRunId = text(started.runId, 'pipelineRunId', 120); preparation.pipelineStatus = started.status ?? 'WEBSITE_FACTORY_RUNNING'; preparation.acceptanceReport = started.acceptanceReport ?? null; return savePreparation(preparation); }
   async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.', { field: 'decision' }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
-  return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest: async id => projectPreparation(await readPreparation(id)), getRequest: async id => projectRequest(await readRequest(id)), listReports, readReport, seedSyntheticReport, start, updateIntake, validateDemo };
+  return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, seedSyntheticReport, start, updateIntake, validateDemo };
 }

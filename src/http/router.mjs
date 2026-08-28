@@ -19,6 +19,8 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         if (parts.length === 6 && method === 'GET' && ['report', 'site'].includes(parts[5])) return sendContent(response, 200, (await demoWorkbench.readArtifact(id(parts[4]), parts[5])).value, 'text/html; charset=utf-8');
       }
       if (parts[1] === 'public' && publicControlPlane) {
+        if (parts[2] === 'requests' && parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listRequests());
+        if (parts[2] === 'demo-requests' && parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listDemoRequests());
         if (parts[2] === 'requests' && parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicControlPlane.createRequest({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
         if (parts[2] === 'requests' && parts.length >= 4) {
           const requestId = id(parts[3]);

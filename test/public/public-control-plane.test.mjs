@@ -9,9 +9,9 @@ import { createPublicControlPlane } from '../../src/public/public-control-plane.
 const city = { id: 'city-fr-nantes', label: 'Nantes', countryCode: 'FR' };
 const categories = ['facade', 'signature-dish-1', 'signature-dish-2', 'interior-or-terrace', 'team-or-service'];
 
-async function fixture() {
+async function fixture(options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-public-cp-'));
-  const controlPlane = createPublicControlPlane({ store: createAtomicStore(root) });
+  const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), ...options });
   return { root, controlPlane };
 }
 
@@ -48,7 +48,7 @@ test('publie le rapport final lorsque la continuation asynchrone se termine', as
   assert.equal(gmbReady.state, 'GMB_REPORT_READY');
   assert.deepEqual((await controlPlane.listReports(request.id)).reports.map(report => report.kind), ['gmb']);
   finish({ html: '<h1>Final</h1>', pdf: '%PDF-final' });
-  for (let attempt = 0; attempt < 20; attempt += 1) { if ((await controlPlane.getRequest(request.id)).state === 'FINAL_REPORT_READY') break; await new Promise(resolve => setTimeout(resolve, 5)); }
+  for (let attempt = 0; attempt < 100; attempt += 1) { if ((await controlPlane.getRequest(request.id)).state === 'FINAL_REPORT_READY') break; await new Promise(resolve => setTimeout(resolve, 10)); }
   const finalReady = await controlPlane.getRequest(request.id);
   assert.equal(finalReady.state, 'FINAL_REPORT_READY');
   assert.deepEqual(finalReady.reports.map(report => report.kind), ['gmb', 'final']);
@@ -80,4 +80,18 @@ test('ne fabrique pas un identifiant de pipeline et délègue le run réel au st
   const { root } = await fixture(); let calls = 0;
   const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), pipelineStarter: async ({ request, preparation }) => { calls += 1; assert.equal(request.input.name, 'Maison Sillage'); assert.equal(preparation.status, 'INCOMPLETE'); return { runId: 'run-real-1', status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: 'PASS' } }; } });
   const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-4' }); await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' }); await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' }); const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-4' }); await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR' }); for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 }); const started = await controlPlane.start(preparation.id); assert.equal(calls, 1); assert.equal(started.pipelineRunId, 'run-real-1'); assert.equal(started.status, 'READY_FOR_OWNER_REVIEW'); assert.deepEqual(started.acceptanceReport, { status: 'PASS' });
+});
+
+test('relie l’identité publique, l’audit et la demande de démo listable par le cockpit', async () => {
+  const { controlPlane } = await fixture({ auditStarter: async () => ({ audit: { id: 'audit-link-1', status: 'PARTIAL', stages: [], provider: { id: 'dataforseo', readiness: 'ready' } } }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'google-places', placeId: 'places/123', address: '1 rue du Port' }, idempotencyKey: 'req-link' });
+  const matched = await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  assert.deepEqual(matched.input.identity, { source: 'google-places', placeId: 'places/123', address: '1 rue du Port' });
+  assert.equal(matched.audit.id, 'audit-link-1');
+  await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-link' });
+  const listed = await controlPlane.listDemoRequests();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].request.audit.id, 'audit-link-1');
+  assert.equal(listed[0].preparation.id, preparation.id);
 });

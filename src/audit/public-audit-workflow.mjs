@@ -34,7 +34,7 @@ function renderReport(result, kind) {
   const evidence = result.evidence.map(item => `<li>${escapeHtml(item.provider)} · ${escapeHtml(item.canonicalUrl)} · ${escapeHtml(item.rawPayloadHash)}</li>`).join('');
   const modules = kind === 'gmb'
     ? `<p>${result.modules.gmb?.candidates?.length ?? 0} établissement(s) public(s) retourné(s) dans le périmètre observé.</p>`
-    : `<p>Site : ${escapeHtml(result.input.domain ?? result.modules.site?.candidates?.[0]?.url ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p><p>${result.modules.keywords?.ideas?.length ?? 0} piste(s) de mots-clés et ${result.modules.keywords?.competitors?.length ?? 0} concurrent(s) retournés.</p>`;
+    : `<p>Site : ${escapeHtml(result.input.domain ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p><p>${result.modules.keywords?.ideas?.length ?? 0} piste(s) de mots-clés et ${result.modules.keywords?.competitors?.length ?? 0} concurrent(s) retournés.</p>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)}</title><style>body{font:16px/1.55 system-ui;max-width:860px;margin:auto;padding:24px;color:#20211f;background:#f5f5f2}header{background:#173024;color:#eef4ec;padding:32px}header small{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:24px 0}li{margin:8px 0;overflow-wrap:anywhere}small{color:#5a635c}</style></head><body><header><small>${escapeHtml(title.toUpperCase())} · ${escapeHtml(result.status)}</small><h1>${escapeHtml(result.input.name)}</h1><p>${escapeHtml(result.input.city.label)} · Observation : ${escapeHtml(result.startedAt)}</p></header><main><section><h2>Périmètre</h2>${modules}</section><section><h2>Étapes</h2><ul>${stages}</ul></section><section><h2>Limites</h2><p>Les branches absentes, partielles ou non confirmées restent explicitement signalées. Aucun résultat provider non observé n’est remplacé par une valeur synthétique.</p></section><section><h2>Preuves</h2>${evidence ? `<ul>${evidence}</ul>` : '<p>Aucune preuve provider livrée.</p>'}</section></main></body></html>`;
 }
 function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
@@ -99,13 +99,19 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
   }
   async function dataForSeoReady() {
     const provider = (await providers.list()).find(item => item.id === 'dataforseo');
-    if (!provider?.enabled || provider.health !== 'healthy' || !provider.configured || !adapters?.dataforseo) return null;
+    const adapter = adapters?.dataforseo;
+    if (!provider) return { state: 'absent', code: 'DATAFORSEO_ABSENT', provider: null, adapter: Boolean(adapter) };
+    if (!provider.configured) return { state: 'not-configured', code: 'DATAFORSEO_NOT_CONFIGURED', provider, adapter: Boolean(adapter) };
+    if (provider.health !== 'healthy') return { state: 'unhealthy', code: 'DATAFORSEO_UNHEALTHY', provider, adapter: Boolean(adapter) };
+    if (!provider.enabled) return { state: 'disabled', code: 'DATAFORSEO_DISABLED', provider, adapter: Boolean(adapter) };
+    if (!adapter) return { state: 'adapter-not-configured', code: 'DATAFORSEO_ADAPTER_NOT_CONFIGURED', provider, adapter: false };
     const secret = await secretStore.get('provider:dataforseo');
-    return secret ? { provider, secret } : null;
+    if (!secret) return { state: 'not-configured', code: 'DATAFORSEO_SECRET_ABSENT', provider, adapter: true };
+    return { state: 'ready', code: null, provider, adapter: true, secret, executionType: adapter.executionType ?? 'adapter' };
   }
   async function call({ runId, ledger, ready, stepId, capability, tasks, estimate, endpoint, optional = true }) {
     const started = Date.now();
-    if (!ready) return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: 'DATAFORSEO_NOT_READY', durationMs: Date.now() - started };
+    if (ready.state !== 'ready') return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: ready.code, providerState: ready.state, execution: 'not-run', durationMs: Date.now() - started };
     let authorization;
     try { authorization = await ledger.authorize({ stepId, provider: 'dataforseo', unit: 'request', quantity: 1, estimatedCost: estimate, essential: !optional }); }
     catch (error) { return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'COST_NOT_AUTHORIZED', durationMs: Date.now() - started }; }
@@ -115,10 +121,10 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       const payload = await adapter({ secret: ready.secret, tasks });
       const actualCost = typeof payload?.cost === 'number' ? payload.cost : estimate;
       const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost });
-      return { status: settled.overLimit ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : null, capability, durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
+      return { status: settled.overLimit ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : null, capability, providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network', durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
     } catch (error) {
       await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code ?? 'PROVIDER_CALL_FAILED' });
-      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED', durationMs: Date.now() - started };
+      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED', providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call-failed' : 'adapter-call-no-network-failed', durationMs: Date.now() - started };
     }
   }
   function items(result) {
@@ -165,13 +171,15 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const ready = await dataForSeoReady();
     const costs = budget.endpointCosts ?? {};
     const observedAt = clock().toISOString();
-    const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
+    const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, provider: ready.provider
+      ? { id: ready.provider.id, configured: ready.provider.configured, enabled: ready.provider.enabled, health: ready.provider.health, readiness: ready.state, adapter: ready.adapter ? (ready.executionType === 'http' ? 'http' : 'adapter') : 'absent' }
+      : { id: 'dataforseo', configured: false, enabled: false, health: 'absent', readiness: ready.state, adapter: ready.adapter ? 'adapter' : 'absent' }, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
     await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
     const save = async () => store.writeJson(pathFor(id), result);
     const maps = await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
-    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { candidates: normalizeCandidates(maps) };
+    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, providerState: maps.providerState ?? ready.state, execution: maps.execution ?? 'not-run', durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { candidates: normalizeCandidates(maps) };
     if (maps.status === 'BLOCKED') {
-      for (const remaining of STAGES.slice(1)) result.stages.push(stage(remaining, 'BLOCKED', { cause: 'ESTABLISHMENT_GATE_FAILED' }));
+      for (const remaining of STAGES.slice(1)) result.stages.push(stage(remaining, 'BLOCKED', { cause: 'ESTABLISHMENT_GATE_FAILED', execution: 'not-run' }));
       result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return result;
@@ -184,13 +192,14 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       } catch (error) {
         return { module: { status: 'PARTIAL', cause: error.code ?? 'SEO_AUDIT_FAILED' }, durationMs: Date.now() - seoStarted };
       }
-    })() : Promise.resolve({ module: { status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED' }, durationMs: 0 });
+    })() : Promise.resolve({ module: { status: 'BLOCKED', cause: 'SITE_NOT_CONFIRMED', execution: 'not-run' }, durationMs: 0 });
     const [discovered, gmb] = await Promise.all([
       call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced }),
       call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
     ]);
-    result.stages.push(stage('site-discovery', discovered.status, { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: normalizeCandidates(discovered) };
-    result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
+    const siteCandidates = normalizeCandidates(discovered);
+    result.stages.push(stage('site-discovery', domain ? discovered.status : (discovered.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'), { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), providerState: discovered.providerState ?? ready.state, execution: discovered.execution ?? 'not-run', durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: siteCandidates, confirmation: domain ? { status: 'CONFIRMED', source: 'request' } : { status: 'NOT_CONFIRMED', cause: 'SITE_NOT_CONFIRMED' } };
+    result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb), confirmation: { status: 'NOT_CONFIRMED', cause: 'ESTABLISHMENT_CONFIRMATION_NOT_PERSISTED' } };
     await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     const continueAfterGmb = async () => {
     const [seoBase, onPage] = await Promise.all([
@@ -199,16 +208,16 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
         ? call({ runId: id, ledger: actualLedger, ready, stepId: 'seo-audit', capability: 'on_page/instant_pages', endpoint: 'onPageInstantPages', tasks: [{ url: domain }] , estimate: costs.onPage })
         : Promise.resolve({ status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED', durationMs: 0 }),
     ]);
-    result.modules.seo = { ...seoBase.module, external: { onPage: onPage.status, cause: onPage.cause ?? null } };
+    result.modules.seo = { ...seoBase.module, execution: domain ? 'local-crawl' : 'not-run', external: { crawl: domain ? seoBase.module.status : 'BLOCKED', onPage: domain ? onPage.status : 'BLOCKED', cause: onPage.cause ?? seoBase.module.cause ?? null } };
     if (onPage.evidence) result.evidence.push(onPage.evidence);
-    result.stages.push(stage('seo-audit', seoBase.module.status, { cause: seoBase.module.cause ?? null, durationMs: seoBase.durationMs + onPage.durationMs }));
+    result.stages.push(stage('seo-audit', domain ? seoBase.module.status : 'BLOCKED', { cause: seoBase.module.cause ?? onPage.cause ?? 'SITE_NOT_CONFIRMED', providerState: onPage.providerState ?? null, execution: domain ? onPage.execution ?? seoBase.module.execution ?? 'local-crawl' : 'not-run', durationMs: seoBase.durationMs + onPage.durationMs }));
     const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
     const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.keywordOverview });
     const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.serpCompetitors });
-    result.stages.push(stage('competitor-keywords', [ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? null, durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: normalizeKeywords(ideas), overview: normalizeKeywords(overview), competitors: normalizeCandidates(competitors) }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
+    result.stages.push(stage('competitor-keywords', [ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? null, providerState: ready.state, execution: [ideas, overview, competitors].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: normalizeKeywords(ideas), overview: normalizeKeywords(overview), competitors: normalizeCandidates(competitors), execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run' } }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
-    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
+    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED' && item.id !== 'seo-audit') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL' || item.status === 'BLOCKED') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
     if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
     return result;
     };
