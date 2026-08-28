@@ -34,6 +34,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
           if (parts[4] === 'intake' && parts.length === 5 && method === 'PUT') return sendJson(response, 200, await publicControlPlane.updateIntake(demoRequestId, await readJsonBody(request)));
           if (parts[4] === 'assets' && parts.length === 5 && method === 'POST') return sendJson(response, 201, await publicControlPlane.addAsset(demoRequestId, await readJsonBody(request)));
           if (parts[4] === 'start' && parts.length === 5 && method === 'POST') return sendJson(response, 200, await publicControlPlane.start(demoRequestId));
+          if (parts[4] === 'decision' && parts.length === 5 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await publicControlPlane.validateDemo(demoRequestId, body.decision)); }
         }
       }
       if (parts[1] === 'intake' && parts[2] === 'dossiers' && parts.length === 3 && method === 'POST' && dossiers) {
