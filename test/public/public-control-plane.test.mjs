@@ -39,6 +39,16 @@ test('livre GMB avant le rapport final et bloque la préparation prématurée', 
   assert.equal(Object.hasOwn(preparation, 'email'), false);
 });
 
+test('fait expirer les rapports publics après leur durée de livraison', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-public-expiry-')); let now = new Date('2026-08-28T00:00:00.000Z');
+  const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), clock: () => now });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-expiry' });
+  const delivered = await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+  assert.match(delivered.reports[0].expiresAt, /2026-09-04/);
+  now = new Date('2026-09-05T00:00:00.000Z');
+  await assert.rejects(() => controlPlane.readReport(request.id, delivered.reports[0].id), error => error.code === 'REPORT_EXPIRED');
+});
+
 test('refuse le démarrage jusqu aux cinq catégories et droits connus', async () => {
   const { controlPlane } = await fixture();
   const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-3' });
