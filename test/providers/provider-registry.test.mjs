@@ -42,6 +42,17 @@ test('échec du provider reste expurgé et désactivé', async () => {
   assert.equal(result.lastErrorCode, 'CONNECTION_FAILED');
 });
 
+test('ignore un état sain persistant quand le credential a disparu', async () => {
+  const { registry, store } = await setup();
+  await store.writeJson('state/provider-status.json', { openai: { enabled: true, health: 'healthy', lastCheckedAt: '2026-08-28T00:00:00.000Z' } });
+  const provider = (await registry.list()).find(item => item.id === 'openai');
+  assert.equal(provider.configured, false);
+  assert.equal(provider.enabled, false);
+  assert.equal(provider.health, 'unknown');
+  assert.equal(provider.lastCheckedAt, null);
+  assert.equal(provider.lastErrorCode, null);
+});
+
 test('ne déclare jamais saine une connexion sans adaptateur réel', async () => {
   const { registry } = await setup();
   await registry.saveSecret('openai', 'secret');

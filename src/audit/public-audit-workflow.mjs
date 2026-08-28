@@ -253,7 +253,7 @@ function findLabsPair(result, country, preferred = 'en') {
     const save = async () => store.writeJson(pathFor(id), result);
     const maps = localPreview
       ? { status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 }
-      : hasSerpResolvers && !resolvedLocations.serp
+      : ready.state === 'ready' && hasSerpResolvers && !resolvedLocations.serp
         ? { status: 'BLOCKED', cause: resultResolutionError ?? 'SERP_LOCATION_LANGUAGE_UNRESOLVED', execution: 'not-run', durationMs: 0 }
         : await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, ...serpTarget }], estimate: costs.serpMaps, optional: false });
     const establishmentCandidates = normalizeCandidates(maps, name);
@@ -274,13 +274,13 @@ function findLabsPair(result, country, preferred = 'en') {
       }
     })() : Promise.resolve({ module: { status: 'BLOCKED', cause: 'SITE_NOT_CONFIRMED', execution: 'not-run' }, durationMs: 0 });
     const [discovered, gmb] = await Promise.all([
-      hasSerpResolvers && !resolvedLocations.serp
+      ready.state === 'ready' && hasSerpResolvers && !resolvedLocations.serp
         ? Promise.resolve({ status: 'PARTIAL', cause: resultResolutionError ?? 'SERP_LOCATION_LANGUAGE_UNRESOLVED', execution: 'not-run', durationMs: 0 })
         : call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, ...serpTarget }], estimate: costs.serpOrganicLiveAdvanced }),
       localPreview
         ? Promise.resolve({ status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 })
         : coordinates
-          ? hasBusinessResolver && !resolvedLocations.business
+          ? ready.state === 'ready' && hasBusinessResolver && !resolvedLocations.business
             ? Promise.resolve({ status: 'PARTIAL', cause: resultResolutionError ?? 'BUSINESS_LISTINGS_LOCATION_UNRESOLVED', execution: 'not-run', durationMs: 0 })
             : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ title: name, location_coordinate: `${coordinates.latitude},${coordinates.longitude},200`, limit: 10 }], estimate: costs.businessListings })
           : Promise.resolve({ status: 'PARTIAL', cause: 'GOOGLE_PLACES_COORDINATES_REQUIRED', execution: 'not-run', durationMs: 0 }),

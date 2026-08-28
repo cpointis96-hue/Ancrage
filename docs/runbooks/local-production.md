@@ -40,7 +40,7 @@ Le guide [Configurer les workflows et les prompts](../guides/configurer-workflow
 
 Sur macOS, les secrets sont stockés dans le trousseau via `security`, service `com.ancrage.provider`, sous le compte normalisé du provider. Le cockpit ne reçoit que `configured`, `health`, `enabled` et les codes d’erreur expurgés. Les tests utilisent `createMemorySecretStore` et ne doivent jamais recevoir une vraie clé.
 
-Providers V1 déclarés : OpenAI, Anthropic Claude, Google Gemini, OpenRouter, Cloudflare, Dynadot, NameSilo et Name.com. Aucun provider Mistral n’est déclaré. Une clé seule n’active pas un provider : le test de connexion doit réussir.
+Providers V1 déclarés : OpenAI, Anthropic Claude, Google Gemini, OpenRouter, DataForSEO, Google Places, Cloudflare, Dynadot, NameSilo et Name.com. Aucun provider Mistral n’est déclaré. Une clé seule n’active pas un provider : le test de connexion doit réussir.
 
 ## Sauvegarde et restauration
 
@@ -57,7 +57,7 @@ La restauration opérationnelle doit encore être exercée sur un support de sau
 - `npm test` couvre le stockage, le versioning, la non-divulgation, le DAG, l’API et le vertical slice de redémarrage.
 - `npm run check` vérifie le point d’entrée du bridge.
 - Le test Keychain macOS réel n’est pas exécuté automatiquement ; le contrat est injecté et testé en mémoire.
-- Les APIs Cloudflare, Dynadot, NameSilo, Name.com et les APIs IA réelles ne sont pas validées ici : comptes dédiés, permissions, quotas, coûts et conditions restent à exercer.
+- DataForSEO et Google Places ont été validés en live le 28 août 2026 dans le runbook [Validation live DataForSEO](./dataforseo-live-validation-2026-08-28.md). Les APIs Cloudflare, Dynadot, NameSilo, Name.com et les APIs IA réelles restent à exercer : comptes dédiés, permissions, quotas, coûts et conditions ne sont pas validés ici.
 - Le parcours navigateur desktop/tablette/390 px, navigation clavier et absence de débordement est validé dans le runtime local; le zoom 200 % reste une vérification manuelle à refaire sur la machine cible.
 - La recherche Internet produit des candidats locaux et indique explicitement que disponibilité et prix restent à vérifier tant qu’aucun registrar actif n’est configuré.
 - L’achat de domaine, l’envoi, la publication, la suppression distante et toute dépense restent hors du bridge et exigent une confirmation humaine.

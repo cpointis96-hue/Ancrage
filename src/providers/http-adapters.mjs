@@ -110,7 +110,7 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   dataforseo.serpOrganicLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpLocations = ({ secret, country }) => dataForSeoRequest(fetchImpl, secret, `serp/google/locations${country ? `/${encodeURIComponent(String(country).toLowerCase())}` : ''}`, {}, timeoutMs);
   dataforseo.serpLanguages = ({ secret }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/languages', {}, timeoutMs);
-  dataforseo.businessListingsLocations = ({ secret, country }) => dataForSeoRequest(fetchImpl, secret, `business_data/business_listings/locations${country ? `/${encodeURIComponent(String(country).toLowerCase())}` : ''}`, {}, timeoutMs);
+  dataforseo.businessListingsLocations = ({ secret }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/locations', {}, timeoutMs);
   dataforseo.labsLocationsAndLanguages = ({ secret }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/locations_and_languages', {}, timeoutMs);
   dataforseo.businessListings = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/search/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.businessListingsCategories = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/categories_aggregation/live', { method: 'POST', body: tasks }, timeoutMs);

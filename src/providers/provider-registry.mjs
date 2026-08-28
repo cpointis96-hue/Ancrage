@@ -14,14 +14,17 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
   async function statuses() { return store.readJson(STATUS_PATH, {}); }
   async function list() {
     const [items, status] = await Promise.all([defs(), statuses()]);
-    return Promise.all(items.map(async item => ({
-      ...item,
-      configured: await secretStore.has(SECRET_REF(item.id)),
-      enabled: Boolean(status[item.id]?.enabled),
-      health: status[item.id]?.health ?? 'unknown',
-      lastCheckedAt: status[item.id]?.lastCheckedAt ?? null,
-      lastErrorCode: status[item.id]?.lastErrorCode ?? null,
-    })));
+    return Promise.all(items.map(async item => {
+      const configured = await secretStore.has(SECRET_REF(item.id));
+      return {
+        ...item,
+        configured,
+        enabled: configured && Boolean(status[item.id]?.enabled),
+        health: configured ? status[item.id]?.health ?? 'unknown' : 'unknown',
+        lastCheckedAt: configured ? status[item.id]?.lastCheckedAt ?? null : null,
+        lastErrorCode: configured ? status[item.id]?.lastErrorCode ?? null : null,
+      };
+    }));
   }
   async function getDefinition(id) { const item = (await defs()).find(entry => entry.id === id); if (!item) throw new NotFoundError(`Provider introuvable : ${id}`); return item; }
   async function saveStatus(id, next) {

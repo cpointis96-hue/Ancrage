@@ -159,7 +159,7 @@ test('expose les résolutions gratuites propres à chaque famille DataForSEO', a
   assert.deepEqual(calls.map(call => call.url), [
     'https://api.dataforseo.com/v3/serp/google/locations/fr',
     'https://api.dataforseo.com/v3/serp/google/languages',
-    'https://api.dataforseo.com/v3/business_data/business_listings/locations/fr',
+    'https://api.dataforseo.com/v3/business_data/business_listings/locations',
     'https://api.dataforseo.com/v3/dataforseo_labs/locations_and_languages',
   ]);
   assert.equal(calls.every(call => /^Basic /.test(call.options.headers.authorization)), true);

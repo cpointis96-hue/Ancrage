@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { createApp } from '../../src/app.mjs';
 import { createLocalServer } from '../../src/http/server.mjs';
+import { createRouter } from '../../src/http/router.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
 import { runSeoAudit } from '../../src/audit/seo-audit-service.mjs';
 
@@ -14,6 +15,21 @@ function request(url, options = {}) {
     const target = new URL(url); const req = http.request(target, { ...options, headers: options.headers }, response => { const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('end', () => resolve({ headers: response.headers, status: response.statusCode, text: () => Promise.resolve(Buffer.concat(chunks).toString()) })); }); req.on('error', reject); if (options.body) req.write(options.body); req.end();
   });
 }
+
+test('restitue le rapport d’un audit public par son identifiant', async () => {
+  let response = null;
+  let received = null;
+  const route = createRouter({
+    publicAudits: { async readReport(id, kind) { received = { id, kind }; return { value: '<html>rapport</html>', contentType: 'text/html; charset=utf-8' }; } },
+    providers: {}, prompts: {}, workflows: {}, runs: {},
+  });
+  const url = new URL('http://127.0.0.1:4173/api/audits/local/audit-run-1/reports?kind=final');
+  await route({ method: 'GET', url: url.pathname + url.search }, { writeHead(status, headers) { response = { status, headers }; }, end(value) { response.value = value; } }, url);
+  assert.deepEqual(received, { id: 'audit-run-1', kind: 'final' });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers['X-Robots-Tag'], 'noindex, nofollow');
+  assert.equal(response.value, '<html>rapport</html>');
+});
 
 test('API loopback refuse origine étrangère et ne divulgue pas les secrets', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-')); const api = createLocalServer({ app: createApp({ dataDir: root, secretStore: createMemorySecretStore() }) }); const address = await api.listen(); const base = `http://127.0.0.1:${address.port}`;

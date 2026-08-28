@@ -131,7 +131,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       if (parts[1] === 'audits' && parts[2] === 'local' && publicAudits) {
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicAudits.list());
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicAudits.create({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
-        if (parts.length === 5 && parts[3] === 'reports' && method === 'GET') { const report = await publicAudits.readReport(id(parts[2]), url.searchParams.get('kind') ?? 'final'); return sendContent(response, 200, report.value, report.contentType, { 'X-Robots-Tag': 'noindex, nofollow' }); }
+        if (parts.length === 5 && parts[4] === 'reports' && method === 'GET') { const report = await publicAudits.readReport(id(parts[3]), url.searchParams.get('kind') ?? 'final'); return sendContent(response, 200, report.value, report.contentType, { 'X-Robots-Tag': 'noindex, nofollow' }); }
         if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicAudits.get(id(parts[3])));
       }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {

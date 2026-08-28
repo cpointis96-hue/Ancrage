@@ -55,6 +55,24 @@ test('bloque la découverte essentielle sans provider DataForSEO prêt, sans fal
   assert.equal(JSON.stringify(result).includes('example.com'), false);
 });
 
+test('signale le provider non configuré avant la résolution des contrats', async () => {
+  const calls = [];
+  const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.serpLocations = async () => { calls.push({ name: 'serpLocations' }); return { tasks: [] }; };
+  configuredAdapters.dataforseo.serpLanguages = async () => { calls.push({ name: 'serpLanguages' }); return { tasks: [] }; };
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-not-configured-'))),
+    providers: { async list() { return [{ id: 'dataforseo', kind: 'seo', configured: false, enabled: false, health: 'unknown' }]; } },
+    adapters: configuredAdapters,
+    secretStore: createMemorySecretStore(),
+  });
+  const result = await workflow.create({ name: 'Le Midi-Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, budget: { hardLimit: 0.5 } });
+  assert.equal(result.stages[0].cause, 'DATAFORSEO_NOT_CONFIGURED');
+  assert.equal(result.stages[0].execution, 'not-run');
+  assert.equal(calls.length, 0);
+  assert.equal(result.budget.spent, 0);
+});
+
 test('sépare les états provider et distingue un adapter de test sans réseau', async () => {
   const cases = [
     ['absent', null, 'DATAFORSEO_ABSENT'],
