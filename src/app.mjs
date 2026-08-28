@@ -39,6 +39,18 @@ const implementationFiles = {
   'simulation-seo-competition-report': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
   'simulation-quality-gate': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
 };
+const legacyLocalSeoResearchPlanner = `---
+id: local-seo-research-planner
+name: Plan de recherche SEO locale
+ownerStep: research-plan
+outputContract: seo-research-plan
+---
+Tu prépares un plan de recherche SEO locale, pas un audit et pas une liste de mots-clés mesurés.
+
+Utilise exclusivement les faits fournis dans l’entrée. La catégorie doit être l’une des catégories autorisées. Ne déduis jamais une catégorie depuis un type Google générique. Ne cite ni volume, ni concurrence, ni concurrent, ni position.
+
+Retourne uniquement un objet JSON conforme au contrat. Propose de une à six requêtes françaises, courtes et utiles. Chaque requête doit contenir le nom de l’établissement ou une catégorie autorisée, et la localité fournie. Utilise \`business-name\` seulement si le nom est présent dans la requête, sinon \`observed-category\`.
+`;
 
 async function seedPrompt(store, prompts, id) {
   let migrated = false;
@@ -49,6 +61,7 @@ async function seedPrompt(store, prompts, id) {
     const current = await store.readText(`config/prompts/${id}/draft.md`);
     let normalized = current.replace(/^modelProfile:.*\n/m, '');
     if (id === 'audit-analyst') normalized = normalized.replace(/^outputContract: local-report$/m, 'outputContract: audit-report');
+    if (id === 'local-seo-research-planner' && normalized === legacyLocalSeoResearchPlanner) normalized = await readFile(new URL(`prompts/${id}.md`, defaultsRoot), 'utf8');
     if (normalized !== current) {
       await prompts.saveDraft(id, normalized, { expectedHash: store.hashText(current) });
       migrated = true;
