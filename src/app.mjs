@@ -125,12 +125,32 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
     auditStarter: async ({ request }) => {
-      const audit = request.input.domain ? await auditRunner({ target: request.input.domain, observedAt: new Date().toISOString(), fetchImpl: auditFetchImpl, lookup: auditLookup }) : { status: 'PARTIAL', target: `${request.input.name} · ${request.input.city.label}`, observedAt: new Date().toISOString(), ruleVersion: 'local-demo-v1', summary: { pagesAnalyzed: 0, pagesSkipped: 0 }, findings: [] };
-      const gmb = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Rapport GMB · ${request.input.name}</title></head><body><h1>${request.input.name}</h1><p>${request.input.city.label}</p><p>Observation GMB locale de démonstration. Les données publiques GMB DataForSEO restent à confirmer.</p></body></html>`;
-      return { gmb: { html: gmb }, final: { html: renderSeoAuditReport(audit) } };
+      const audit = await publicAudits.create({
+        name: request.input.name,
+        city: { id: request.input.city.id, label: request.input.city.label, country: request.input.city.countryCode },
+        domain: request.input.domain ?? undefined,
+        idempotencyKey: `public-control-plane-${request.id}`,
+      });
+      const reports = {};
+      for (const kind of ['gmb', 'final']) {
+        const report = audit.reports?.find(item => item.kind === kind);
+        if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
+      }
+      if (!reports.gmb) {
+        reports.gmb = { html: `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Rapport GMB · ${request.input.name}</title></head><body><h1>${request.input.name}</h1><p>${request.input.city.label}</p><p>Rapport GMB partiel : le provider public n’a pas livré de résultat exploitable.</p></body></html>` };
+      }
+      if (!reports.final) {
+        const localAudit = request.input.domain ? await auditRunner({ target: request.input.domain, observedAt: new Date().toISOString(), fetchImpl: auditFetchImpl, lookup: auditLookup }) : { status: 'PARTIAL', target: `${request.input.name} · ${request.input.city.label}`, observedAt: new Date().toISOString(), ruleVersion: 'local-demo-v1', summary: { pagesAnalyzed: 0, pagesSkipped: 0 }, findings: [] };
+        reports.final = { html: renderSeoAuditReport(localAudit) };
+      }
+      return reports;
     },
     pipelineStarter: async ({ request, preparation }) => {
       const intake = preparation.intake ?? {};
+      const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
+      if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
+      const photoBytes = await store.readBuffer(firstPhoto.assetPath, null);
+      if (!photoBytes) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
       const dossier = await dossiers.create({
         name: request.input.name,
         city: request.input.city.label,
@@ -139,11 +159,12 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         contact: intake.contact ?? '',
         story: intake.story ?? '',
         menu: Array.isArray(intake.menu) ? intake.menu : [],
+        photo: { dataUrl: `data:${firstPhoto.mimeType};base64,${photoBytes.toString('base64')}`, alt: request.input.name },
       }, { source: 'public-demo-intake' });
       const run = await simulation.startDossier(dossier.id);
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
       const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
-      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, note: preparation.assets.length === 5 ? 'Les références photo sont enregistrées pour la démo locale.' : 'Photos absentes du snapshot.' } };
+      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, embeddedAssets: [firstPhoto.category], note: 'La première photo fournie est intégrée à l’aperçu local ; les cinq catégories sont contrôlées.' } };
     },
     demoPresenter: async ({ runId, decision }) => {
       await runs.decide(runId, decision);
