@@ -33,7 +33,18 @@ function publicIdentity(value) {
   if (value.source === 'google-places') {
     const coordinates = value.coordinates;
     if (coordinates !== undefined && (!coordinates || typeof coordinates !== 'object' || !Number.isFinite(coordinates.latitude) || !Number.isFinite(coordinates.longitude))) throw new ValidationError('identity.coordinates est invalide.', { field: 'identity.coordinates' });
-    return { source: value.source, placeId: text(value.placeId, 'identity.placeId', 200), address: text(value.address, 'identity.address', 500), ...(coordinates ? { coordinates: { latitude: coordinates.latitude, longitude: coordinates.longitude } } : {}) };
+    const types = Array.isArray(value.types) ? value.types.map((item, index) => text(item, `identity.types.${index}`, 120)).slice(0, 20) : [];
+    const categories = Array.isArray(value.categories) ? value.categories.map((item, index) => text(item, `identity.categories.${index}`, 120)).slice(0, 20) : [];
+    return {
+      source: value.source,
+      placeId: text(value.placeId, 'identity.placeId', 200),
+      address: text(value.address, 'identity.address', 500),
+      ...(coordinates ? { coordinates: { latitude: coordinates.latitude, longitude: coordinates.longitude } } : {}),
+      ...(typeof value.primaryType === 'string' && value.primaryType.trim() ? { primaryType: text(value.primaryType, 'identity.primaryType', 120) } : {}),
+      ...(typeof value.primaryTypeDisplayName === 'string' && value.primaryTypeDisplayName.trim() ? { primaryTypeDisplayName: text(value.primaryTypeDisplayName, 'identity.primaryTypeDisplayName', 120) } : {}),
+      ...(types.length ? { types } : {}),
+      ...(categories.length ? { categories } : {}),
+    };
   }
   if (value.source === 'manual') return { source: value.source, address: value.address && typeof value.address === 'object' ? response(value.address) : text(value.address, 'identity.address', 500) };
   throw new ValidationError('identity est invalide.', { field: 'identity' });

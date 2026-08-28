@@ -21,10 +21,10 @@ test('compose un audit public DataForSEO borné, sourcé, partiel et idempotent 
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-')); const store = createAtomicStore(root); const calls = [];
   const secretStore = createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) });
   const workflow = createPublicAuditWorkflow({ store, providers: providerState(), adapters: adapters(calls), secretStore, idFactory: prefix => `${prefix}-fixed`, clock: () => new Date('2026-08-27T00:00:00.000Z'), fetchImpl: async url => ({ url, status: 200, headers: { get: () => 'text/html; charset=utf-8' }, text: async () => '<html lang="fr"><head><title>Site</title><meta name="description" content="ok"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://example.com/"><script type="application/ld+json">{}</script></head><body><h1>Site</h1></body></html>' }), lookup: async () => ['93.184.216.34'] });
-  const input = { name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com', identity: { source: 'google-places', placeId: 'place-1', address: '1 Beach Road, Pattaya', coordinates: { latitude: 12.9, longitude: 100.9 } }, idempotencyKey: 'public-1' };
+  const input = { name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com', identity: { source: 'google-places', placeId: 'place-1', address: '1 Beach Road, Pattaya', coordinates: { latitude: 12.9, longitude: 100.9 }, primaryType: 'restaurant' }, idempotencyKey: 'public-1' };
   const first = await workflow.create(input);
-  const gmbReport = (await workflow.readReport(first.id, 'gmb')).value; const finalReport = (await workflow.readReport(first.id, 'final')).value; assert.equal(gmbReport.includes('SUCCEEDED'), true); assert.equal(gmbReport.includes('Site et SEO'), false); assert.equal(finalReport.includes('Site et SEO'), true); assert.equal(finalReport.includes('Mots-clés et concurrence'), true); assert.equal(finalReport.includes('Recommandations'), true);
-  assert.equal(first.status, 'SUCCEEDED'); assert.equal(first.stages.length, 6); assert.equal(first.evidence.length, 7); assert.deepEqual(first.reports.map(item => item.kind).sort(), ['final', 'gmb']); assert.equal((await workflow.readReport(first.id, 'gmb')).value.includes('RAPPORT GMB'), true); assert.equal((await workflow.readReport(first.id, 'final')).value.includes('RAPPORT FINAL SEO'), true); assert.equal(first.modules.seo.status, 'SUCCEEDED'); assert.equal(first.modules.seo.external.onPage, 'SUCCEEDED'); assert.equal(first.modules.keywords.ideas[0].keyword, 'restaurant pattaya'); assert.equal(first.input.profile.maxPages, 50); assert.equal(first.input.profile.maxBytes, 25 * 1024 * 1024); assert.equal(first.input.profile.timeoutMs, 180000); assert.equal(first.budget.hardLimit, 2); assert.equal(Math.round(first.budget.spent * 100) / 100, 1.55); assert.equal(calls.length, 7); assert.deepEqual(calls.find(item => item.name === 'businessListings').input.tasks[0], { title: 'Maison Sillage', location_coordinate: '12.9,100.9,200', limit: 10 }); assert.deepEqual(calls.find(item => item.name === 'serpCompetitors').input.tasks[0].keywords, ['restaurant Pattaya', 'restaurant Pattaya menu', 'restaurant Pattaya delivery']); assert.equal(first.stages.every(item => Number.isInteger(item.durationMs) && item.durationMs >= 0), true); assert.equal(Number.isInteger(first.durationMs), true);
+  const gmbReport = (await workflow.readReport(first.id, 'gmb')).value; const finalReport = (await workflow.readReport(first.id, 'final')).value; assert.equal(gmbReport.includes('SUCCEEDED'), true); assert.equal(gmbReport.includes('Site et SEO'), false); assert.equal(finalReport.includes('Site et SEO'), true); assert.equal(finalReport.includes('Mots-clés et concurrence'), true); assert.equal(finalReport.includes('Concurrence observée'), true); assert.equal(finalReport.includes('<table>'), true); assert.equal(finalReport.includes('restaurant pattaya'), true); assert.equal(finalReport.includes('Non disponible'), true); assert.equal(finalReport.includes('Recommandations'), true);
+  assert.equal(first.status, 'SUCCEEDED'); assert.equal(first.stages.length, 6); assert.equal(first.evidence.length, 7); assert.deepEqual(first.reports.map(item => item.kind).sort(), ['final', 'gmb']); assert.equal((await workflow.readReport(first.id, 'gmb')).value.includes('RAPPORT GMB'), true); assert.equal((await workflow.readReport(first.id, 'final')).value.includes('RAPPORT FINAL SEO'), true); assert.equal(first.modules.seo.status, 'SUCCEEDED'); assert.equal(first.modules.seo.external.onPage, 'SUCCEEDED'); assert.equal(first.modules.keywords.ideas[0].keyword, 'restaurant pattaya'); assert.equal(first.input.profile.maxPages, 50); assert.equal(first.input.profile.maxBytes, 25 * 1024 * 1024); assert.equal(first.input.profile.timeoutMs, 180000); assert.equal(first.budget.hardLimit, 2); assert.equal(Math.round(first.budget.spent * 100) / 100, 1.55); assert.equal(calls.length, 7); assert.deepEqual(calls.find(item => item.name === 'businessListings').input.tasks[0], { title: 'Maison Sillage', location_coordinate: '12.9,100.9,200', limit: 10 }); assert.deepEqual(calls.find(item => item.name === 'serpCompetitors').input.tasks[0].keywords, ['restaurant pattaya']); assert.equal(first.stages.every(item => Number.isInteger(item.durationMs) && item.durationMs >= 0), true); assert.equal(Number.isInteger(first.durationMs), true);
   assert.equal(first.evidence.every(item => item.provider === 'dataforseo' && item.rawPayloadHash.startsWith('sha256:')), true);
   assert.equal(JSON.stringify(first).includes('password'), false);
   const replay = await workflow.create(input); assert.equal(replay.id, first.id); assert.equal(calls.length, 7);
@@ -97,7 +97,7 @@ test('sépare les états provider et distingue un adapter de test sans réseau',
 
   const calls = [];
   const workflow = createPublicAuditWorkflow({ store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-adapter-'))), providers: providerState(), adapters: adapters(calls), secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }) });
-  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com' });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com', identity: { source: 'google-places', placeId: 'place-1', address: '1 Beach Road, Pattaya', primaryType: 'restaurant' } });
   assert.equal(result.provider.adapter, 'adapter');
   assert.equal(result.stages[0].execution, 'adapter-call-no-network');
   assert.equal(result.modules.keywords.execution.ideas, 'adapter-call-no-network');
@@ -136,9 +136,9 @@ test('résout les contrats SERP et Labs avant les appels payants', async () => {
     store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-resolved-'))), providers: providerState(), adapters: configuredAdapters,
     secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
   });
-  const result = await workflow.create({ name: 'Le Midi Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', address: '1 rue de la mairie', coordinates: { latitude: 43.68, longitude: 3.93 } } });
+  const result = await workflow.create({ name: 'Le Midi Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', address: '1 rue de la mairie', coordinates: { latitude: 43.68, longitude: 3.93 }, primaryType: 'restaurant' } });
   assert.deepEqual(calls.find(item => item.name === 'serpMapsLiveAdvanced').input.tasks[0], { keyword: 'Le Midi Teyranais Teyran', location_code: 2250, language_code: 'fr' });
-  assert.deepEqual(calls.find(item => item.name === 'keywordIdeasLive').input.tasks[0], { keywords: ['restaurant Teyran', 'restaurant Teyran menu', 'restaurant Teyran delivery'], location_code: 2250, language_code: 'fr', limit: 25 });
+  assert.deepEqual(calls.find(item => item.name === 'keywordIdeasLive').input.tasks[0], { keywords: ['restaurant Teyran', 'restaurant Teyran menu', 'restaurant Teyran reservation'], location_code: 2250, language_code: 'fr', limit: 150 });
   assert.equal(result.status, 'PARTIAL');
 });
 
@@ -178,6 +178,10 @@ test('l’aperçu local sans GMB conserve l’adresse et n’appelle aucune sour
 test('signale une erreur de tâche provider au lieu de la compter comme un succès', async () => {
   const calls = [];
   const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.keywordIdeasLive = async input => {
+    calls.push({ name: 'keywordIdeasLive', input });
+    return { tasks: [{ result: [{ items: [{ keyword: 'restaurant Le Crès', keyword_info: { search_volume: 20 } }] }] }] };
+  };
   configuredAdapters.dataforseo.keywordOverview = async input => {
     calls.push({ name: 'keywordOverview', input });
     return { cost: 0, tasks_error: 1, tasks: [{ status_code: 40501, status_message: "Invalid Field: 'location_name'.", result: [] }] };
@@ -186,8 +190,35 @@ test('signale une erreur de tâche provider au lieu de la compter comme un succ�
     store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-task-failure-'))), providers: providerState(), adapters: configuredAdapters,
     secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
   });
-  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Le Crès', country: 'FR' } });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Le Crès', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', address: '1 rue du Port, Le Crès', primaryType: 'restaurant' } });
   assert.equal(result.modules.keywords.overview.status, 'PARTIAL');
   assert.equal(result.modules.keywords.overview.cause, 'PROVIDER_TASK_FAILED');
+  assert.equal('data' in result.modules.keywords.overview, false);
   assert.equal(calls.find(item => item.name === 'keywordOverview').input.tasks[0].location_name, 'France');
+});
+
+test('écarte les idées hors périmètre et n’hydrate pas une shortlist vide', async () => {
+  const calls = [];
+  const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.keywordIdeasLive = async input => {
+    calls.push({ name: 'keywordIdeasLive', input });
+    return { tasks: [{ result: [{ items: [
+      { keyword: 'menu cantine à Lyon', keyword_info: { search_volume: 800 } },
+      { keyword: 'menu cantine monde', keyword_info: { search_volume: 500 } },
+    ] }] }] };
+  };
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-relevance-'))),
+    providers: providerState(),
+    adapters: configuredAdapters,
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
+  });
+  const result = await workflow.create({ name: 'Le Midi Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', address: '1 rue de la mairie, Teyran', primaryType: 'restaurant', coordinates: { latitude: 43.68, longitude: 3.93 } } });
+  const report = (await workflow.readReport(result.id, 'final')).value;
+  assert.deepEqual(result.modules.keywords.ideas, []);
+  assert.equal(result.modules.keywords.overview.execution, 'not-run');
+  assert.equal(result.modules.keywords.competitors.length, 0);
+  assert.equal(calls.some(item => item.name === 'keywordOverview' || item.name === 'serpCompetitors'), false);
+  assert.equal(report.includes('menu cantine'), false);
+  assert.equal(result.status, 'PARTIAL');
 });

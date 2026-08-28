@@ -28,6 +28,7 @@ test('restitue le rapport d’un audit public par son identifiant', async () => 
   assert.deepEqual(received, { id: 'audit-run-1', kind: 'final' });
   assert.equal(response.status, 200);
   assert.equal(response.headers['X-Robots-Tag'], 'noindex, nofollow');
+  assert.match(response.headers['Content-Security-Policy'], /style-src 'unsafe-inline'/);
   assert.equal(response.value, '<html>rapport</html>');
 });
 

@@ -2,6 +2,7 @@ import { readJsonBody, sendContent, sendJson } from './json.mjs';
 import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
+const REPORT_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'";
 
 export function createRouter({ artifacts = null, audits = null, publicAudits = null, publicControlPlane = null, demoWorkbench = null, demos = null, dossiers = null, googlePlacesAutocomplete = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
@@ -27,7 +28,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
           if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicControlPlane.getRequest(requestId));
           if (parts[4] === 'match-decision' && parts.length === 5 && method === 'POST') return sendJson(response, 200, await publicControlPlane.decideMatch(requestId, await readJsonBody(request)));
           if (parts[4] === 'reports' && parts.length === 5 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listReports(requestId));
-          if (parts[4] === 'reports' && parts.length >= 6 && method === 'GET') return sendContent(response, 200, (await publicControlPlane.readReport(requestId, id(parts[5]), parts[6] === 'pdf' ? 'pdf' : 'html')).value, parts[6] === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8');
+          if (parts[4] === 'reports' && parts.length >= 6 && method === 'GET') return sendContent(response, 200, (await publicControlPlane.readReport(requestId, id(parts[5]), parts[6] === 'pdf' ? 'pdf' : 'html')).value, parts[6] === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8', { 'Content-Security-Policy': REPORT_CONTENT_SECURITY_POLICY });
           if (parts[4] === 'preparation' && parts.length === 5 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicControlPlane.createPreparation(requestId, { ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
         }
         if (parts[2] === 'demo-requests' && parts.length >= 4) {
@@ -131,7 +132,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       if (parts[1] === 'audits' && parts[2] === 'local' && publicAudits) {
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicAudits.list());
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicAudits.create({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
-        if (parts.length === 5 && parts[4] === 'reports' && method === 'GET') { const report = await publicAudits.readReport(id(parts[3]), url.searchParams.get('kind') ?? 'final'); return sendContent(response, 200, report.value, report.contentType, { 'X-Robots-Tag': 'noindex, nofollow' }); }
+        if (parts.length === 5 && parts[4] === 'reports' && method === 'GET') { const report = await publicAudits.readReport(id(parts[3]), url.searchParams.get('kind') ?? 'final'); return sendContent(response, 200, report.value, report.contentType, { 'X-Robots-Tag': 'noindex, nofollow', 'Content-Security-Policy': REPORT_CONTENT_SECURITY_POLICY }); }
         if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicAudits.get(id(parts[3])));
       }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {

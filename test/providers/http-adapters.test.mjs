@@ -50,7 +50,7 @@ test('recherche un établissement et demande uniquement ses détails d’adresse
   await adapters.googlePlaces.details({ secret: 'places-key', placeId: 'ChIJtest' });
   assert.deepEqual(JSON.parse(calls[0].options.body), { input: 'Chez Test', includedPrimaryTypes: ['establishment'] });
   assert.match(calls[1].url, /places\/ChIJtest$/);
-  assert.equal(calls[1].options.headers['x-goog-fieldmask'], 'id,displayName,formattedAddress,addressComponents,websiteUri,location');
+  assert.equal(calls[1].options.headers['x-goog-fieldmask'], 'id,displayName,formattedAddress,addressComponents,websiteUri,location,primaryType,primaryTypeDisplayName,types');
 });
 
 test('génère du JSON avec les adapters IA autorisés', async () => {
