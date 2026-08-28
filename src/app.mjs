@@ -22,6 +22,9 @@ import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
+import { createPublicControlPlane } from './public/public-control-plane.mjs';
+import { createDemoWorkbench } from './demo/demo-workbench.mjs';
+import { createGooglePlacesAutocomplete } from './geography/google-places-autocomplete.mjs';
 
 const defaultsRoot = new URL('../fixtures/defaults/', import.meta.url);
 const implementationFiles = {
@@ -80,7 +83,10 @@ async function ensureClientAuditTemplates(workflows) {
   const legacySimulation = current.steps.length === 5
     && current.steps.some(step => step.id === 'report-build' && step.implementation === 'simulation-report-build')
     && !current.steps.some(step => step.id === 'gmb-audit-report' || step.id === 'seo-competition-report');
-  const sourceSteps = legacySimulation ? clientSiteWorkflow.steps : current.steps;
+  const contentPlan = current.steps.find(step => step.id === 'content-plan');
+  const finalReport = current.steps.find(step => step.id === 'seo-competition-report');
+  const staleSequence = Boolean(contentPlan?.dependsOn?.includes('dossier-validation') || finalReport?.dependsOn?.includes('site-build'));
+  const sourceSteps = legacySimulation || staleSequence ? clientSiteWorkflow.steps : current.steps;
   const steps = sourceSteps.map(step => {
     const withTemplate = templateByStep[step.id] && !step.outputTemplateId ? { ...step, outputTemplateId: templateByStep[step.id] } : step;
     if (withTemplate.kind === 'ai') return withTemplate;
@@ -95,7 +101,7 @@ async function ensureClientAuditTemplates(workflows) {
   await workflows.activate(current.id, version.id);
 }
 
-export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined } = {}) {
+export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined, publicControlPlane: providedPublicControlPlane = null, demoWorkbench: providedDemoWorkbench = null } = {}) {
   const store = createAtomicStore(dataDir);
   const contracts = createContractRegistry({ store });
   const cliProfiles = createCliProfileRegistry({ store });
@@ -104,6 +110,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const templates = createTemplateRegistry({ store });
   const providerAdapters = { ...createDefaultProviderAdapters(), ...adapters };
   const providers = createProviderRegistry({ store, secretStore, adapters: providerAdapters });
+  const googlePlacesAutocomplete = createGooglePlacesAutocomplete({ providers, adapters: providerAdapters, secretStore });
   const dossiers = createDossierRegistry({ store, opener });
   const faults = new Set();
   const implementations = { ...defaultImplementations, 'provider-chat': createProviderChatImplementation({ providers, adapters: providerAdapters }), ...createSimulationImplementations({ store, faults }), 'domain-candidates': createDomainCandidatesImplementation({ providers, adapters: providerAdapters, secretStore, fallback: query => ({ domain: `${String(query).toLowerCase().replace(/[^a-z0-9]+/g, '')}.com`, source: 'local-candidate-generator', availability: 'unknown' }) }) };
@@ -113,6 +120,30 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demos = createDemoRegistry({ store, artifacts, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup });
+  const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
+  const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
+    store,
+    pipelineStarter: async ({ request, preparation }) => {
+      const intake = preparation.intake ?? {};
+      const dossier = await dossiers.create({
+        name: request.input.name,
+        city: request.input.city.label,
+        country: request.input.city.countryCode,
+        address: intake.address ?? '',
+        contact: intake.contact ?? '',
+        story: intake.story ?? '',
+        menu: Array.isArray(intake.menu) ? intake.menu : [],
+      }, { source: 'public-demo-intake' });
+      const run = await simulation.startDossier(dossier.id);
+      if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
+      const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
+      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, note: preparation.assets.length === 5 ? 'Les références photo sont enregistrées pour la démo locale.' : 'Photos absentes du snapshot.' } };
+    },
+    demoPresenter: async ({ runId, decision }) => {
+      await runs.decide(runId, decision);
+      return decision === 'APPROVED' ? demos.create(runId) : { decision };
+    },
+  });
   const internet = createDomainResearchService({ store, runs });
   const ready = (async () => {
     await seedContract(store, contracts, 'domain-candidates');
@@ -129,5 +160,5 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedTemplate(store, templates, 'audit-seo');
     await ensureClientAuditTemplates(workflows);
   })();
-  return { artifacts, audits, cliProfiles, contracts, demos, dossiers, internet, providers, prompts, ready, runs, simulation, templates, workflows };
+  return { artifacts, audits, cliProfiles, contracts, demoWorkbench, demos, dossiers, googlePlacesAutocomplete, internet, providers, prompts, publicAudits, publicControlPlane, ready, runs, simulation, templates, workflows };
 }
