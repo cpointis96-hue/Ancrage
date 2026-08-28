@@ -150,8 +150,8 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       const intake = preparation.intake ?? {};
       const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
       if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
-      const photoBytes = await store.readBuffer(firstPhoto.assetPath, null);
-      if (!photoBytes) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
+      const photoFiles = await Promise.all(preparation.assets.map(async asset => ({ asset, value: await store.readBuffer(asset.assetPath, null) })));
+      if (photoFiles.some(item => !item.value)) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
       const dossier = await dossiers.create({
         name: request.input.name,
         city: request.input.city.label,
@@ -160,12 +160,12 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         contact: intake.contact ?? '',
         story: intake.story ?? '',
         menu: Array.isArray(intake.menu) ? intake.menu : [],
-        photo: { dataUrl: `data:${firstPhoto.mimeType};base64,${photoBytes.toString('base64')}`, alt: request.input.name },
+        photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name })),
       }, { source: 'public-demo-intake' });
       const run = await simulation.startDossier(dossier.id);
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
       const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
-      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, embeddedAssets: [firstPhoto.category], note: 'La première photo fournie est intégrée à l’aperçu local ; les cinq catégories sont contrôlées.' } };
+      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, embeddedAssets: preparation.assets.map(asset => asset.category), note: 'Les cinq photos fournies sont intégrées à l’aperçu local.' } };
     },
     demoPresenter: async ({ runId, decision }) => {
       await runs.decide(runId, decision);

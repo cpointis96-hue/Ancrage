@@ -27,6 +27,14 @@ test('crée un dossier persistant avec histoire, menu et image bornée', async (
   assert.deepEqual((await registry.readAsset(created.id, 'photo-1.png')).value, image);
 });
 
+test('conserve plusieurs photos d’un dossier', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-dossier-gallery-')); const store = createAtomicStore(root); const dossiers = createDossierRegistry({ store });
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlGHgAAAABJRU5ErkJggg==', 'base64');
+  const dataUrl = `data:image/png;base64,${image.toString('base64')}`;
+  const created = await dossiers.create({ name: 'Maison Sillage', city: 'Nantes', photos: [{ dataUrl, alt: 'Façade' }, { dataUrl, alt: 'Plat' }] });
+  assert.deepEqual(created.assets.map(asset => asset.name), ['photo-1.png', 'photo-2.png']);
+});
+
 test('refuse un dossier incomplet et une image non autorisée', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-dossier-'));
   const registry = createDossierRegistry({ store: createAtomicStore(root) });

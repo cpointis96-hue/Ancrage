@@ -88,7 +88,9 @@ export function createDossierRegistry({ store, opener = null, clock = () => new 
     if (!profile || typeof profile !== 'object') throw new ValidationError('Dossier invalide.');
     const id = suppliedId === null ? idFactory('dossier') : assertResourceId(suppliedId, 'dossierId');
     const now = clock().toISOString();
-    const photo = decodeImage(profile.photo);
+    const photos = Array.isArray(profile.photos) ? profile.photos : profile.photo ? [profile.photo] : [];
+    if (photos.length > 5) throw new ValidationError('Trop d’images.', { field: 'photos' });
+    const decodedPhotos = photos.map(decodeImage).filter(Boolean);
     const menu = menuItems(profile.menu);
     const story = text(profile.story, 'histoire', { max: 12000 });
     const dossier = {
@@ -105,8 +107,8 @@ export function createDossierRegistry({ store, opener = null, clock = () => new 
       createdAt: now,
       updatedAt: now,
     };
-    if (photo) {
-      const name = `photo-1.${photo.extension}`;
+    for (const [index, photo] of decodedPhotos.entries()) {
+      const name = `photo-${index + 1}.${photo.extension}`;
       const written = await store.writeBuffer(dossierPath(id, `assets/${name}`), photo.value, { expectedHash: null });
       dossier.assets.push({ name, type: photo.type, size: photo.value.length, hash: written.hash, alt: photo.alt, source: 'intake-upload' });
     }
