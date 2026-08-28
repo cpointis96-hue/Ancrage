@@ -25,5 +25,13 @@ export function resolveAuditProfile(profile = {}) {
 }
 
 export function resolveAuditBudget(budget = {}) {
-  return { ...STANDARD_AUDIT_BUDGET, ...budget, endpointCosts: { ...STANDARD_AUDIT_BUDGET.endpointCosts, ...(budget.endpointCosts ?? {}) } };
+  const requestedLimit = typeof budget.hardLimit === 'number' && Number.isFinite(budget.hardLimit)
+    ? Math.max(0, budget.hardLimit)
+    : STANDARD_AUDIT_BUDGET.hardLimit;
+  return {
+    ...STANDARD_AUDIT_BUDGET,
+    ...budget,
+    hardLimit: Math.min(STANDARD_AUDIT_BUDGET.hardLimit, requestedLimit),
+    endpointCosts: { ...STANDARD_AUDIT_BUDGET.endpointCosts, ...(budget.endpointCosts ?? {}) },
+  };
 }

@@ -222,3 +222,36 @@ test('écarte les idées hors périmètre et n’hydrate pas une shortlist vide'
   assert.equal(report.includes('menu cantine'), false);
   assert.equal(result.status, 'PARTIAL');
 });
+
+test('ne dépasse jamais le plafond public de 0,50 USD demandé par le workflow', async () => {
+  const calls = [];
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-cap-'))),
+    providers: providerState(),
+    adapters: adapters(calls),
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'fixture-user', password: 'fixture-pass' }) }),
+  });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, budget: { hardLimit: 2 } });
+  assert.equal(result.budget.hardLimit, 0.5);
+});
+
+test('ne présente pas l’établissement audité comme concurrent local', async () => {
+  const calls = [];
+  const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.serpLocalFinder = async input => {
+    calls.push({ name: 'serpLocalFinder', input });
+    return { tasks: [{ result: [{ items: [
+      { title: 'Le Midi-Teyranais', domain: 'restaurant-midi-teyranais.fr' },
+      { title: 'Restaurant voisin', domain: 'voisin.example' },
+    ] }] }] };
+  };
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-self-'))),
+    providers: providerState(),
+    adapters: configuredAdapters,
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'fixture-user', password: 'fixture-pass' }) }),
+  });
+  const result = await workflow.create({ name: 'Le Midi-Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, domain: 'https://restaurant-midi-teyranais.fr', identity: { source: 'google-places', placeId: 'place-1', address: '1 rue de la mairie, Teyran', coordinates: { latitude: 43.68, longitude: 3.93 }, primaryType: 'restaurant' } });
+  assert.equal(result.modules.keywords.localCompetitors.some(item => item.title === 'Le Midi-Teyranais'), false);
+  assert.equal(result.modules.keywords.localCompetitors.some(item => item.title === 'Restaurant voisin'), true);
+});

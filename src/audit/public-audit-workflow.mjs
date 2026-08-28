@@ -310,7 +310,9 @@ function findLabsPair(result, country, preferred = 'en') {
     const localFinder = coordinates && researchPlan.seeds.length
       ? await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'serp/google/local_finder/live/advanced', endpoint: 'serpLocalFinder', tasks: [{ keyword: researchPlan.seeds[0], location_coordinate: `${coordinates.latitude},${coordinates.longitude}`, language_code: serpTarget.language_code, depth: 10 }], estimate: costs.serpLocalFinder })
       : notRun(coordinates ? 'NO_LOCAL_QUERY' : 'GOOGLE_PLACES_COORDINATES_REQUIRED');
-    const localCompetitors = normalizeCandidates(localFinder, researchPlan.seeds[0]).filter(item => item.domain !== domainOf(domain)).map(item => ({ ...item, scope: 'local-serp', classification: 'LOCAL_COMPETITOR_OBSERVED', source: 'dataforseo_local_finder' }));
+    const localCompetitors = normalizeCandidates(localFinder, researchPlan.seeds[0])
+      .filter(item => item.domain !== domainOf(domain) && normalizeQuery(item.title) !== normalizeQuery(name))
+      .map(item => ({ ...item, scope: 'local-serp', classification: 'LOCAL_COMPETITOR_OBSERVED', source: 'dataforseo_local_finder' }));
     const allCompetitors = [...localCompetitors, ...keywordCompetitors];
     const keywordStatus = keywordIdeas.length || allCompetitors.length ? 'SUCCEEDED' : 'PARTIAL';
     const researchCause = ideas.cause ?? overview.cause ?? competitors.cause ?? localFinder.cause ?? resultResolutionError ?? (keywordStatus === 'PARTIAL' ? 'NO_USABLE_KEYWORD_OR_COMPETITOR_RESULTS' : null);

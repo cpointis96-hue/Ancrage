@@ -5,6 +5,19 @@ const INTENT_RULES = [
   { name: 'contact', terms: ['contact', 'telephone', 'adresse', 'horaires'] },
 ];
 
+const GENERIC_CATEGORY_QUERIES = new Set([
+  'restaurant',
+  'restaurant menu',
+  'menu restaurant',
+  'menu de restaurant',
+  'menu du restaurant',
+  'carte de restaurant',
+  'carte menu restaurant',
+  'cuisine restaurant',
+  'fait maison restaurant menu',
+]);
+const OFF_TOPIC_TERMS = ['cantine', 'scolaire', 'ikea', 'porte menu', 'guide michelin', 'pdf'];
+
 function normalize(value) {
   return String(value ?? '')
     .toLocaleLowerCase('fr')
@@ -55,6 +68,19 @@ function keywordIntent(item, keyword) {
   return INTENT_RULES.find(rule => rule.terms.some(term => normalized.includes(normalize(term))))?.name ?? 'discovery';
 }
 
+function keywordMatchesName(keyword, name) {
+  return Boolean(name) && includesPhraseOrWords(keyword, name);
+}
+
+function hasNamedNoise(keyword, plan) {
+  const normalized = normalize(keyword);
+  if (OFF_TOPIC_TERMS.some(term => normalized.includes(normalize(term)))) return true;
+  if (String(keyword).includes("'") || String(keyword).includes('’')) return true;
+  if (plan.locality && includesPhraseOrWords(keyword, plan.locality)) return false;
+  if (plan.name && keywordMatchesName(keyword, plan.name)) return false;
+  return !GENERIC_CATEGORY_QUERIES.has(normalized);
+}
+
 function domainOf(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -79,6 +105,7 @@ export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, 
     : [];
   return {
     locality,
+    name: String(name ?? '').trim(),
     country: String(country ?? '').trim().toUpperCase() || null,
     anchors,
     category: planned?.category ?? primaryAnchor,
@@ -95,6 +122,7 @@ function normalizedKeywordRow(item, plan) {
   const info = keywordInfo(item);
   const localityMatch = includesPhraseOrWords(keyword, plan.locality);
   const businessMatch = plan.anchors.some(anchor => includesPhraseOrWords(keyword, anchor));
+  const nameMatch = keywordMatchesName(keyword, plan.name);
   const intent = keywordIntent(item, keyword);
   const searchVolume = info.search_volume ?? null;
   const competition = info.competition ?? null;
@@ -113,6 +141,7 @@ function normalizedKeywordRow(item, plan) {
     sourceSeed: item?.seed ?? item?.source_seed ?? item?.keyword_data?.seed ?? null,
     localityMatch,
     businessMatch,
+    nameMatch,
     scope: localityMatch ? 'local-query' : 'market-query',
     evidence: localityMatch && businessMatch ? 'category-and-locality' : businessMatch ? 'observed-category' : 'unconfirmed',
     priority,
@@ -130,12 +159,16 @@ export function qualifyKeywordResults(result, plan) {
     seen.add(row.canonicalKeyword);
     const reason = !plan.anchors.length
       ? 'BUSINESS_CATEGORY_NOT_OBSERVED'
-      : !row.businessMatch ? 'BUSINESS_ANCHOR_NOT_CONFIRMED' : null;
+      : !row.businessMatch ? 'BUSINESS_ANCHOR_NOT_CONFIRMED'
+        : hasNamedNoise(row.keyword, plan) ? 'QUERY_NOT_RELEVANT_TO_LOCAL_BUSINESS'
+          : null;
     if (reason) rejected.push({ ...row, reason });
     else selected.push(row);
   }
   selected.sort((left, right) => right.priority - left.priority || (right.searchVolume ?? -1) - (left.searchVolume ?? -1) || left.canonicalKeyword.localeCompare(right.canonicalKeyword));
-  return { selected, rejected, sourceCount: selected.length + rejected.length };
+  const shortlist = selected.slice(0, 12);
+  rejected.push(...selected.slice(12).map(item => ({ ...item, reason: 'SHORTLIST_LIMIT' })));
+  return { selected: shortlist, rejected, sourceCount: shortlist.length + rejected.length };
 }
 
 export function mergeKeywordMetrics(rows, metrics) {
@@ -176,6 +209,7 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
     const metrics = competitorMetrics(item);
     const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : [];
     const matchedKeywords = rawKeywords.map(value => String(value).trim()).filter(value => wanted.has(normalize(value)));
+    if (!matchedKeywords.length) continue;
     const existing = byDomain.get(domain);
     const row = {
       domain,
