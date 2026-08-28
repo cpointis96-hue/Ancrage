@@ -3,7 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 
-export function createRouter({ artifacts = null, audits = null, publicAudits = null, demos = null, dossiers = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
+export function createRouter({ artifacts = null, audits = null, publicAudits = null, publicControlPlane = null, demoWorkbench = null, demos = null, dossiers = null, googlePlacesAutocomplete = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -13,6 +13,29 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         return sendContent(response, 200, demo.value.replace(/<head>/i, '<head><meta name="robots" content="noindex,nofollow">'), demo.contentType, { 'X-Robots-Tag': 'noindex, nofollow' });
       }
       if (parts[0] !== 'api') throw new NotFoundError();
+      if (parts[1] === 'demo' && parts[2] === 'workbench' && parts[3] === 'audits' && demoWorkbench) {
+        if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await demoWorkbench.list());
+        if (parts.length === 4 && method === 'POST') return sendJson(response, 201, await demoWorkbench.create(await readJsonBody(request)));
+        if (parts.length === 6 && method === 'GET' && ['report', 'site'].includes(parts[5])) return sendContent(response, 200, (await demoWorkbench.readArtifact(id(parts[4]), parts[5])).value, 'text/html; charset=utf-8');
+      }
+      if (parts[1] === 'public' && publicControlPlane) {
+        if (parts[2] === 'requests' && parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicControlPlane.createRequest({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
+        if (parts[2] === 'requests' && parts.length >= 4) {
+          const requestId = id(parts[3]);
+          if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicControlPlane.getRequest(requestId));
+          if (parts[4] === 'match-decision' && parts.length === 5 && method === 'POST') return sendJson(response, 200, await publicControlPlane.decideMatch(requestId, await readJsonBody(request)));
+          if (parts[4] === 'reports' && parts.length === 5 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listReports(requestId));
+          if (parts[4] === 'reports' && parts.length >= 6 && method === 'GET') return sendContent(response, 200, (await publicControlPlane.readReport(requestId, id(parts[5]), parts[6] === 'pdf' ? 'pdf' : 'html')).value, parts[6] === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8');
+          if (parts[4] === 'preparation' && parts.length === 5 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicControlPlane.createPreparation(requestId, { ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
+        }
+        if (parts[2] === 'demo-requests' && parts.length >= 4) {
+          const demoRequestId = id(parts[3]);
+          if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicControlPlane.getDemoRequest(demoRequestId));
+          if (parts[4] === 'intake' && parts.length === 5 && method === 'PUT') return sendJson(response, 200, await publicControlPlane.updateIntake(demoRequestId, await readJsonBody(request)));
+          if (parts[4] === 'assets' && parts.length === 5 && method === 'POST') return sendJson(response, 201, await publicControlPlane.addAsset(demoRequestId, await readJsonBody(request)));
+          if (parts[4] === 'start' && parts.length === 5 && method === 'POST') return sendJson(response, 200, await publicControlPlane.start(demoRequestId));
+        }
+      }
       if (parts[1] === 'intake' && parts[2] === 'dossiers' && parts.length === 3 && method === 'POST' && dossiers) {
         const body = await readJsonBody(request);
         return sendJson(response, 201, await dossiers.create(body, { source: 'local-public-intake' }));
@@ -36,6 +59,8 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         if (parts[3] === 'models' && method === 'GET') return sendJson(response, 200, await providers.listModels(providerId));
         if (parts[3] === 'enabled' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await providers.setEnabled(providerId, body.enabled)); }
       }
+      if (parts[1] === 'places' && parts[2] === 'autocomplete' && parts.length === 3 && method === 'GET' && googlePlacesAutocomplete) return sendJson(response, 200, await googlePlacesAutocomplete({ input: url.searchParams.get('input'), countryCode: url.searchParams.get('country'), mode: url.searchParams.get('mode') ?? 'city' }));
+      if (parts[1] === 'places' && parts[2] === 'details' && parts.length === 3 && method === 'GET' && googlePlacesAutocomplete?.details) return sendJson(response, 200, await googlePlacesAutocomplete.details({ placeId: url.searchParams.get('placeId') }));
       if (parts[1] === 'prompts') {
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await prompts.list());
         const promptId = id(parts[2]);
@@ -103,6 +128,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       if (parts[1] === 'audits' && parts[2] === 'local' && publicAudits) {
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicAudits.list());
         if (parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicAudits.create({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
+        if (parts.length === 5 && parts[3] === 'reports' && method === 'GET') { const report = await publicAudits.readReport(id(parts[2]), url.searchParams.get('kind') ?? 'final'); return sendContent(response, 200, report.value, report.contentType, { 'X-Robots-Tag': 'noindex, nofollow' }); }
         if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicAudits.get(id(parts[3])));
       }
       if (parts[1] === 'simulations' && parts[2] === 'client-site' && simulation) {
@@ -112,7 +138,10 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       throw new NotFoundError();
     } catch (error) {
       const appError = error instanceof AppError ? error : new AppError('Erreur interne.');
-      sendJson(response, appError.status ?? 500, { error: { code: appError.code, message: appError.status >= 500 ? 'Erreur interne.' : appError.message } });
+      const publicRoute = request.url?.startsWith('/api/public/'); const message = appError.status >= 500 ? 'Erreur interne.' : appError.message;
+      const publicRequestId = publicRoute ? request.url.match(/\/api\/public\/(?:requests|demo-requests)\/([^/?]+)/)?.[1] ?? null : null;
+      const publicDetails = publicRoute && appError.status < 500 ? { requestId: publicRequestId, retryable: Boolean(appError.details?.retryable), nextAction: appError.details?.nextAction ?? null, ...(appError.details?.field ? { fieldErrors: { [appError.details.field]: message } } : {}) } : {};
+      sendJson(response, appError.status ?? 500, { error: { code: appError.code, message, ...publicDetails } });
     }
   };
 }

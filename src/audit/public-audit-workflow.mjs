@@ -10,6 +10,7 @@ const INDEX_PATH = 'audit-runs/index.json';
 const IDEMPOTENCY_PATH = key => `audit-runs/idempotency/${createHash('sha256').update(key).digest('hex')}.json`;
 const WORKFLOW_VERSION = 'public-audit-v1';
 const STAGES = ['establishment-search', 'site-discovery', 'gmb-audit', 'seo-audit', 'competitor-keywords', 'strategy'];
+const reportPath = (id, kind) => `audit-runs/${id}/reports/${kind}.html`;
 
 function pathFor(id) { return `audit-runs/${id}/run.json`; }
 function text(value, field, max = 200) {
@@ -26,6 +27,16 @@ function validUrl(value, field = 'domain') {
 function fingerprint(input) { return JSON.stringify(input); }
 
 function stage(id, status, extra = {}) { return { id, status, ...extra }; }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
+function renderReport(result, kind) {
+  const title = kind === 'gmb' ? 'Rapport GMB' : 'Rapport final SEO et concurrence';
+  const stages = result.stages.map(item => `<li><strong>${escapeHtml(item.id)}</strong> : ${escapeHtml(item.status)}${item.cause ? ` · ${escapeHtml(item.cause)}` : ''}</li>`).join('');
+  const evidence = result.evidence.map(item => `<li>${escapeHtml(item.provider)} · ${escapeHtml(item.canonicalUrl)} · ${escapeHtml(item.rawPayloadHash)}</li>`).join('');
+  const modules = kind === 'gmb'
+    ? `<p>${result.modules.gmb?.candidates?.length ?? 0} établissement(s) public(s) retourné(s) dans le périmètre observé.</p>`
+    : `<p>Site : ${escapeHtml(result.input.domain ?? result.modules.site?.candidates?.[0]?.url ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p><p>${result.modules.keywords?.ideas?.length ?? 0} piste(s) de mots-clés et ${result.modules.keywords?.competitors?.length ?? 0} concurrent(s) retournés.</p>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)}</title><style>body{font:16px/1.55 system-ui;max-width:860px;margin:auto;padding:24px;color:#20211f;background:#f5f5f2}header{background:#173024;color:#eef4ec;padding:32px}header small{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:24px 0}li{margin:8px 0;overflow-wrap:anywhere}small{color:#5a635c}</style></head><body><header><small>${escapeHtml(title.toUpperCase())} · ${escapeHtml(result.status)}</small><h1>${escapeHtml(result.input.name)}</h1><p>${escapeHtml(result.input.city.label)} · Observation : ${escapeHtml(result.startedAt)}</p></header><main><section><h2>Périmètre</h2>${modules}</section><section><h2>Étapes</h2><ul>${stages}</ul></section><section><h2>Limites</h2><p>Les branches absentes, partielles ou non confirmées restent explicitement signalées. Aucun résultat provider non observé n’est remplacé par une valeur synthétique.</p></section><section><h2>Preuves</h2>${evidence ? `<ul>${evidence}</ul>` : '<p>Aucune preuve provider livrée.</p>'}</section></main></body></html>`;
+}
 
 export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
   async function get(id) {
@@ -36,6 +47,17 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
   async function list() {
     const ids = await store.readJson(INDEX_PATH, []);
     return Promise.all(ids.map(get));
+  }
+  async function publishReport(result, kind) {
+    const path = reportPath(result.id, kind);
+    await store.writeText(path, renderReport(result, kind), { immutable: true });
+    result.reports = [...(result.reports ?? []).filter(item => item.kind !== kind), { kind, path, status: kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? 'PARTIAL' : result.status, availableAt: clock().toISOString() }];
+  }
+  async function readReport(id, kind = 'final') {
+    const run = await get(id); if (!['gmb', 'final'].includes(kind)) throw new ValidationError('Rapport invalide.', { field: 'kind' });
+    const report = run.reports?.find(item => item.kind === kind); if (!report) throw new NotFoundError('Rapport introuvable.');
+    const value = await store.readText(report.path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
+    return { value, contentType: 'text/html; charset=utf-8', report };
   }
   async function addIndex(id) {
     const currentText = await store.readText(INDEX_PATH, null);
@@ -106,11 +128,12 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     }
     const hardLimit = budget.hardLimit;
     const id = idFactory('audit-run');
-    const actualLedger = createCostLedger({ store, runId: id, envelope: { hardLimit, currency: budget.currency ?? 'USD' }, clock, idFactory });
+    let ledgerSequence = 0;
+    const actualLedger = createCostLedger({ store, runId: id, envelope: { hardLimit, currency: budget.currency ?? 'USD' }, clock, idFactory: prefix => `${idFactory(prefix)}-${ledgerSequence++}` });
     const ready = await dataForSeoReady();
     const costs = budget.endpointCosts ?? {};
     const observedAt = clock().toISOString();
-    const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, budget: actualLedger.snapshot() };
+    const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
     await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
     const save = async () => store.writeJson(pathFor(id), result);
     const maps = await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
@@ -121,10 +144,13 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return result;
     }
-    const discovered = await call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced });
+    const [discovered, gmb] = await Promise.all([
+      call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced }),
+      call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
+    ]);
     result.stages.push(stage('site-discovery', discovered.status, { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: normalizeCandidates(discovered) };
-    const gmb = await call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings });
     result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
+    await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     if (domain) {
       const seoStarted = Date.now();
       try {
@@ -140,9 +166,9 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     result.stages.push(stage('competitor-keywords', [ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? null, durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: normalizeKeywords(ideas), overview: normalizeKeywords(overview), competitors: normalizeCandidates(competitors) }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
-    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
+    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
     if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
     return result;
   }
-  return { create, get, list };
+  return { create, get, list, readReport };
 }
