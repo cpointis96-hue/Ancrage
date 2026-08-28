@@ -21,10 +21,10 @@ test('compose un audit public DataForSEO borné, sourcé, partiel et idempotent 
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-')); const store = createAtomicStore(root); const calls = [];
   const secretStore = createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) });
   const workflow = createPublicAuditWorkflow({ store, providers: providerState(), adapters: adapters(calls), secretStore, idFactory: prefix => `${prefix}-fixed`, clock: () => new Date('2026-08-27T00:00:00.000Z'), fetchImpl: async url => ({ url, status: 200, headers: { get: () => 'text/html; charset=utf-8' }, text: async () => '<html lang="fr"><head><title>Site</title><meta name="description" content="ok"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://example.com/"><script type="application/ld+json">{}</script></head><body><h1>Site</h1></body></html>' }), lookup: async () => ['93.184.216.34'] });
-  const input = { name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com', idempotencyKey: 'public-1' };
+  const input = { name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, domain: 'https://example.com', identity: { source: 'google-places', placeId: 'place-1', address: '1 Beach Road, Pattaya', coordinates: { latitude: 12.9, longitude: 100.9 } }, idempotencyKey: 'public-1' };
   const first = await workflow.create(input);
   const gmbReport = (await workflow.readReport(first.id, 'gmb')).value; const finalReport = (await workflow.readReport(first.id, 'final')).value; assert.equal(gmbReport.includes('SUCCEEDED'), true); assert.equal(gmbReport.includes('Site et SEO'), false); assert.equal(finalReport.includes('Site et SEO'), true); assert.equal(finalReport.includes('Mots-clés et concurrence'), true); assert.equal(finalReport.includes('Recommandations'), true);
-  assert.equal(first.status, 'SUCCEEDED'); assert.equal(first.stages.length, 6); assert.equal(first.evidence.length, 7); assert.deepEqual(first.reports.map(item => item.kind).sort(), ['final', 'gmb']); assert.equal((await workflow.readReport(first.id, 'gmb')).value.includes('RAPPORT GMB'), true); assert.equal((await workflow.readReport(first.id, 'final')).value.includes('RAPPORT FINAL SEO'), true); assert.equal(first.modules.seo.status, 'SUCCEEDED'); assert.equal(first.modules.seo.external.onPage, 'SUCCEEDED'); assert.equal(first.modules.keywords.ideas[0].keyword, 'restaurant pattaya'); assert.equal(first.input.profile.maxPages, 50); assert.equal(first.input.profile.maxBytes, 25 * 1024 * 1024); assert.equal(first.input.profile.timeoutMs, 180000); assert.equal(first.budget.hardLimit, 2); assert.equal(Math.round(first.budget.spent * 100) / 100, 1.55); assert.equal(calls.length, 7); assert.equal(first.stages.every(item => Number.isInteger(item.durationMs) && item.durationMs >= 0), true); assert.equal(Number.isInteger(first.durationMs), true);
+  assert.equal(first.status, 'SUCCEEDED'); assert.equal(first.stages.length, 6); assert.equal(first.evidence.length, 7); assert.deepEqual(first.reports.map(item => item.kind).sort(), ['final', 'gmb']); assert.equal((await workflow.readReport(first.id, 'gmb')).value.includes('RAPPORT GMB'), true); assert.equal((await workflow.readReport(first.id, 'final')).value.includes('RAPPORT FINAL SEO'), true); assert.equal(first.modules.seo.status, 'SUCCEEDED'); assert.equal(first.modules.seo.external.onPage, 'SUCCEEDED'); assert.equal(first.modules.keywords.ideas[0].keyword, 'restaurant pattaya'); assert.equal(first.input.profile.maxPages, 50); assert.equal(first.input.profile.maxBytes, 25 * 1024 * 1024); assert.equal(first.input.profile.timeoutMs, 180000); assert.equal(first.budget.hardLimit, 2); assert.equal(Math.round(first.budget.spent * 100) / 100, 1.55); assert.equal(calls.length, 7); assert.deepEqual(calls.find(item => item.name === 'businessListings').input.tasks[0], { title: 'Maison Sillage', location_coordinate: '12.9,100.9,200', limit: 10 }); assert.deepEqual(calls.find(item => item.name === 'serpCompetitors').input.tasks[0].keywords, ['restaurant Pattaya', 'restaurant Pattaya menu', 'restaurant Pattaya delivery']); assert.equal(first.stages.every(item => Number.isInteger(item.durationMs) && item.durationMs >= 0), true); assert.equal(Number.isInteger(first.durationMs), true);
   assert.equal(first.evidence.every(item => item.provider === 'dataforseo' && item.rawPayloadHash.startsWith('sha256:')), true);
   assert.equal(JSON.stringify(first).includes('password'), false);
   const replay = await workflow.create(input); assert.equal(replay.id, first.id); assert.equal(calls.length, 7);
@@ -103,6 +103,25 @@ test('bloque le crawl local et OnPage sans domaine confirmé sans inventer de si
   assert.equal(result.stages.find(item => item.id === 'seo-audit').status, 'BLOCKED');
   assert.equal(calls.some(item => item.name === 'onPageInstantPages'), false);
   assert.doesNotMatch((await workflow.readReport(result.id, 'final')).value, /https:\/\/example\.com/);
+  assert.equal(result.modules.gmb.confirmation.cause, 'GOOGLE_PLACES_COORDINATES_REQUIRED');
+  assert.equal(calls.some(item => item.name === 'businessListings'), false);
+});
+
+test('résout les contrats SERP et Labs avant les appels payants', async () => {
+  const calls = [];
+  const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.serpLocations = async () => ({ tasks: [{ result: [{ location_code: 2250, location_name: 'France', country_iso_code: 'FR' }] }] });
+  configuredAdapters.dataforseo.serpLanguages = async () => ({ tasks: [{ result: [{ language_code: 'fr' }] }] });
+  configuredAdapters.dataforseo.businessListingsLocations = async () => ({ tasks: [{ result: [{ location_name: 'France', country_iso_code: 'FR' }] }] });
+  configuredAdapters.dataforseo.labsLocationsAndLanguages = async () => ({ tasks: [{ result: [{ location_code: 2250, country_iso_code: 'FR', available_languages: [{ language_code: 'fr', available_sources: ['google'] }] }] }] });
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-resolved-'))), providers: providerState(), adapters: configuredAdapters,
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'user', password: 'password' }) }),
+  });
+  const result = await workflow.create({ name: 'Le Midi Teyranais', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', address: '1 rue de la mairie', coordinates: { latitude: 43.68, longitude: 3.93 } } });
+  assert.deepEqual(calls.find(item => item.name === 'serpMapsLiveAdvanced').input.tasks[0], { keyword: 'Le Midi Teyranais Teyran', location_code: 2250, language_code: 'fr' });
+  assert.deepEqual(calls.find(item => item.name === 'keywordIdeasLive').input.tasks[0], { keywords: ['restaurant Teyran', 'restaurant Teyran menu', 'restaurant Teyran delivery'], location_code: 2250, language_code: 'fr', limit: 25 });
+  assert.equal(result.status, 'PARTIAL');
 });
 
 test('conserve la sélection Google Places même si la source GMB ne la corrobore pas', async () => {

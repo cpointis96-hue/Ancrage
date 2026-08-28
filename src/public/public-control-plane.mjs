@@ -30,7 +30,11 @@ function publicDomain(value) {
 function publicIdentity(value) {
   if (value === undefined || value === null) return null;
   if (!value || typeof value !== 'object') throw new ValidationError('identity est invalide.', { field: 'identity' });
-  if (value.source === 'google-places') return { source: value.source, placeId: text(value.placeId, 'identity.placeId', 200), address: text(value.address, 'identity.address', 500) };
+  if (value.source === 'google-places') {
+    const coordinates = value.coordinates;
+    if (coordinates !== undefined && (!coordinates || typeof coordinates !== 'object' || !Number.isFinite(coordinates.latitude) || !Number.isFinite(coordinates.longitude))) throw new ValidationError('identity.coordinates est invalide.', { field: 'identity.coordinates' });
+    return { source: value.source, placeId: text(value.placeId, 'identity.placeId', 200), address: text(value.address, 'identity.address', 500), ...(coordinates ? { coordinates: { latitude: coordinates.latitude, longitude: coordinates.longitude } } : {}) };
+  }
   if (value.source === 'manual') return { source: value.source, address: value.address && typeof value.address === 'object' ? response(value.address) : text(value.address, 'identity.address', 500) };
   throw new ValidationError('identity est invalide.', { field: 'identity' });
 }

@@ -159,6 +159,25 @@ function providerTaskFailed(payload) {
 function providerLocation(country, cityLabel) {
   return ({ FR: 'France', LK: 'Sri Lanka', AU: 'Australia', TH: 'Thailand' })[country] ?? cityLabel;
 }
+function resultItems(result) { return (result?.tasks ?? []).flatMap(task => task.result ?? []); }
+function normalized(value) { return String(value ?? '').toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function findLocation(result, cityLabel, country) {
+  const wantedCity = normalized(cityLabel); const wantedCountry = normalized(country);
+  const locations = resultItems(result);
+  return locations.find(item => normalized(item.location_name).includes(wantedCity) && (!wantedCountry || normalized(item.country_iso_code) === wantedCountry))
+    ?? locations.find(item => normalized(item.country_iso_code) === wantedCountry)
+    ?? locations.find(item => normalized(item.location_name).includes(wantedCity));
+}
+function findLanguage(result, preferred = 'en') {
+  return resultItems(result).find(item => String(item.language_code ?? '') === preferred) ?? resultItems(result)[0] ?? null;
+}
+function findLabsPair(result, country, preferred = 'en') {
+  const location = resultItems(result).find(item => normalized(item.country_iso_code) === normalized(country));
+  const languages = location?.available_languages ?? [];
+  const language = languages.find(item => item.language_code === preferred && item.available_sources?.includes('google'))
+    ?? languages.find(item => item.available_sources?.includes('google'));
+  return location && language ? { location_code: location.location_code, language_code: language.language_code } : null;
+}
   function normalizeKeywords(result) {
     return items(result).slice(0, 25).map(item => ({
       keyword: item?.keyword ?? item?.keyword_data?.keyword ?? null,
@@ -193,6 +212,39 @@ function providerLocation(country, cityLabel) {
     const actualLedger = createCostLedger({ store, runId: id, envelope: { hardLimit, currency: budget.currency ?? 'USD' }, clock, idFactory: prefix => `${idFactory(prefix)}-${ledgerSequence++}` });
     const ready = await dataForSeoReady();
     const costs = budget.endpointCosts ?? {};
+    const coordinates = identity?.coordinates;
+    const dataForSeoLocation = async () => {
+      if (ready.state !== 'ready') return { serp: null, business: null, labs: null };
+      const adapter = adapters.dataforseo;
+      const resolution = { serp: null, business: null, labs: null };
+      try {
+        if (adapter.serpLocations && adapter.serpLanguages) {
+          const [locations, languages] = await Promise.all([
+            adapter.serpLocations({ secret: ready.secret, country }),
+            adapter.serpLanguages({ secret: ready.secret }),
+          ]);
+          const location = findLocation(locations, cityLabel, country);
+          const language = findLanguage(languages, country === 'FR' ? 'fr' : 'en');
+          if (location?.location_code && language?.language_code) resolution.serp = { location_code: location.location_code, language_code: language.language_code };
+        }
+        if (adapter.businessListingsLocations) {
+          const locations = await adapter.businessListingsLocations({ secret: ready.secret, country });
+          resolution.business = findLocation(locations, cityLabel, country) ?? null;
+        }
+        if (adapter.labsLocationsAndLanguages) {
+          resolution.labs = findLabsPair(await adapter.labsLocationsAndLanguages({ secret: ready.secret }), country, country === 'FR' ? 'fr' : 'en');
+        }
+      } catch (error) {
+        resultResolutionError = error.code ?? 'DATAFORSEO_LOCATION_RESOLUTION_FAILED';
+      }
+      return resolution;
+    };
+    let resultResolutionError = null;
+    const resolvedLocations = localPreview ? { serp: null, business: null, labs: null } : await dataForSeoLocation();
+    const hasSerpResolvers = Boolean(adapters.dataforseo.serpLocations && adapters.dataforseo.serpLanguages);
+    const hasBusinessResolver = Boolean(adapters.dataforseo.businessListingsLocations);
+    const serpTarget = resolvedLocations.serp ? { ...resolvedLocations.serp } : { location_name: cityLabel, language_code: 'en' };
+    const labTarget = resolvedLocations.labs ?? { location_name: providerLocation(country, cityLabel), language_code: 'en' };
     const observedAt = clock().toISOString();
     const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, provider: ready.provider
       ? { id: ready.provider.id, configured: ready.provider.configured, enabled: ready.provider.enabled, health: ready.provider.health, readiness: ready.state, adapter: ready.adapter ? (ready.executionType === 'http' ? 'http' : 'adapter') : 'absent' }
@@ -201,7 +253,9 @@ function providerLocation(country, cityLabel) {
     const save = async () => store.writeJson(pathFor(id), result);
     const maps = localPreview
       ? { status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 }
-      : await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
+      : hasSerpResolvers && !resolvedLocations.serp
+        ? { status: 'BLOCKED', cause: resultResolutionError ?? 'SERP_LOCATION_LANGUAGE_UNRESOLVED', execution: 'not-run', durationMs: 0 }
+        : await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, ...serpTarget }], estimate: costs.serpMaps, optional: false });
     const establishmentCandidates = normalizeCandidates(maps, name);
     result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, providerState: maps.providerState ?? ready.state, execution: maps.execution ?? 'not-run', durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { selected: identity?.source === 'google-places' ? { source: 'google-places', placeId: identity.placeId ?? null, name, address: identity.address ?? null } : null, candidates: establishmentCandidates };
     if (maps.status === 'BLOCKED') {
@@ -220,17 +274,23 @@ function providerLocation(country, cityLabel) {
       }
     })() : Promise.resolve({ module: { status: 'BLOCKED', cause: 'SITE_NOT_CONFIRMED', execution: 'not-run' }, durationMs: 0 });
     const [discovered, gmb] = await Promise.all([
-      call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced }),
+      hasSerpResolvers && !resolvedLocations.serp
+        ? Promise.resolve({ status: 'PARTIAL', cause: resultResolutionError ?? 'SERP_LOCATION_LANGUAGE_UNRESOLVED', execution: 'not-run', durationMs: 0 })
+        : call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, ...serpTarget }], estimate: costs.serpOrganicLiveAdvanced }),
       localPreview
         ? Promise.resolve({ status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 })
-        : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
+        : coordinates
+          ? hasBusinessResolver && !resolvedLocations.business
+            ? Promise.resolve({ status: 'PARTIAL', cause: resultResolutionError ?? 'BUSINESS_LISTINGS_LOCATION_UNRESOLVED', execution: 'not-run', durationMs: 0 })
+            : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ title: name, location_coordinate: `${coordinates.latitude},${coordinates.longitude},200`, limit: 10 }], estimate: costs.businessListings })
+          : Promise.resolve({ status: 'PARTIAL', cause: 'GOOGLE_PLACES_COORDINATES_REQUIRED', execution: 'not-run', durationMs: 0 }),
     ]);
     const siteCandidates = normalizeCandidates(discovered, name);
     result.stages.push(stage('site-discovery', domain ? discovered.status : (discovered.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'), { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), providerState: discovered.providerState ?? ready.state, execution: discovered.execution ?? 'not-run', durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: siteCandidates, confirmation: domain ? { status: 'CONFIRMED', source: normalized.domainSource } : { status: 'NOT_CONFIRMED', cause: 'SITE_NOT_CONFIRMED' } };
     const gmbCandidates = normalizeCandidates(gmb, name);
     const gmbStatus = gmb.status === 'SUCCEEDED' && gmbCandidates.length === 0 ? 'PARTIAL' : gmb.status;
     const gmbCause = gmb.cause ?? (gmbCandidates.length === 0 ? 'ESTABLISHMENT_NOT_CORROBORATED' : null);
-    result.stages.push(stage('gmb-audit', gmbStatus, { cause: gmbCause, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: gmbCandidates, confirmation: { status: localPreview ? 'NOT_RUN' : gmbCandidates.length ? 'CANDIDATES_FOUND' : 'NOT_CONFIRMED', cause: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : gmbCandidates.length ? null : 'ESTABLISHMENT_NOT_CORROBORATED' } };
+    result.stages.push(stage('gmb-audit', gmbStatus, { cause: gmbCause, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: gmbCandidates, confirmation: { status: localPreview ? 'NOT_RUN' : gmbCandidates.length ? 'CANDIDATES_FOUND' : 'NOT_CONFIRMED', cause: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : gmbCandidates.length ? null : gmbCause } };
     if (!localPreview) await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     const continueAfterGmb = async () => {
     try {
@@ -245,12 +305,12 @@ function providerLocation(country, cityLabel) {
     result.modules.seo = { ...seoBase.module, status: seoStatus, execution: domain ? 'local-crawl' : 'not-run', external: { crawl: domain ? seoBase.module.status : 'BLOCKED', onPage: domain ? onPage.status : 'BLOCKED', cause: seoCause } };
     if (onPage.evidence) result.evidence.push(onPage.evidence);
     result.stages.push(stage('seo-audit', seoStatus, { cause: seoCause, providerState: onPage.providerState ?? null, execution: domain ? onPage.execution ?? seoBase.module.execution ?? 'local-crawl' : 'not-run', durationMs: seoBase.durationMs + onPage.durationMs }));
-    const keywordLocation = providerLocation(country, cityLabel);
-    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
-    const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en' }], estimate: costs.keywordOverview });
-    const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en' }], estimate: costs.serpCompetitors });
+    const serviceIntents = [`restaurant ${cityLabel}`, `restaurant ${cityLabel} menu`, `restaurant ${cityLabel} delivery`];
+    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: serviceIntents, ...labTarget, limit: 25 }], estimate: costs.keywordIdeas });
+    const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: serviceIntents, ...labTarget }], estimate: costs.keywordOverview });
+    const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: serviceIntents, ...labTarget }], estimate: costs.serpCompetitors });
     const keywordIdeas = normalizeKeywords(ideas); const keywordCompetitors = normalizeCandidates(competitors); const keywordStatus = keywordIdeas.length || keywordCompetitors.length ? 'SUCCEEDED' : 'PARTIAL';
-    result.stages.push(stage('competitor-keywords', keywordStatus, { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? (keywordStatus === 'PARTIAL' ? 'NO_USABLE_KEYWORD_OR_COMPETITOR_RESULTS' : null), providerState: ready.state, execution: [ideas, overview, competitors].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: keywordIdeas, overview, competitors: keywordCompetitors, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run' } }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
+    result.stages.push(stage('competitor-keywords', keywordStatus, { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? resultResolutionError ?? (keywordStatus === 'PARTIAL' ? 'NO_USABLE_KEYWORD_OR_COMPETITOR_RESULTS' : null), providerState: ready.state, execution: [ideas, overview, competitors].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: keywordIdeas, overview, competitors: keywordCompetitors, intents: serviceIntents, location: labTarget, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run' } }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), recommendations: [!domain ? 'Confirmer le site officiel avant toute conclusion SEO technique.' : null, !gmbCandidates.length ? 'Vérifier l’identité et l’adresse avant de retenir une fiche GMB.' : null, !keywordIdeas.length && !keywordCompetitors.length ? 'Aucune recommandation concurrentielle n’est fondée sans résultat exploitable.' : null].filter(Boolean), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
     result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED' && item.id !== 'seo-audit') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL' || item.status === 'BLOCKED') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();

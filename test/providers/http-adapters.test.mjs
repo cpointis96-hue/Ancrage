@@ -43,14 +43,14 @@ test('recherche un établissement et demande uniquement ses détails d’adresse
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
     calls.push({ url: String(url), options });
-    const body = String(url).includes('/places:autocomplete') ? { suggestions: [] } : { id: 'places/ChIJtest', displayName: { text: 'Chez Test' }, addressComponents: [] };
+    const body = String(url).includes('/places:autocomplete') ? { suggestions: [] } : { id: 'places/ChIJtest', displayName: { text: 'Chez Test' }, addressComponents: [], location: { latitude: 43.6, longitude: 1.44 } };
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   } });
   await adapters.googlePlaces.autocomplete({ secret: 'places-key', input: 'Chez Test', mode: 'establishment' });
   await adapters.googlePlaces.details({ secret: 'places-key', placeId: 'ChIJtest' });
   assert.deepEqual(JSON.parse(calls[0].options.body), { input: 'Chez Test', includedPrimaryTypes: ['establishment'] });
   assert.match(calls[1].url, /places\/ChIJtest$/);
-  assert.equal(calls[1].options.headers['x-goog-fieldmask'], 'id,displayName,formattedAddress,addressComponents,websiteUri');
+  assert.equal(calls[1].options.headers['x-goog-fieldmask'], 'id,displayName,formattedAddress,addressComponents,websiteUri,location');
 });
 
 test('génère du JSON avec les adapters IA autorisés', async () => {
@@ -143,6 +143,26 @@ test('normalise le credential DataForSEO et refuse une erreur API dans une répo
     error => error.code === 'DATAFORSEO_40100',
   );
   assert.equal(Buffer.from('user@example.com:api-password').toString('base64'), calls[0].options.headers.authorization.slice(6));
+});
+
+test('expose les résolutions gratuites propres à chaque famille DataForSEO', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ status_code: 20000, tasks: [{ result: [] }] }) };
+  } });
+  const secret = JSON.stringify({ login: 'user', password: 'password' });
+  await adapters.dataforseo.serpLocations({ secret, country: 'FR' });
+  await adapters.dataforseo.serpLanguages({ secret });
+  await adapters.dataforseo.businessListingsLocations({ secret, country: 'FR' });
+  await adapters.dataforseo.labsLocationsAndLanguages({ secret });
+  assert.deepEqual(calls.map(call => call.url), [
+    'https://api.dataforseo.com/v3/serp/google/locations/fr',
+    'https://api.dataforseo.com/v3/serp/google/languages',
+    'https://api.dataforseo.com/v3/business_data/business_listings/locations/fr',
+    'https://api.dataforseo.com/v3/dataforseo_labs/locations_and_languages',
+  ]);
+  assert.equal(calls.every(call => /^Basic /.test(call.options.headers.authorization)), true);
 });
 
 test('recherche avec les adapters registrar sans divulguer la clé dans le résultat', async () => {

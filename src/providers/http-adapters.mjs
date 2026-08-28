@@ -108,6 +108,10 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   dataforseo.serpMapsLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpLocalFinder = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/local_finder/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpOrganicLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.serpLocations = ({ secret, country }) => dataForSeoRequest(fetchImpl, secret, `serp/google/locations${country ? `/${encodeURIComponent(String(country).toLowerCase())}` : ''}`, {}, timeoutMs);
+  dataforseo.serpLanguages = ({ secret }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/languages', {}, timeoutMs);
+  dataforseo.businessListingsLocations = ({ secret, country }) => dataForSeoRequest(fetchImpl, secret, `business_data/business_listings/locations${country ? `/${encodeURIComponent(String(country).toLowerCase())}` : ''}`, {}, timeoutMs);
+  dataforseo.labsLocationsAndLanguages = ({ secret }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/locations_and_languages', {}, timeoutMs);
   dataforseo.businessListings = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/search/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.businessListingsCategories = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/categories_aggregation/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordSearchVolume = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/search_volume/task_post', { method: 'POST', body: tasks }, timeoutMs);
@@ -120,7 +124,7 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   dataforseo.onPageInstantPages = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'on_page/instant_pages', { method: 'POST', body: tasks }, timeoutMs);
 
   const googlePlacesRequest = ({ secret, body }) => requestJson(fetchImpl, 'https://places.googleapis.com/v1/places:autocomplete', { method: 'POST', headers: { 'x-goog-api-key': credential(secret).key, 'content-type': 'application/json' }, body: JSON.stringify(body) }, timeoutMs);
-  const googlePlacesDetailsRequest = ({ secret, placeId }) => { const resource = String(placeId).startsWith('places/') ? String(placeId) : `places/${placeId}`; return requestJson(fetchImpl, `https://places.googleapis.com/v1/${resource}`, { headers: { 'x-goog-api-key': credential(secret).key, 'x-goog-fieldmask': 'id,displayName,formattedAddress,addressComponents,websiteUri' } }, timeoutMs); };
+  const googlePlacesDetailsRequest = ({ secret, placeId }) => { const resource = String(placeId).startsWith('places/') ? String(placeId) : `places/${placeId}`; return requestJson(fetchImpl, `https://places.googleapis.com/v1/${resource}`, { headers: { 'x-goog-api-key': credential(secret).key, 'x-goog-fieldmask': 'id,displayName,formattedAddress,addressComponents,websiteUri,location' } }, timeoutMs); };
   const googlePlaces = adapter(({ secret }) => googlePlacesRequest({ secret, body: { input: 'Paris', includedPrimaryTypes: ['(cities)'], includedRegionCodes: ['fr'] } }));
   googlePlaces.autocomplete = ({ secret, input, countryCode, mode = 'city' }) => googlePlacesRequest({ secret, body: { input, ...(mode === 'establishment' ? { includedPrimaryTypes: ['establishment'] } : { includedPrimaryTypes: ['(cities)'] }), ...(countryCode ? { includedRegionCodes: [countryCode.toLowerCase()] } : {}) } });
   googlePlaces.details = ({ secret, placeId }) => googlePlacesDetailsRequest({ secret, placeId });

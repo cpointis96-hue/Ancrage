@@ -8,7 +8,7 @@ test('retourne le site public d’un établissement Google Places sélectionné'
     adapters: { googlePlaces: {
       async details() { return { id: 'places/place-1', displayName: { text: 'Maison Sillage' }, formattedAddress: '1 rue du Port, Nantes, France', websiteUri: 'https://maison-sillage.example' , addressComponents: [
         { types: ['locality'], longText: 'Nantes' }, { types: ['country'], shortText: 'FR', longText: 'France' },
-      ] }; },
+      ], location: { latitude: 47.2184, longitude: -1.5536 } }; },
     } },
     secretStore: { async get() { return 'places-key'; } },
   });
@@ -17,4 +17,5 @@ test('retourne le site public d’un établissement Google Places sélectionné'
   assert.equal(result.status, 'SUCCEEDED');
   assert.equal(result.establishment.websiteUri, 'https://maison-sillage.example');
   assert.equal(result.establishment.cityLabel, 'Nantes');
+  assert.deepEqual(result.establishment.coordinates, { latitude: 47.2184, longitude: -1.5536 });
 });

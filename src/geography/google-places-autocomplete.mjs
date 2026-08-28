@@ -22,7 +22,8 @@ export function createGooglePlacesAutocomplete({ providers, adapters, secretStor
     const component = type => body.addressComponents?.find(item => item.types?.includes(type));
     const city = component('locality') ?? component('postal_town') ?? component('administrative_area_level_2');
     const country = component('country');
-    return { status: 'SUCCEEDED', establishment: { placeId: String(body.id ?? value).replace(/^places\//, ''), name: String(body.displayName?.text ?? '').trim(), formattedAddress: String(body.formattedAddress ?? '').trim(), websiteUri: String(body.websiteUri ?? '').trim() || null, cityLabel: String(city?.longText ?? '').trim(), countryCode: String(country?.shortText ?? '').trim().toUpperCase(), countryLabel: String(country?.longText ?? '').trim() } };
+    const latitude = Number(body.location?.latitude); const longitude = Number(body.location?.longitude);
+    return { status: 'SUCCEEDED', establishment: { placeId: String(body.id ?? value).replace(/^places\//, ''), name: String(body.displayName?.text ?? '').trim(), formattedAddress: String(body.formattedAddress ?? '').trim(), websiteUri: String(body.websiteUri ?? '').trim() || null, cityLabel: String(city?.longText ?? '').trim(), countryCode: String(country?.shortText ?? '').trim().toUpperCase(), countryLabel: String(country?.longText ?? '').trim(), coordinates: Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null } };
   };
   return autocomplete;
 }
