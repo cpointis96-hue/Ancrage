@@ -39,6 +39,21 @@ test('livre GMB avant le rapport final et bloque la préparation prématurée', 
   assert.equal(Object.hasOwn(preparation, 'email'), false);
 });
 
+test('publie le rapport final lorsque la continuation asynchrone se termine', async () => {
+  const { root } = await fixture(); let finish;
+  const completion = new Promise(resolve => { finish = resolve; });
+  const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), auditStarter: async () => ({ gmb: { html: '<h1>GMB</h1>' }, completion }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-progressive' });
+  const gmbReady = await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  assert.equal(gmbReady.state, 'GMB_REPORT_READY');
+  assert.deepEqual((await controlPlane.listReports(request.id)).reports.map(report => report.kind), ['gmb']);
+  finish({ html: '<h1>Final</h1>', pdf: '%PDF-final' });
+  for (let attempt = 0; attempt < 20; attempt += 1) { if ((await controlPlane.getRequest(request.id)).state === 'FINAL_REPORT_READY') break; await new Promise(resolve => setTimeout(resolve, 5)); }
+  const finalReady = await controlPlane.getRequest(request.id);
+  assert.equal(finalReady.state, 'FINAL_REPORT_READY');
+  assert.deepEqual(finalReady.reports.map(report => report.kind), ['gmb', 'final']);
+});
+
 test('fait expirer les rapports publics après leur durée de livraison', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-public-expiry-')); let now = new Date('2026-08-28T00:00:00.000Z');
   const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), clock: () => now });
