@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { createAtomicStore } from './core/atomic-store.mjs';
 import { createPromptRegistry } from './config/prompt-registry.mjs';
 import { createWorkflowRegistry } from './config/workflow-registry.mjs';
@@ -23,6 +24,16 @@ import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
 
 const defaultsRoot = new URL('../fixtures/defaults/', import.meta.url);
+const implementationFiles = {
+  'collect-query': fileURLToPath(new URL('./workflows/implementations.mjs', import.meta.url)),
+  'domain-candidates': fileURLToPath(new URL('./internet/domain-research-service.mjs', import.meta.url)),
+  'provider-chat': fileURLToPath(new URL('./workflows/implementations.mjs', import.meta.url)),
+  'simulation-dossier-validation': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-content-plan': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-site-build': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-report-build': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+  'simulation-quality-gate': fileURLToPath(new URL('./simulation/client-site-simulation.mjs', import.meta.url)),
+};
 
 async function seedPrompt(store, prompts, id) {
   let migrated = false;
@@ -65,9 +76,16 @@ async function seedTemplate(store, templates, id) {
 async function ensureClientAuditTemplates(workflows) {
   const current = await workflows.get('client-site-simulation');
   const templateByStep = { 'dossier-validation': 'audit-initial', 'report-build': 'audit-gmb' };
-  const steps = current.steps.map(step => templateByStep[step.id] && !step.outputTemplateId ? { ...step, outputTemplateId: templateByStep[step.id] } : step);
+  const steps = current.steps.map(step => {
+    const withTemplate = templateByStep[step.id] && !step.outputTemplateId ? { ...step, outputTemplateId: templateByStep[step.id] } : step;
+    if (withTemplate.kind === 'ai') return withTemplate;
+    if (!['actor', 'model', 'promptRef', 'provider'].some(field => Object.hasOwn(withTemplate, field))) return withTemplate;
+    const { actor: _actor, model: _model, promptRef: _promptRef, provider: _provider, ...deterministicStep } = withTemplate;
+    return deterministicStep;
+  });
   if (steps.every((step, index) => step === current.steps[index])) return;
-  const saved = await workflows.save(current.id, { ...current, steps }, { expectedHash: current.hash });
+  const { hash: _hash, activeVersionId: _activeVersionId, versions: _versions, ...definition } = current;
+  const saved = await workflows.save(current.id, { ...definition, steps }, { expectedHash: current.hash });
   const version = await workflows.createVersion(current.id, { expectedDraftHash: saved.hash });
   await workflows.activate(current.id, version.id);
 }
@@ -77,7 +95,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const contracts = createContractRegistry({ store });
   const cliProfiles = createCliProfileRegistry({ store });
   const prompts = createPromptRegistry({ store, contractRegistry: contracts });
-  const workflows = createWorkflowRegistry({ store, promptRegistry: prompts, contractRegistry: contracts, cliProfileRegistry: cliProfiles });
+  const workflows = createWorkflowRegistry({ store, promptRegistry: prompts, contractRegistry: contracts, cliProfileRegistry: cliProfiles, opener, implementationFiles });
   const templates = createTemplateRegistry({ store });
   const providerAdapters = { ...createDefaultProviderAdapters(), ...adapters };
   const providers = createProviderRegistry({ store, secretStore, adapters: providerAdapters });

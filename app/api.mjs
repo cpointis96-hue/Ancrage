@@ -27,6 +27,7 @@ export const api = {
   getCliProfile: id => call(`/cli-profiles/${id}`),
   getWorkflow: id => call(`/workflows/${id}`),
   internetSearch: query => call('/internet/search', { method: 'POST', body: JSON.stringify({ query }) }),
+  openWorkflowResource: (workflowId, payload) => call(`/workflows/${workflowId}/resources/open`, { method: 'POST', body: JSON.stringify(payload) }),
   openDossier: id => call(`/dossiers/${id}/open`, { method: 'POST' }),
   prompts: () => call('/prompts'),
   contracts: () => call('/contracts'),

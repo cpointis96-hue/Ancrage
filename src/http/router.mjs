@@ -64,6 +64,7 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
         if (parts.length === 2 && method === 'GET') return sendJson(response, 200, await workflows.list());
         const workflowId = id(parts[2]);
         if (parts.length === 3 && method === 'GET') return sendJson(response, 200, await workflows.get(workflowId));
+        if (parts[3] === 'resources' && parts[4] === 'open' && parts.length === 5 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.openStepResource(workflowId, body)); }
         if (parts[3] === 'draft' && method === 'PUT') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.save(workflowId, body.definition, { expectedHash: body.expectedHash })); }
         if (parts[3] === 'versions' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.createVersion(workflowId, { expectedDraftHash: body.expectedDraftHash })); }
         if (parts[3] === 'activate' && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 200, await workflows.activate(workflowId, body.versionId)); }

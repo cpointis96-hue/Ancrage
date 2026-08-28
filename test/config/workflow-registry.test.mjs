@@ -5,7 +5,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
+import { createApp } from '../../src/app.mjs';
 import { createWorkflowRegistry } from '../../src/config/workflow-registry.mjs';
+import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
+import { clientSiteWorkflow } from '../../src/simulation/client-site-simulation.mjs';
 
 const definition = {
   id: 'audit-site',
@@ -39,4 +42,47 @@ test('versionne et active un workflow sans modifier la version gelée', async ()
   assert.equal(active.versionId, version.id);
   assert.equal(active.hash, version.hash);
   assert.equal((await registry.list())[0].versions.length, 1);
+});
+
+test('ouvre dans Finder le fichier source associé à une entrée ou une sortie', async () => {
+  let opened = null;
+  registry = createWorkflowRegistry({
+    store,
+    clock: () => new Date('2026-08-27T10:11:12.000Z'),
+    implementationFiles: { collecte: '/tmp/collecte.mjs' },
+    opener: async (target, options) => { opened = { target, options }; },
+  });
+  await registry.save(definition.id, definition, { expectedHash: null });
+
+  assert.deepEqual(await registry.openStepResource(definition.id, { stepId: 'collecte', field: 'outputRefs', reference: 'faits' }), {
+    opened: true,
+    workflowId: definition.id,
+    stepId: 'collecte',
+    field: 'outputRefs',
+    reference: 'faits',
+  });
+  assert.deepEqual(opened, { target: '/tmp/collecte.mjs', options: { reveal: true } });
+  await assert.rejects(() => registry.openStepResource(definition.id, { stepId: 'collecte', field: 'outputRefs', reference: 'absente' }), /Référence de workflow introuvable/);
+});
+
+test('nettoie une seule fois les champs IA et métadonnées persistés sur le workflow déterministe', async () => {
+  await store.writeJson('config/workflows/client-site-simulation.json', {
+    ...clientSiteWorkflow,
+    hash: 'stale',
+    activeVersionId: 'stale',
+    versions: [],
+    steps: clientSiteWorkflow.steps.map(step => ({ ...step, actor: '', provider: '' })),
+  }, { expectedHash: null });
+
+  const firstApp = createApp({ dataDir: rootDir, secretStore: createMemorySecretStore(), opener: null });
+  await firstApp.ready;
+  const migrated = await store.readJson('config/workflows/client-site-simulation.json');
+  assert.equal(Object.hasOwn(migrated, 'hash'), false);
+  assert.equal(Object.hasOwn(migrated, 'activeVersionId'), false);
+  assert.equal(migrated.steps.every(step => !Object.hasOwn(step, 'actor') && !Object.hasOwn(step, 'provider')), true);
+  const versionCount = (await firstApp.workflows.get('client-site-simulation')).versions.length;
+
+  const secondApp = createApp({ dataDir: rootDir, secretStore: createMemorySecretStore(), opener: null });
+  await secondApp.ready;
+  assert.equal((await secondApp.workflows.get('client-site-simulation')).versions.length, versionCount);
 });

@@ -84,27 +84,31 @@ test('utilise un seul credential DataForSEO pour les capacités SEO', async () =
   await adapters.dataforseo({ secret });
   await adapters.dataforseo.serp({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
   await adapters.dataforseo.serpMaps({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
+  await adapters.dataforseo.serpMapsLiveAdvanced({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
   await adapters.dataforseo.serpLocalFinder({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
   await adapters.dataforseo.serpOrganicLiveAdvanced({ secret, tasks: [{ keyword: 'restaurant', location_name: 'Pattaya', language_code: 'en' }] });
   await adapters.dataforseo.businessListings({ secret, tasks: [{ categories: ['restaurant'], location_coordinate: { latitude: 12.9, longitude: 100.9, radius: 5 } }] });
   await adapters.dataforseo.businessListingsCategories({ secret, tasks: [{ location_name: 'Pattaya' }] });
   await adapters.dataforseo.keywordSearchVolume({ secret, tasks: [{ keywords: ['restaurant'] }] });
+  await adapters.dataforseo.keywordIdeasLive({ secret, tasks: [{ keywords: ['restaurant'], location_name: 'Pattaya', language_code: 'en' }] });
   await adapters.dataforseo.keywordOverview({ secret, tasks: [{ keywords: ['restaurant'], location_code: 2410, language_code: 'en' }] });
   await adapters.dataforseo.serpCompetitors({ secret, tasks: [{ keywords: ['restaurant'], location_code: 2410, language_code: 'en' }] });
   await adapters.dataforseo.domainIntersection({ secret, tasks: [{ target1: 'example.com', target2: 'competitor.com', location_code: 2410, language_code: 'en' }] });
   await adapters.dataforseo.onPage({ secret, tasks: [{ target: 'example.com', max_crawl_pages: 1 }] });
   await adapters.dataforseo.onPageInstantPages({ secret, tasks: [{ url: 'https://example.com/' }] });
-  assert.equal(calls.length, 13);
+  assert.equal(calls.length, 15);
   assert.equal(calls.every(call => /^Basic /.test(call.options.headers.authorization)), true);
   assert.equal(calls.every(call => !JSON.stringify(call).includes('api-password')), true);
   assert.match(calls[1].url, /api\.dataforseo\.com\/v3\/serp\/google\/organic\/task_post/);
   for (const path of [
     '/serp/google/maps/task_post',
+    '/serp/google/maps/live/advanced',
     '/serp/google/local_finder/live/advanced',
     '/serp/google/organic/live/advanced',
     '/business_data/business_listings/search/live',
     '/business_data/business_listings/categories_aggregation/live',
     '/dataforseo_labs/google/keyword_overview/live',
+    '/dataforseo_labs/google/keyword_ideas/live',
     '/dataforseo_labs/google/serp_competitors/live',
     '/dataforseo_labs/google/domain_intersection/live',
     '/on_page/task_post',

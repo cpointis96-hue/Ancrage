@@ -145,7 +145,7 @@ test('expose la simulation client via l’API et permet la reprise', async () =>
 test('reçoit un intake, crée le dossier, exécute son run et sert ses artefacts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-'));
   let opened = null;
-  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), opener: async target => { opened = target; } });
+  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), opener: async (target, options) => { opened = { target, options }; } });
   const api = createLocalServer({ app });
   const address = await api.listen();
   const base = `http://127.0.0.1:${address.port}`;
@@ -179,9 +179,13 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.match(await demo.text(), /Le Rivage/);
     const missingDemo = await request(`${base}/demo/not-a-real-token`);
     assert.equal(missingDemo.status, 404);
+    const resource = await request(`${base}/api/workflows/client-site-simulation/resources/open`, { method: 'POST', headers: { origin: base, 'content-type': 'application/json' }, body: JSON.stringify({ stepId: 'content-plan', field: 'inputRefs', reference: 'dossier-validation' }) });
+    assert.equal(resource.status, 200);
+    assert.equal(opened.target, path.resolve('src/simulation/client-site-simulation.mjs'));
+    assert.deepEqual(opened.options, { reveal: true });
     const open = await request(`${base}/api/dossiers/${dossier.id}/open`, { method: 'POST', headers: { origin: base } });
     assert.equal(open.status, 200);
-    assert.equal(opened, path.join(root, 'dossiers', dossier.id));
+    assert.deepEqual(opened, { target: path.join(root, 'dossiers', dossier.id), options: undefined });
   } finally { await api.close(); }
 });
 

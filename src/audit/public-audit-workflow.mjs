@@ -50,31 +50,45 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     return secret ? { provider, secret } : null;
   }
   async function call({ runId, ledger, ready, stepId, capability, tasks, estimate, endpoint, optional = true }) {
-    if (!ready) return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: 'DATAFORSEO_NOT_READY' };
+    const started = Date.now();
+    if (!ready) return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: 'DATAFORSEO_NOT_READY', durationMs: Date.now() - started };
     let authorization;
     try { authorization = await ledger.authorize({ stepId, provider: 'dataforseo', unit: 'request', quantity: 1, estimatedCost: estimate, essential: !optional }); }
-    catch (error) { return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'COST_NOT_AUTHORIZED' }; }
+    catch (error) { return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'COST_NOT_AUTHORIZED', durationMs: Date.now() - started }; }
     try {
       const adapter = adapters.dataforseo[endpoint];
       if (typeof adapter !== 'function') throw Object.assign(new Error('DataForSEO capability unavailable'), { code: 'CAPABILITY_UNAVAILABLE' });
       const payload = await adapter({ secret: ready.secret, tasks });
       const actualCost = typeof payload?.cost === 'number' ? payload.cost : estimate;
       const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost });
-      return { status: settled.overLimit ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : null, capability, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
+      return { status: settled.overLimit ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : null, capability, durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
     } catch (error) {
       await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code ?? 'PROVIDER_CALL_FAILED' });
-      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED' };
+      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED', durationMs: Date.now() - started };
     }
   }
+  function items(result) {
+    const tasks = result?.tasks ?? result?.data?.tasks ?? [];
+    return tasks.flatMap(task => task.result ?? []).flatMap(item => Array.isArray(item?.items) ? item.items : [item]);
+  }
   function normalizeCandidates(result) {
-    const items = result?.tasks?.flatMap(task => task.result ?? []) ?? result?.data?.tasks?.flatMap(task => task.result ?? []) ?? [];
-    return Array.isArray(items) ? items.slice(0, 5).map(item => ({
+    return items(result).slice(0, 5).map(item => ({
       title: item?.title ?? item?.name ?? null,
       url: item?.url ?? null,
       domain: item?.domain ?? null,
-    })) : [];
+    }));
+  }
+  function normalizeKeywords(result) {
+    return items(result).slice(0, 25).map(item => ({
+      keyword: item?.keyword ?? item?.keyword_data?.keyword ?? null,
+      searchVolume: item?.keyword_info?.search_volume ?? item?.keyword_data?.keyword_info?.search_volume ?? null,
+      competition: item?.keyword_info?.competition ?? item?.keyword_data?.keyword_info?.competition ?? null,
+      cpc: item?.keyword_info?.cpc ?? item?.keyword_data?.keyword_info?.cpc ?? null,
+      intent: item?.search_intent_info?.main_intent ?? item?.keyword_data?.search_intent_info?.main_intent ?? null,
+    })).filter(item => item.keyword);
   }
   async function create(input = {}) {
+    const runStarted = Date.now();
     const name = text(input.name, 'name');
     const city = input.city;
     if (!city || typeof city !== 'object') throw new ValidationError('city est invalide.', { field: 'city' });
@@ -99,36 +113,34 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const result = { id, workflowVersion: WORKFLOW_VERSION, status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, budget: actualLedger.snapshot() };
     await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
     const save = async () => store.writeJson(pathFor(id), result);
-    const maps = await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/task_post', endpoint: 'serpMaps', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
-    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { candidates: normalizeCandidates(maps) };
+    const maps = await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
+    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { candidates: normalizeCandidates(maps) };
     if (maps.status === 'BLOCKED') {
       for (const remaining of STAGES.slice(1)) result.stages.push(stage(remaining, 'BLOCKED', { cause: 'ESTABLISHMENT_GATE_FAILED' }));
-      result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.updatedAt = clock().toISOString(); await save();
+      result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return result;
     }
     const discovered = await call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced });
-    result.stages.push(stage('site-discovery', discovered.status, { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED') })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: normalizeCandidates(discovered) };
+    result.stages.push(stage('site-discovery', discovered.status, { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: normalizeCandidates(discovered) };
     const gmb = await call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings });
-    result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
+    result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb) };
     if (domain) {
+      const seoStarted = Date.now();
       try {
         result.modules.seo = await runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile });
-        const onPage = await call({ runId: id, ledger: actualLedger, ready, stepId: 'seo-audit', capability: 'on_page/task_post', endpoint: 'onPage', tasks: [{ target: domain, max_crawl_pages: profile.maxPages }], estimate: costs.onPage });
-        if (onPage.evidence) result.evidence.push(onPage.evidence);
-        result.modules.seo.external = { onPage: onPage.status, cause: onPage.cause ?? null };
-        result.stages.push(stage('seo-audit', onPage.status === 'SUCCEEDED' ? result.modules.seo.status : 'PARTIAL', { cause: onPage.cause ?? null }));
+        result.modules.seo.external = { onPage: 'NOT_RUN', cause: 'ASYNC_RESULT_RETRIEVAL_NOT_IMPLEMENTED' };
+        result.stages.push(stage('seo-audit', result.modules.seo.status, { cause: null, durationMs: Date.now() - seoStarted }));
       }
-      catch (error) { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: error.code ?? 'SEO_AUDIT_FAILED' })); result.modules.seo = { status: 'PARTIAL' }; }
-    } else { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: 'SITE_NOT_CONFIRMED' })); result.modules.seo = { status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED' }; }
-    const keyword = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'keywords_data/google/search_volume/task_post', endpoint: 'keywordSearchVolume', tasks: [{ keywords: [name, `${name} ${cityLabel}`], language_code: 'en' }], estimate: costs.keywordSearchVolume });
-    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'keywords_data/google/keywords_for_keywords/task_post', endpoint: 'keywordIdeas', tasks: [{ keywords: [name, `${name} ${cityLabel}`], language_code: 'en' }], estimate: costs.keywordIdeas });
+      catch (error) { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: error.code ?? 'SEO_AUDIT_FAILED', durationMs: Date.now() - seoStarted })); result.modules.seo = { status: 'PARTIAL' }; }
+    } else { result.stages.push(stage('seo-audit', 'PARTIAL', { cause: 'SITE_NOT_CONFIRMED', durationMs: 0 })); result.modules.seo = { status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED' }; }
+    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
     const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.keywordOverview });
     const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.serpCompetitors });
-    result.stages.push(stage('competitor-keywords', [keyword, ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: keyword.cause ?? ideas.cause ?? overview.cause ?? competitors.cause ?? null })); result.modules.keywords = { volumes: normalizeCandidates(keyword), ideas: normalizeCandidates(ideas), overview: normalizeCandidates(overview), competitors: normalizeCandidates(competitors) }; for (const item of [keyword, ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
+    result.stages.push(stage('competitor-keywords', [ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? null, durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: normalizeKeywords(ideas), overview: normalizeKeywords(overview), competitors: normalizeCandidates(competitors) }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
-    result.stages.push(stage('strategy', 'SUCCEEDED'));
-    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.updatedAt = clock().toISOString(); await save();
+    result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
+    result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
     if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
     return result;
   }

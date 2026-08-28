@@ -101,12 +101,14 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   const dataforseo = adapter(({ secret }) => dataForSeoRequest(fetchImpl, secret, 'appendix/user_data', {}, timeoutMs));
   dataforseo.serp = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpMaps = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/task_post', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.serpMapsLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/maps/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpLocalFinder = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/local_finder/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpOrganicLiveAdvanced = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'serp/google/organic/live/advanced', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.businessListings = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/search/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.businessListingsCategories = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/business_listings/categories_aggregation/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordSearchVolume = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/search_volume/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordIdeas = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/keywords_for_keywords/task_post', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.keywordIdeasLive = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/keyword_ideas/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordOverview = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/keyword_overview/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpCompetitors = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/serp_competitors/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.domainIntersection = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/domain_intersection/live', { method: 'POST', body: tasks }, timeoutMs);

@@ -12,7 +12,7 @@ function versionStamp(date) {
   return date.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 }
 
-export function createWorkflowRegistry({ store, clock = () => new Date(), promptRegistry = null, contractRegistry = null, cliProfileRegistry = null }) {
+export function createWorkflowRegistry({ store, clock = () => new Date(), promptRegistry = null, contractRegistry = null, cliProfileRegistry = null, opener = null, implementationFiles = {} }) {
   async function validateReferences(definition, { requireActive = false } = {}) {
     for (const step of definition.steps) {
       const prompt = step.promptRef && promptRegistry ? await promptRegistry.get(step.promptRef) : null;
@@ -108,6 +108,22 @@ export function createWorkflowRegistry({ store, clock = () => new Date(), prompt
     return { definition, versionId: version.id, hash: version.hash };
   }
 
+  async function openStepResource(id, { stepId, field, reference }) {
+    if (!opener) throw new ValidationError('Ouverture Finder indisponible sur cette machine.');
+    assertResourceId(stepId, 'stepId');
+    if (!['inputRefs', 'outputRefs'].includes(field)) throw new ValidationError('Type de référence invalide.');
+    const workflow = await get(id);
+    const step = workflow.steps.find(item => item.id === stepId);
+    if (!step) throw new NotFoundError(`Étape introuvable : ${stepId}`);
+    if (!(step[field] ?? []).includes(reference)) throw new NotFoundError('Référence de workflow introuvable.');
+    const sourceStep = field === 'inputRefs'
+      ? workflow.steps.find(item => item.id === reference) ?? step
+      : step;
+    const target = implementationFiles[sourceStep.implementation] ?? store.resolveSafe(`config/workflows/${id}.json`);
+    await opener(target, { reveal: true });
+    return { opened: true, workflowId: id, stepId, field, reference };
+  }
+
   async function ensure(definition) {
     const current = await store.readText(workflowPath(definition.id), null);
     if (current === null) await save(definition.id, definition, { expectedHash: null });
@@ -120,5 +136,5 @@ export function createWorkflowRegistry({ store, clock = () => new Date(), prompt
     return workflow;
   }
 
-  return { activate, createVersion, ensure, get, list, resolveActive, save };
+  return { activate, createVersion, ensure, get, list, openStepResource, resolveActive, save };
 }
