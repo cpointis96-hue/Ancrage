@@ -30,12 +30,18 @@ function stage(id, status, extra = {}) { return { id, status, ...extra }; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
 function renderReport(result, kind) {
   const title = kind === 'gmb' ? 'Rapport GMB' : 'Rapport final SEO et concurrence';
+  const displayStatus = kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? result.status : result.status;
   const stages = result.stages.map(item => `<li><strong>${escapeHtml(item.id)}</strong> : ${escapeHtml(item.status)}${item.cause ? ` · ${escapeHtml(item.cause)}` : ''}</li>`).join('');
   const evidence = result.evidence.map(item => `<li>${escapeHtml(item.provider)} · ${escapeHtml(item.canonicalUrl)} · ${escapeHtml(item.rawPayloadHash)}</li>`).join('');
-  const modules = kind === 'gmb'
-    ? `<p>${result.modules.gmb?.candidates?.length ?? 0} établissement(s) public(s) retourné(s) dans le périmètre observé.</p>`
-    : `<p>Site : ${escapeHtml(result.input.domain ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p><p>${result.modules.keywords?.ideas?.length ?? 0} piste(s) de mots-clés et ${result.modules.keywords?.competitors?.length ?? 0} concurrent(s) retournés.</p>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)}</title><style>body{font:16px/1.55 system-ui;max-width:860px;margin:auto;padding:24px;color:#20211f;background:#f5f5f2}header{background:#173024;color:#eef4ec;padding:32px}header small{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:24px 0}li{margin:8px 0;overflow-wrap:anywhere}small{color:#5a635c}</style></head><body><header><small>${escapeHtml(title.toUpperCase())} · ${escapeHtml(result.status)}</small><h1>${escapeHtml(result.input.name)}</h1><p>${escapeHtml(result.input.city.label)} · Observation : ${escapeHtml(result.startedAt)}</p></header><main><section><h2>Périmètre</h2>${modules}</section><section><h2>Étapes</h2><ul>${stages}</ul></section><section><h2>Limites</h2><p>Les branches absentes, partielles ou non confirmées restent explicitement signalées. Aucun résultat provider non observé n’est remplacé par une valeur synthétique.</p></section><section><h2>Preuves</h2>${evidence ? `<ul>${evidence}</ul>` : '<p>Aucune preuve provider livrée.</p>'}</section></main></body></html>`;
+  const gmbCandidates = result.modules.gmb?.candidates ?? [];
+  const selectedEstablishment = result.modules.establishment?.selected ?? null;
+  const selectedIdentity = selectedEstablishment ? `<p>Établissement sélectionné : ${escapeHtml(selectedEstablishment.name)}${selectedEstablishment.address ? ` · ${escapeHtml(selectedEstablishment.address)}` : ''}.</p>` : '';
+  const keywordIdeas = result.modules.keywords?.ideas ?? [];
+  const competitors = result.modules.keywords?.competitors ?? [];
+  const body = kind === 'gmb'
+    ? `<section><h2>Périmètre</h2>${selectedIdentity}<p>${gmbCandidates.length} établissement(s) correspondant(s) au nom recherché dans le périmètre observé.</p>${gmbCandidates.length ? `<ul>${gmbCandidates.map(item => `<li>${escapeHtml(item.title ?? 'Établissement sans nom')}</li>`).join('')}</ul>` : '<p>Aucun établissement n’a été suffisamment corroboré par la source GMB.</p>'}</section>`
+    : `<section><h2>GMB</h2>${selectedIdentity}<p>${gmbCandidates.length} établissement(s) correspondant(s) au nom recherché.</p>${gmbCandidates.length ? `<ul>${gmbCandidates.map(item => `<li>${escapeHtml(item.title ?? 'Établissement sans nom')}</li>`).join('')}</ul>` : result.input.mode === 'LOCAL_PREVIEW_WITHOUT_GMB' ? '<p>Audit GMB non exécuté dans cet aperçu local.</p>' : '<p>Aucune correspondance GMB suffisamment corroborée.</p>'}</section><section><h2>Site et SEO</h2><p>Site : ${escapeHtml(result.input.domain ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p></section><section><h2>Mots-clés et concurrence</h2><p>${keywordIdeas.length} piste(s) de mots-clés et ${competitors.length} concurrent(s) utilisable(s).</p>${keywordIdeas.length ? `<ul>${keywordIdeas.map(item => `<li>${escapeHtml(item.keyword)}</li>`).join('')}</ul>` : '<p>Aucune piste exploitable retournée.</p>'}</section><section><h2>Recommandations</h2>${(result.modules.strategy?.recommendations ?? []).length ? `<ul>${result.modules.strategy.recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p>Aucune recommandation fondée sur les données observées.</p>'}</section>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)}</title><style>body{font:16px/1.55 system-ui;max-width:860px;margin:auto;padding:24px;color:#20211f;background:#f5f5f2}header{background:#173024;color:#eef4ec;padding:32px}header small{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:24px 0}li{margin:8px 0;overflow-wrap:anywhere}small{color:#5a635c}</style></head><body><header><small>${escapeHtml(title.toUpperCase())} · ${escapeHtml(displayStatus)}</small><h1>${escapeHtml(result.input.name)}</h1><p>${escapeHtml(result.input.city.label)} · Observation : ${escapeHtml(result.startedAt)}</p></header><main>${body}<section><h2>Étapes</h2><ul>${stages}</ul></section><section><h2>Limites</h2><p>Les branches absentes, partielles ou non confirmées restent explicitement signalées. Aucun résultat provider non observé n’est remplacé par une valeur synthétique.</p></section><section><h2>Preuves</h2>${evidence ? `<ul>${evidence}</ul>` : '<p>Aucune preuve provider livrée.</p>'}</section></main></body></html>`;
 }
 function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
 function renderPdf(result) {
@@ -121,7 +127,8 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       const payload = await adapter({ secret: ready.secret, tasks });
       const actualCost = typeof payload?.cost === 'number' ? payload.cost : estimate;
       const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost });
-      return { status: settled.overLimit ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : null, capability, providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network', durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
+      const taskFailure = providerTaskFailed(payload);
+      return { status: settled.overLimit || taskFailure ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : taskFailure ? 'PROVIDER_TASK_FAILED' : null, capability, providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network', durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
     } catch (error) {
       await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code ?? 'PROVIDER_CALL_FAILED' });
       return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED', providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call-failed' : 'adapter-call-no-network-failed', durationMs: Date.now() - started };
@@ -131,13 +138,27 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const tasks = result?.tasks ?? result?.data?.tasks ?? [];
     return tasks.flatMap(task => task.result ?? []).flatMap(item => Array.isArray(item?.items) ? item.items : [item]);
   }
-  function normalizeCandidates(result) {
-    return items(result).slice(0, 5).map(item => ({
+function normalizeQuery(value) {
+  return String(value ?? '').toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function normalizeCandidates(result, query = '') {
+  const terms = normalizeQuery(query).split(' ').filter(term => term.length >= 5);
+  return items(result).filter(item => {
+      if (!terms.length) return true;
+      const haystack = normalizeQuery([item?.title, item?.name, item?.url, item?.domain, item?.address, item?.location].join(' '));
+      return terms.some(term => haystack.includes(term));
+    }).slice(0, 5).map(item => ({
       title: item?.title ?? item?.name ?? null,
       url: item?.url ?? null,
       domain: item?.domain ?? null,
     }));
-  }
+}
+function providerTaskFailed(payload) {
+  return Number(payload?.tasks_error ?? 0) > 0 || (payload?.tasks ?? []).some(task => Number(task?.status_code ?? 20000) >= 40000);
+}
+function providerLocation(country, cityLabel) {
+  return ({ FR: 'France', LK: 'Sri Lanka', AU: 'Australia', TH: 'Thailand' })[country] ?? cityLabel;
+}
   function normalizeKeywords(result) {
     return items(result).slice(0, 25).map(item => ({
       keyword: item?.keyword ?? item?.keyword_data?.keyword ?? null,
@@ -156,7 +177,9 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const domain = input.domain === undefined ? null : validUrl(input.domain);
     const budget = resolveAuditBudget(input.budget);
     const profile = resolveAuditProfile(input.profile);
-    const normalized = { name, city: { id: cityId, label: cityLabel, country }, address: input.address ?? null, domain, profile, budget };
+    const identity = input.identity && typeof input.identity === 'object' ? input.identity : null;
+    const localPreview = options.mode === 'LOCAL_PREVIEW_WITHOUT_GMB';
+    const normalized = { name, city: { id: cityId, label: cityLabel, country }, address: input.address ?? identity?.address ?? null, domain, domainSource: domain ? (input.domainSource === 'google-places' ? 'google-places' : 'request') : null, identity, mode: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : 'CONFIRM', profile, budget };
     const key = input.idempotencyKey;
     if (key !== undefined && (typeof key !== 'string' || !key.trim() || key.length > 200)) throw new ValidationError('idempotencyKey est invalide.', { field: 'idempotencyKey' });
     const fp = fingerprint(normalized);
@@ -176,8 +199,11 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
       : { id: 'dataforseo', configured: false, enabled: false, health: 'absent', readiness: ready.state, adapter: ready.adapter ? 'adapter' : 'absent' }, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
     await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
     const save = async () => store.writeJson(pathFor(id), result);
-    const maps = await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
-    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, providerState: maps.providerState ?? ready.state, execution: maps.execution ?? 'not-run', durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { candidates: normalizeCandidates(maps) };
+    const maps = localPreview
+      ? { status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 }
+      : await call({ runId: id, ledger: actualLedger, ready, stepId: 'establishment-search', capability: 'serp/google/maps/live/advanced', endpoint: 'serpMapsLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpMaps, optional: false });
+    const establishmentCandidates = normalizeCandidates(maps, name);
+    result.stages.push(stage('establishment-search', maps.status, { cause: maps.cause ?? null, providerState: maps.providerState ?? ready.state, execution: maps.execution ?? 'not-run', durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { selected: identity?.source === 'google-places' ? { source: 'google-places', placeId: identity.placeId ?? null, name, address: identity.address ?? null } : null, candidates: establishmentCandidates };
     if (maps.status === 'BLOCKED') {
       for (const remaining of STAGES.slice(1)) result.stages.push(stage(remaining, 'BLOCKED', { cause: 'ESTABLISHMENT_GATE_FAILED', execution: 'not-run' }));
       result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
@@ -195,31 +221,48 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     })() : Promise.resolve({ module: { status: 'BLOCKED', cause: 'SITE_NOT_CONFIRMED', execution: 'not-run' }, durationMs: 0 });
     const [discovered, gmb] = await Promise.all([
       call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, location_name: cityLabel, language_code: 'en' }], estimate: costs.serpOrganicLiveAdvanced }),
-      call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
+      localPreview
+        ? Promise.resolve({ status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 })
+        : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ keyword: name, location_name: cityLabel, language_code: 'en' }], estimate: costs.businessListings }),
     ]);
-    const siteCandidates = normalizeCandidates(discovered);
-    result.stages.push(stage('site-discovery', domain ? discovered.status : (discovered.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'), { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), providerState: discovered.providerState ?? ready.state, execution: discovered.execution ?? 'not-run', durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: siteCandidates, confirmation: domain ? { status: 'CONFIRMED', source: 'request' } : { status: 'NOT_CONFIRMED', cause: 'SITE_NOT_CONFIRMED' } };
-    result.stages.push(stage('gmb-audit', gmb.status, { cause: gmb.cause ?? null, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: normalizeCandidates(gmb), confirmation: { status: 'NOT_CONFIRMED', cause: 'ESTABLISHMENT_CONFIRMATION_NOT_PERSISTED' } };
-    await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
+    const siteCandidates = normalizeCandidates(discovered, name);
+    result.stages.push(stage('site-discovery', domain ? discovered.status : (discovered.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'), { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), providerState: discovered.providerState ?? ready.state, execution: discovered.execution ?? 'not-run', durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: siteCandidates, confirmation: domain ? { status: 'CONFIRMED', source: normalized.domainSource } : { status: 'NOT_CONFIRMED', cause: 'SITE_NOT_CONFIRMED' } };
+    const gmbCandidates = normalizeCandidates(gmb, name);
+    const gmbStatus = gmb.status === 'SUCCEEDED' && gmbCandidates.length === 0 ? 'PARTIAL' : gmb.status;
+    const gmbCause = gmb.cause ?? (gmbCandidates.length === 0 ? 'ESTABLISHMENT_NOT_CORROBORATED' : null);
+    result.stages.push(stage('gmb-audit', gmbStatus, { cause: gmbCause, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: gmbCandidates, confirmation: { status: localPreview ? 'NOT_RUN' : gmbCandidates.length ? 'CANDIDATES_FOUND' : 'NOT_CONFIRMED', cause: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : gmbCandidates.length ? null : 'ESTABLISHMENT_NOT_CORROBORATED' } };
+    if (!localPreview) await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     const continueAfterGmb = async () => {
+    try {
     const [seoBase, onPage] = await Promise.all([
       seoBasePromise,
       domain
         ? call({ runId: id, ledger: actualLedger, ready, stepId: 'seo-audit', capability: 'on_page/instant_pages', endpoint: 'onPageInstantPages', tasks: [{ url: domain }] , estimate: costs.onPage })
         : Promise.resolve({ status: 'PARTIAL', cause: 'SITE_NOT_CONFIRMED', durationMs: 0 }),
     ]);
-    result.modules.seo = { ...seoBase.module, execution: domain ? 'local-crawl' : 'not-run', external: { crawl: domain ? seoBase.module.status : 'BLOCKED', onPage: domain ? onPage.status : 'BLOCKED', cause: onPage.cause ?? seoBase.module.cause ?? null } };
+    const seoStatus = !domain ? 'BLOCKED' : (seoBase.module.status === 'BLOCKED' ? 'BLOCKED' : seoBase.module.status === 'PARTIAL' || onPage.status === 'PARTIAL' ? 'PARTIAL' : 'SUCCEEDED');
+    const seoCause = !domain ? 'SITE_NOT_CONFIRMED' : seoBase.module.cause ?? onPage.cause ?? null;
+    result.modules.seo = { ...seoBase.module, status: seoStatus, execution: domain ? 'local-crawl' : 'not-run', external: { crawl: domain ? seoBase.module.status : 'BLOCKED', onPage: domain ? onPage.status : 'BLOCKED', cause: seoCause } };
     if (onPage.evidence) result.evidence.push(onPage.evidence);
-    result.stages.push(stage('seo-audit', domain ? seoBase.module.status : 'BLOCKED', { cause: seoBase.module.cause ?? onPage.cause ?? 'SITE_NOT_CONFIRMED', providerState: onPage.providerState ?? null, execution: domain ? onPage.execution ?? seoBase.module.execution ?? 'local-crawl' : 'not-run', durationMs: seoBase.durationMs + onPage.durationMs }));
-    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
-    const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.keywordOverview });
-    const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: cityLabel, language_code: 'en' }], estimate: costs.serpCompetitors });
-    result.stages.push(stage('competitor-keywords', [ideas, overview, competitors].some(item => item.status === 'SUCCEEDED') ? 'SUCCEEDED' : 'PARTIAL', { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? null, providerState: ready.state, execution: [ideas, overview, competitors].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: normalizeKeywords(ideas), overview: normalizeKeywords(overview), competitors: normalizeCandidates(competitors), execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run' } }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
-    result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
+    result.stages.push(stage('seo-audit', seoStatus, { cause: seoCause, providerState: onPage.providerState ?? null, execution: domain ? onPage.execution ?? seoBase.module.execution ?? 'local-crawl' : 'not-run', durationMs: seoBase.durationMs + onPage.durationMs }));
+    const keywordLocation = providerLocation(country, cityLabel);
+    const ideas = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_ideas/live', endpoint: 'keywordIdeasLive', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en', limit: 25 }], estimate: costs.keywordIdeas });
+    const overview = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/keyword_overview/live', endpoint: 'keywordOverview', tasks: [{ keywords: [name, `${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en' }], estimate: costs.keywordOverview });
+    const competitors = await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: [`${name} ${cityLabel}`], location_name: keywordLocation, language_code: 'en' }], estimate: costs.serpCompetitors });
+    const keywordIdeas = normalizeKeywords(ideas); const keywordCompetitors = normalizeCandidates(competitors); const keywordStatus = keywordIdeas.length || keywordCompetitors.length ? 'SUCCEEDED' : 'PARTIAL';
+    result.stages.push(stage('competitor-keywords', keywordStatus, { cause: ideas.cause ?? overview.cause ?? competitors.cause ?? (keywordStatus === 'PARTIAL' ? 'NO_USABLE_KEYWORD_OR_COMPETITOR_RESULTS' : null), providerState: ready.state, execution: [ideas, overview, competitors].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs })); result.modules.keywords = { ideas: keywordIdeas, overview, competitors: keywordCompetitors, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run' } }; for (const item of [ideas, overview, competitors]) if (item.evidence) result.evidence.push(item.evidence);
+    result.modules.strategy = { intents: [`${cityLabel} ${name}`, `${name} menu`, `${name} contact`].map(value => ({ value, classification: 'SUGGESTED' })), recommendations: [!domain ? 'Confirmer le site officiel avant toute conclusion SEO technique.' : null, !gmbCandidates.length ? 'Vérifier l’identité et l’adresse avant de retenir une fiche GMB.' : null, !keywordIdeas.length && !keywordCompetitors.length ? 'Aucune recommandation concurrentielle n’est fondée sans résultat exploitable.' : null].filter(Boolean), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: 'NOT_RUN', cause: 'AI_ROUTING_NOT_ACTIVATED' } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
     result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'BLOCKED' && item.id !== 'seo-audit') ? 'BLOCKED' : result.stages.some(item => item.status === 'PARTIAL' || item.status === 'BLOCKED') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
     if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
     return result;
+    } catch (error) {
+      for (const stageId of ['seo-audit', 'competitor-keywords', 'strategy']) if (!result.stages.some(item => item.id === stageId)) result.stages.push(stage(stageId, 'PARTIAL', { cause: error.code ?? 'AUDIT_CONTINUATION_FAILED', execution: 'not-run', durationMs: 0 }));
+      result.modules.strategy ??= { intents: [], recommendations: [], source: 'deterministic-v1', facts: [], interpretation: { status: 'NOT_RUN', cause: error.code ?? 'AUDIT_CONTINUATION_FAILED' } };
+      result.status = 'PARTIAL'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await publishReport(result, 'final'); await save();
+      if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
+      return result;
+    }
     };
     if (options.waitFor === 'gmb') return { ...result, completion: continueAfterGmb() };
     return continueAfterGmb();

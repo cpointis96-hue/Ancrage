@@ -26,6 +26,22 @@ test('valide la ville structurée et rend la création idempotente', async () =>
   assert.equal(first.state, 'MATCHING');
 });
 
+test('refuse une confirmation sans identité dans le parcours branché', async () => {
+  const { controlPlane } = await fixture({ auditStarter: async () => ({}) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-no-identity' });
+  await assert.rejects(() => controlPlane.decideMatch(request.id, { decision: 'CONFIRM' }), error => error.code === 'MATCH_IDENTITY_REQUIRED');
+});
+
+test('transmet explicitement la branche locale sans GMB au moteur d’audit', async () => {
+  let receivedDecision = null;
+  const { controlPlane } = await fixture({ auditStarter: async ({ decision }) => { receivedDecision = decision; return { final: { html: '<h1>Final local</h1>', pdf: '%PDF-local' } }; } });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'manual', address: '1 rue du Port, Nantes' }, idempotencyKey: 'req-local-preview' });
+  const delivered = await controlPlane.decideMatch(request.id, { decision: 'LOCAL_PREVIEW_WITHOUT_GMB' });
+  assert.equal(receivedDecision, 'LOCAL_PREVIEW_WITHOUT_GMB');
+  assert.equal(delivered.state, 'FINAL_REPORT_READY');
+  assert.equal(delivered.checkpoints.find(item => item.key === 'gmb-report').blockedReason, 'LOCAL_PREVIEW_WITHOUT_GMB');
+});
+
 test('livre GMB avant le rapport final et bloque la préparation prématurée', async () => {
   const { controlPlane } = await fixture();
   const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-2' });
@@ -43,7 +59,7 @@ test('publie le rapport final lorsque la continuation asynchrone se termine', as
   const { root } = await fixture(); let finish;
   const completion = new Promise(resolve => { finish = resolve; });
   const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), auditStarter: async () => ({ gmb: { html: '<h1>GMB</h1>' }, completion }) });
-  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-progressive' });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'manual', address: '1 rue du Port, Nantes' }, idempotencyKey: 'req-progressive' });
   const gmbReady = await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
   assert.equal(gmbReady.state, 'GMB_REPORT_READY');
   assert.deepEqual((await controlPlane.listReports(request.id)).reports.map(report => report.kind), ['gmb']);
@@ -52,6 +68,20 @@ test('publie le rapport final lorsque la continuation asynchrone se termine', as
   const finalReady = await controlPlane.getRequest(request.id);
   assert.equal(finalReady.state, 'FINAL_REPORT_READY');
   assert.deepEqual(finalReady.reports.map(report => report.kind), ['gmb', 'final']);
+  assert.deepEqual(finalReady.checkpoints.map(item => item.key), ['match', 'gmb-report', 'final-report']);
+  assert.equal(finalReady.checkpoints.every(item => item.validatedAt && Array.isArray(item.evidenceRefs) && item.progressLabel), true);
+});
+
+test('conserve le statut PARTIAL de l’audit dans la requête publique', async () => {
+  const { root } = await fixture(); let finish;
+  const completion = new Promise(resolve => { finish = resolve; });
+  const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), auditStarter: async () => ({ audit: { id: 'audit-partial-1', status: 'RUNNING' }, gmb: { html: '<h1>GMB</h1>' }, completion }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'manual', address: '1 rue du Port, Nantes' }, idempotencyKey: 'req-partial-status' });
+  await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  finish({ audit: { id: 'audit-partial-1', status: 'PARTIAL' }, html: '<h1>Final partial</h1>', pdf: '%PDF-partial' });
+  for (let attempt = 0; attempt < 100; attempt += 1) { if ((await controlPlane.getRequest(request.id)).state === 'FINAL_REPORT_READY') break; await new Promise(resolve => setTimeout(resolve, 10)); }
+  const final = await controlPlane.getRequest(request.id);
+  assert.equal(final.status, 'PARTIAL');
 });
 
 test('fait expirer les rapports publics après leur durée de livraison', async () => {

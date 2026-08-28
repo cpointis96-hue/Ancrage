@@ -123,13 +123,16 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
-    auditStarter: async ({ request }) => {
+    auditStarter: async ({ request, decision }) => {
       const audit = await publicAudits.create({
         name: request.input.name,
         city: { id: request.input.city.id, label: request.input.city.label, country: request.input.city.countryCode },
         domain: request.input.domain ?? undefined,
+        domainSource: request.input.identity?.source === 'google-places' ? 'google-places' : 'request',
+        address: request.input.identity?.address ?? undefined,
+        identity: request.input.identity ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
-      }, { waitFor: 'gmb' });
+      }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined });
       const reports = { audit: { id: audit.id, status: audit.status, stages: audit.stages, provider: audit.provider } };
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);

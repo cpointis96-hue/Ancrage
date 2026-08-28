@@ -268,6 +268,9 @@ _Avoid_: free trial illimité, garantie de résultats SEO
 
 **Établissement** : activité locale analysée, par exemple un restaurant.
 
+**GooglePlacesSelection** : identité saisie confirmée par l’autocomplétion Google Places, avec nom, adresse, identifiant de lieu et éventuellement site public. Elle prouve le choix de l’opérateur, mais ne remplace pas une observation GMB corroborée par le provider d’audit.
+_Avoid_: assimiler une sélection Google Places à une fiche GMB observée, afficher zéro établissement alors qu’une identité sélectionnée existe
+
 **Dossier** : informations, sources, photos et coordonnées nécessaires à l'analyse ou à la génération.
 
 **Audit** : restitution factuelle et sourcée de l'état local, Google Business Profile et SEO.

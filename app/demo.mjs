@@ -1,7 +1,6 @@
 const form = document.querySelector('#demo-form');
 const state = document.querySelector('#demo-state');
 const result = document.querySelector('#demo-result');
-const progress = document.querySelector('#demo-progress');
 const name = form.elements.name;
 const manualPanel = document.querySelector('#manual-panel');
 const manualToggle = document.querySelector('#manual-toggle');
@@ -12,6 +11,9 @@ const cityOptions = document.querySelector('#city-options');
 const cities = { FR: ['Nantes', 'Paris', 'Lyon'], LK: ['Colombo', 'Galle', 'Kandy'] };
 const publicFlow = document.querySelector('#public-flow');
 const publicFlowState = document.querySelector('#public-flow-state');
+const finalProgress = document.querySelector('#final-progress');
+const finalProgressFill = document.querySelector('#final-progress-fill');
+const finalProgressLabel = document.querySelector('#final-progress-label');
 const publicReports = document.querySelector('#public-reports');
 const preparationForm = document.querySelector('#preparation-form');
 const intakeForm = document.querySelector('#intake-form');
@@ -37,6 +39,15 @@ function reportLinks(request) {
     const link = document.createElement('a'); link.className = 'public-report'; link.target = '_blank'; link.rel = 'noopener'; link.href = `/api/public/requests/${encodeURIComponent(request.id)}/reports/${encodeURIComponent(report.id)}`; link.textContent = report.kind === 'gmb' ? 'Voir le rapport GMB' : 'Voir le rapport final'; publicReports.append(link);
   }
   preparationForm.hidden = request.state !== 'FINAL_REPORT_READY';
+  updateFinalProgress(request);
+}
+function updateFinalProgress(request) {
+  const checkpoints = request.checkpoints ?? [];
+  const isReady = checkpoints.some(item => item.key === 'final-report' && item.status === 'SUCCEEDED');
+  const isFinalRunning = checkpoints.some(item => item.key === 'gmb-report' && item.status === 'SUCCEEDED') && !isReady && request.audit?.status === 'RUNNING';
+  finalProgress.hidden = !isFinalRunning && !isReady;
+  finalProgressFill.style.width = `${isReady ? 100 : 50}%`;
+  finalProgressLabel.textContent = isReady ? 'Rapport final prêt.' : 'Rapport final en cours.';
 }
 function parseMenu(value) { return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...price] = line.split('—'); return { name: name.trim(), price: price.join('—').trim() }; }); }
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -100,7 +111,7 @@ city.addEventListener('keydown', event => handleSuggestionKeys(event, city, city
 city.addEventListener('blur', () => setTimeout(() => closeSuggestions(cityOptions, city), 120));
 
 form.addEventListener('submit', async event => {
-  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; progress.hidden = false; state.textContent = 'Audit en cours…'; result.hidden = true; publicFlow.hidden = true;
+  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; state.hidden = false; state.textContent = 'Audit en cours…'; result.hidden = true; publicFlow.hidden = true;
   try {
     let payload;
     if (manualMode()) {
@@ -112,15 +123,16 @@ form.addEventListener('submit', async event => {
       payload = { name: establishment.name, city: { id: `google-${establishment.placeId.replace(/[^a-z0-9]+/gi, '-')}`, label: establishment.cityLabel, countryCode: establishment.countryCode }, domain: establishment.websiteUri, identity: { source: 'google-places', placeId: establishment.placeId, address: establishment.formattedAddress } };
     }
     publicRequest = await jsonRequest('/api/public/requests', { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('public-request') }, body: JSON.stringify({ name: payload.name, city: payload.city, domain: payload.domain ?? null, identity: payload.identity }) });
-    publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/match-decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'CONFIRM' }) });
-    state.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Audit terminé.' : 'Rapport GMB disponible.'; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = `${publicRequest.input.city.label} · ${publicRequest.state}`; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Rapport disponible.' : 'Audit final en cours.'; reportLinks(publicRequest);
-    for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && attempt < 30; attempt += 1) { await wait(1000); publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`); reportLinks(publicRequest); if (publicRequest.state === 'FINAL_REPORT_READY') { state.textContent = 'Audit terminé.'; publicFlowState.textContent = 'Rapport disponible.'; } }
-  } catch (error) { state.textContent = error.message; } finally { button.disabled = false; progress.hidden = true; }
+    publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/match-decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: manualMode() ? 'LOCAL_PREVIEW_WITHOUT_GMB' : 'CONFIRM' }) });
+    state.hidden = true; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = publicRequest.input.city.label; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.hidden = true; reportLinks(publicRequest);
+    for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && attempt < 180; attempt += 1) { await wait(1000); publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`); reportLinks(publicRequest); if (publicRequest.state === 'FINAL_REPORT_READY') break; }
+    if (publicRequest.state !== 'FINAL_REPORT_READY') { finalProgress.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'Le rapport final n’a pas pu être terminé.'; }
+  } catch (error) { state.hidden = false; state.textContent = error.message; } finally { button.disabled = false; }
 });
 
 preparationForm.addEventListener('submit', async event => {
   event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = true;
-  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });
 
 intakeForm.addEventListener('submit', async event => {
@@ -128,6 +140,6 @@ intakeForm.addEventListener('submit', async event => {
   try {
     const data = new FormData(intakeForm); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/intake`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criticalComplete: true, locale: data.get('locale'), address: data.get('address'), contact: data.get('contact'), story: data.get('story'), menu: parseMenu(String(data.get('menu') ?? '')) }) });
     for (const category of ['facade', 'signature-dish-1', 'signature-dish-2', 'interior-or-terrace', 'team-or-service']) { const file = data.get(`photo-${category}`); if (!(file instanceof File) || !file.size) throw new Error('Sélectionnez les cinq photos.'); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/assets`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: `${category}-${file.name}`, category, rightsStatus: 'AUTHORIZED', hash: await digest(file), size: file.size, dataUrl: await dataUrl(file) }) }); }
-    demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); intakeForm.hidden = true; publicFlowState.textContent = 'Démo prête pour validation opérateur.';
-  } catch (error) { publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+    demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); intakeForm.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'Démo prête pour validation opérateur.';
+  } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });

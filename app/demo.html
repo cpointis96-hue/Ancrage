@@ -22,11 +22,14 @@
       </section>
       <button type="submit">Lancer l’audit</button>
       <p id="demo-state" role="status" aria-live="polite"></p>
-      <progress id="demo-progress" max="1" aria-label="Audit en cours" hidden></progress>
     </form>
     <section id="demo-result" class="demo-result" hidden></section>
     <section id="public-flow" class="public-flow" hidden>
-      <p id="public-flow-state" role="status" aria-live="polite"></p>
+      <p id="public-flow-state" role="status" aria-live="polite" hidden></p>
+      <div id="final-progress" class="report-progress" hidden aria-live="polite">
+        <div class="report-progress-track"><div id="final-progress-fill" class="report-progress-fill"></div></div>
+        <p id="final-progress-label">Rapport final en préparation.</p>
+      </div>
       <div id="public-reports"></div>
       <form id="preparation-form" hidden>
         <label>Votre e-mail<input name="email" type="email" autocomplete="email" required></label>

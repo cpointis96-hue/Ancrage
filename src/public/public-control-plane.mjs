@@ -61,6 +61,10 @@ function hasCriticalIntake(preparation) {
 }
 
 export function createPublicControlPlane({ store, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, pipelineStarter = null, demoPresenter = null } = {}) {
+  function checkpoint(key, status, { reportId = null, blockedReason = null, progressLabel = null } = {}) {
+    const defaultLabels = { match: 'Établissement confirmé.', 'gmb-report': 'Rapport GMB disponible.', 'final-report': 'Rapport final disponible.' };
+    return { key, status, validatedAt: clock().toISOString(), evidenceRefs: reportId ? [reportId] : [], progressLabel: progressLabel ?? defaultLabels[key] ?? key, ...(blockedReason ? { blockedReason } : {}) };
+  }
   async function readRequest(id) {
     const value = await store.readJson(requestPath(id), null);
     if (!value) throw new NotFoundError(`Demande publique introuvable : ${id}`);
@@ -98,7 +102,8 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function decideMatch(requestId, input = {}) {
     const request = await readRequest(requestId); const decision = text(input.decision, 'decision', 40);
     if (!['CONFIRM', 'LOCAL_PREVIEW_WITHOUT_GMB'].includes(decision)) throw new ValidationError('decision est invalide.', { field: 'decision' });
-    request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS'); await saveRequest(request);
+    if (decision === 'CONFIRM' && typeof auditStarter === 'function' && !request.input.identity) throw new AppError('Une identité confirmée est nécessaire pour lancer cet audit.', { code: 'MATCH_IDENTITY_REQUIRED', status: 409 });
+    request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.checkpoints = [...(request.checkpoints ?? []).filter(item => item.key !== 'match'), checkpoint('match', 'SUCCEEDED', { progressLabel: decision === 'CONFIRM' ? 'Établissement confirmé.' : 'Aperçu local autorisé.' })]; if (decision === 'LOCAL_PREVIEW_WITHOUT_GMB') request.checkpoints.push(checkpoint('gmb-report', 'PARTIAL', { blockedReason: 'LOCAL_PREVIEW_WITHOUT_GMB', progressLabel: 'Audit GMB non exécuté.' })); request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS'); await saveRequest(request);
     if (typeof auditStarter === 'function') {
       const reports = await auditStarter({ request: response(request), decision });
       if (reports?.audit) request.audit = response(reports.audit);
@@ -116,7 +121,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
     if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport invalide.');
     const reportId = idFactory(`${kind}-report`); const htmlPath = `public-control-plane/reports/${reportId}.html`; await store.writeText(htmlPath, html, { immutable: true });
     let pdfPath = null; if (kind === 'final' && typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
-    const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString() }); const finalReady = request.reports.some(report => report.kind === 'final'); request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; request.status = finalReady ? 'SUCCEEDED' : 'RUNNING'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
+    const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString(), revokedAt: null }); const finalReady = request.reports.some(report => report.kind === 'final'); request.checkpoints = [...(request.checkpoints ?? []).filter(item => item.key !== `${kind}-report`), checkpoint(`${kind}-report`, 'SUCCEEDED', { reportId })]; request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; const auditStatus = request.audit?.status; request.status = finalReady ? (auditStatus === 'BLOCKED' ? 'BLOCKED' : auditStatus === 'PARTIAL' ? 'PARTIAL' : 'SUCCEEDED') : 'RUNNING'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }
   async function getDemoRequest(id) { return projectPreparation(await readPreparation(id)); }
@@ -124,7 +129,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function listDemoRequests() { const requests = await listRequests(); return Promise.all(requests.filter(request => request.demoRequestId).map(async request => ({ request, preparation: await getDemoRequest(request.demoRequestId) }))); }
   async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: request.reports.map(({ id, kind, status, createdAt, expiresAt }) => ({ id, kind, status, createdAt, expiresAt })) }; }
   async function readReport(requestId, reportId, format = 'html') {
-    const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError(); if (report.expiresAt && new Date(report.expiresAt).getTime() <= clock().getTime()) throw new AppError('Le rapport a expiré.', { code: 'REPORT_EXPIRED', status: 410 });
+    const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError(); if (report.revokedAt) throw new AppError('Le rapport a été révoqué.', { code: 'REPORT_REVOKED', status: 410 }); if (report.expiresAt && new Date(report.expiresAt).getTime() <= clock().getTime()) throw new AppError('Le rapport a expiré.', { code: 'REPORT_EXPIRED', status: 410 });
     if (format === 'pdf' && (!report.pdfPath || request.state !== 'FINAL_REPORT_READY')) throw new AppError('Le PDF final n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 });
     const path = format === 'pdf' ? report.pdfPath : report.htmlPath; const value = await store.readText(path, null); if (value === null) throw new NotFoundError(); return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8' };
   }

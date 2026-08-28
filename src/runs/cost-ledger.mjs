@@ -33,7 +33,8 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   function state() {
-    return { hardLimit, currency, spent, reserved, available: Math.max(0, hardLimit - spent - reserved), utilization: hardLimit === 0 ? (spent > 0 ? 1 : 0) : spent / hardLimit };
+    const normalizedReserved = Math.max(0, reserved);
+    return { hardLimit, currency, spent, reserved: normalizedReserved, available: Math.max(0, hardLimit - spent - normalizedReserved), utilization: hardLimit === 0 ? (spent > 0 ? 1 : 0) : spent / hardLimit };
   }
 
   async function authorize({ stepId, provider, unit, quantity = 1, estimatedCost, essential = false } = {}) {
