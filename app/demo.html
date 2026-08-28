@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ancrage — démo locale</title>
+  <link rel="stylesheet" href="/demo.css">
+</head>
+<body>
+  <main class="demo-shell">
+    <header class="demo-header"><a href="/">ANCRAGE</a><span>Démo locale</span></header>
+    <section class="demo-intro"><p class="eyebrow">Essai opérateur</p><h1>Tester un établissement</h1><p>Choisissez l’établissement à rechercher.</p></section>
+    <form id="demo-form" class="demo-form">
+      <label class="autocomplete-field">Nom de l’établissement<input name="name" required maxlength="160" autocomplete="off" placeholder="Commencer à taper" aria-autocomplete="list" aria-controls="establishment-options" aria-expanded="false"><div id="establishment-options" class="suggestions" role="listbox" hidden></div></label>
+      <button class="fallback-toggle" type="button" id="manual-toggle" aria-expanded="false">Mon établissement n’est pas présent</button>
+      <section id="manual-panel" class="manual-panel" hidden>
+        <label>Adresse<input name="addressLine1" autocomplete="street-address"></label>
+        <label>Complément d’adresse<input name="addressLine2" autocomplete="address-line2"></label>
+        <div class="field-grid"><label>Code postal<input name="postalCode" autocomplete="postal-code"></label><label>Pays<select name="countryCode" autocomplete="country"><option value="">Sélectionner</option><option value="FR">France</option><option value="LK">Sri Lanka</option></select></label></div>
+        <label class="autocomplete-field">Ville<input name="cityLabel" required disabled autocomplete="off" placeholder="Commencer à taper" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false"><div id="city-options" class="suggestions" role="listbox" hidden></div></label>
+      </section>
+      <button type="submit">Lancer l’audit</button>
+      <p id="demo-state" role="status" aria-live="polite"></p>
+      <progress id="demo-progress" max="1" aria-label="Audit en cours" hidden></progress>
+    </form>
+    <section id="demo-result" class="demo-result" hidden></section>
+  </main>
+  <script type="module" src="/demo.mjs"></script>
+</body>
+</html>
