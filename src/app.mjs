@@ -21,6 +21,7 @@ import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
 import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
+import { renderSeoAuditReport } from './audit/audit-report.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
 import { createPublicControlPlane } from './public/public-control-plane.mjs';
 import { createDemoWorkbench } from './demo/demo-workbench.mjs';
@@ -123,6 +124,11 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
+    auditStarter: async ({ request }) => {
+      const audit = request.input.domain ? await auditRunner({ target: request.input.domain, observedAt: new Date().toISOString(), fetchImpl: auditFetchImpl, lookup: auditLookup }) : { status: 'PARTIAL', target: `${request.input.name} · ${request.input.city.label}`, observedAt: new Date().toISOString(), ruleVersion: 'local-demo-v1', summary: { pagesAnalyzed: 0, pagesSkipped: 0 }, findings: [] };
+      const gmb = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Rapport GMB · ${request.input.name}</title></head><body><h1>${request.input.name}</h1><p>${request.input.city.label}</p><p>Observation GMB locale de démonstration. Les données publiques GMB DataForSEO restent à confirmer.</p></body></html>`;
+      return { gmb: { html: gmb }, final: { html: renderSeoAuditReport(audit) } };
+    },
     pipelineStarter: async ({ request, preparation }) => {
       const intake = preparation.intake ?? {};
       const dossier = await dossiers.create({

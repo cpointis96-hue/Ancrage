@@ -24,13 +24,10 @@ test('expose le parcours public et bloque le démarrage incomplet', async () => 
     assert.equal(createdResponse.status, 201); const created = JSON.parse(await createdResponse.text());
     const replay = await request(`${base}/api/public/requests`, { method: 'POST', headers: { ...headers(base), 'idempotency-key': 'http-request-1' }, body: json({ name: 'Maison Sillage', city: { id: 'city-fr-nantes', label: 'Nantes', countryCode: 'FR' } }) }); assert.equal(JSON.parse(await replay.text()).id, created.id);
     await request(`${base}/api/public/requests/${created.id}/match-decision`, { method: 'POST', headers: headers(base), body: json({ decision: 'CONFIRM' }) });
-    await app.publicControlPlane.seedSyntheticReport(created.id, { kind: 'gmb', html: '<h1>GMB</h1>' });
-    const reports = await request(`${base}/api/public/requests/${created.id}/reports`, { headers: { origin: base } }); assert.equal(reports.status, 200); assert.equal(JSON.parse(await reports.text()).reports[0].kind, 'gmb');
-    const premature = await request(`${base}/api/public/requests/${created.id}/preparation`, { method: 'POST', headers: { ...headers(base), 'idempotency-key': 'http-prep-1' }, body: json({ email: 'owner@example.test' }) }); assert.equal(premature.status, 409);
-    await app.publicControlPlane.seedSyntheticReport(created.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+    const reports = await request(`${base}/api/public/requests/${created.id}/reports`, { headers: { origin: base } }); const reportBody = JSON.parse(await reports.text()); assert.equal(reports.status, 200); assert.deepEqual(reportBody.reports.map(item => item.kind).sort(), ['final', 'gmb']);
     const preparationResponse = await request(`${base}/api/public/requests/${created.id}/preparation`, { method: 'POST', headers: { ...headers(base), 'idempotency-key': 'http-prep-1' }, body: json({ email: 'owner@example.test' }) }); assert.equal(preparationResponse.status, 201); const preparation = JSON.parse(await preparationResponse.text());
     const start = await request(`${base}/api/public/demo-requests/${preparation.id}/start`, { method: 'POST', headers: headers(base), body: '{}' }); assert.equal(start.status, 409); assert.equal(JSON.parse(await start.text()).error.code, 'PREPARATION_INCOMPLETE');
-    assert.equal((await request(`${base}/api/public/requests/${created.id}/reports/${JSON.parse(await reports.text()).reports[0].id}/pdf`, { headers: { origin: base } })).status, 409);
+    assert.equal((await request(`${base}/api/public/requests/${created.id}/reports/${reportBody.reports.find(item => item.kind === 'gmb').id}/pdf`, { headers: { origin: base } })).status, 409);
   } finally { await api.close(); }
 });
 

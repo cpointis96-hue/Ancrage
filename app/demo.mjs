@@ -10,6 +10,12 @@ const city = form.elements.cityLabel;
 const establishmentOptions = document.querySelector('#establishment-options');
 const cityOptions = document.querySelector('#city-options');
 const cities = { FR: ['Nantes', 'Paris', 'Lyon'], LK: ['Colombo', 'Galle', 'Kandy'] };
+const publicFlow = document.querySelector('#public-flow');
+const publicFlowState = document.querySelector('#public-flow-state');
+const publicReports = document.querySelector('#public-reports');
+const preparationForm = document.querySelector('#preparation-form');
+const intakeForm = document.querySelector('#intake-form');
+const publicDemo = document.querySelector('#public-demo');
 let suggestedEstablishments = [];
 let suggestedCities = [];
 let selectedEstablishment = null;
@@ -17,6 +23,23 @@ let selectedCity = null;
 let searchTimer;
 
 let activeSuggestionIndex = -1;
+let publicRequest = null;
+let demoRequest = null;
+const requestKey = prefix => `${prefix}-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+async function jsonRequest(url, options = {}) {
+  const response = await fetch(url, options); const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? 'La demande n’a pas pu aboutir.');
+  return body;
+}
+function reportLinks(request) {
+  publicReports.replaceChildren();
+  for (const report of request.reports ?? []) {
+    const link = document.createElement('a'); link.className = 'public-report'; link.target = '_blank'; link.rel = 'noopener'; link.href = `/api/public/requests/${encodeURIComponent(request.id)}/reports/${encodeURIComponent(report.id)}`; link.textContent = report.kind === 'gmb' ? 'Voir le rapport GMB' : 'Voir le rapport final'; publicReports.append(link);
+  }
+  preparationForm.hidden = request.state !== 'FINAL_REPORT_READY';
+}
+function parseMenu(value) { return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...price] = line.split('—'); return { name: name.trim(), price: price.join('—').trim() }; }); }
+async function digest(file) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
 function options(target, items, type) {
   target.replaceChildren(...items.map((item, index) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'suggestion'; button.dataset.index = String(index); button.setAttribute('role', 'option'); const primary = document.createElement('span'); primary.textContent = item.primaryText || item.label; button.append(primary); if (item.secondaryText) { const secondary = document.createElement('small'); secondary.textContent = item.secondaryText; button.append(secondary); }
@@ -75,7 +98,7 @@ city.addEventListener('keydown', event => handleSuggestionKeys(event, city, city
 city.addEventListener('blur', () => setTimeout(() => closeSuggestions(cityOptions, city), 120));
 
 form.addEventListener('submit', async event => {
-  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; progress.hidden = false; state.textContent = 'Audit en cours…'; result.hidden = true;
+  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; progress.hidden = false; state.textContent = 'Audit en cours…'; result.hidden = true; publicFlow.hidden = true;
   try {
     let payload;
     if (manualMode()) {
@@ -86,7 +109,22 @@ form.addEventListener('submit', async event => {
       const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(selectedEstablishment.placeId)}`); const detailsBody = await detailsResponse.json(); const establishment = detailsBody.establishment; if (!detailsResponse.ok || detailsBody.status !== 'SUCCEEDED' || !establishment?.cityLabel || !establishment.countryCode) throw new Error('Les détails de cet établissement sont indisponibles.');
       payload = { name: establishment.name, city: { id: `google-${establishment.placeId.replace(/[^a-z0-9]+/gi, '-')}`, label: establishment.cityLabel, countryCode: establishment.countryCode }, domain: establishment.websiteUri, identity: { source: 'google-places', placeId: establishment.placeId, address: establishment.formattedAddress } };
     }
-    const response = await fetch('/api/demo/workbench/audits', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message ?? 'Impossible de lancer l’audit.');
-    state.textContent = body.audit.status === 'PARTIAL' ? 'Audit partiel. Consultez les limites du rapport.' : 'Audit terminé.'; result.innerHTML = `<h2>${body.profile.name}</h2><p>${body.audit.target} · ${body.audit.findingCount} finding(s)</p><a href="${body.artifacts.reportHref}" target="_blank" rel="noopener">Voir le rapport</a><a href="${body.artifacts.siteHref}" target="_blank" rel="noopener">Voir la démo du site</a>`; result.hidden = false;
+    publicRequest = await jsonRequest('/api/public/requests', { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('public-request') }, body: JSON.stringify({ name: payload.name, city: payload.city, domain: payload.domain ?? null }) });
+    publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/match-decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'CONFIRM' }) });
+    state.textContent = 'Audit terminé.'; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = `${publicRequest.input.city.label} · ${publicRequest.state}`; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.textContent = publicRequest.state === 'FINAL_REPORT_READY' ? 'Rapport disponible.' : 'Audit partiel.'; reportLinks(publicRequest);
   } catch (error) { state.textContent = error.message; } finally { button.disabled = false; progress.hidden = true; }
+});
+
+preparationForm.addEventListener('submit', async event => {
+  event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = true;
+  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+});
+
+intakeForm.addEventListener('submit', async event => {
+  event.preventDefault(); const button = intakeForm.querySelector('button'); button.disabled = true;
+  try {
+    const data = new FormData(intakeForm); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/intake`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criticalComplete: true, locale: data.get('locale'), address: data.get('address'), contact: data.get('contact'), story: data.get('story'), menu: parseMenu(String(data.get('menu') ?? '')) }) });
+    for (const category of ['facade', 'signature-dish-1', 'signature-dish-2', 'interior-or-terrace', 'team-or-service']) { const file = data.get(`photo-${category}`); if (!(file instanceof File) || !file.size) throw new Error('Sélectionnez les cinq photos.'); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/assets`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: `${category}-${file.name}`, category, rightsStatus: 'AUTHORIZED', hash: await digest(file), size: file.size }) }); }
+    demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); intakeForm.hidden = true; publicFlowState.textContent = 'Démo prête pour validation opérateur.'; const approved = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: 'APPROVED' }) }); demoRequest = approved; publicDemo.replaceChildren(); const link = document.createElement('a'); link.href = approved.presentation.href; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Ouvrir la démo du site'; publicDemo.append(link); publicDemo.hidden = false;
+  } catch (error) { publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });

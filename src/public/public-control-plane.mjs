@@ -16,10 +16,17 @@ const text = (value, field, max = 200) => {
 const fingerprint = value => JSON.stringify(value);
 const emailHash = value => createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
 const response = value => JSON.parse(JSON.stringify(value));
+function publicDomain(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 2048) throw new ValidationError('domain est invalide.', { field: 'domain' });
+  let parsed; try { parsed = new URL(value.trim()); } catch { throw new ValidationError('domain est invalide.', { field: 'domain' }); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.port) throw new ValidationError('domain est invalide.', { field: 'domain' });
+  return parsed.toString().replace(/\/$/, '');
+}
 
 function nextAction(kind, reasonCode) { return { kind, reasonCode }; }
 
-export function createPublicControlPlane({ store, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), pipelineStarter = null, demoPresenter = null } = {}) {
+export function createPublicControlPlane({ store, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, pipelineStarter = null, demoPresenter = null } = {}) {
   async function readRequest(id) {
     const value = await store.readJson(requestPath(id), null);
     if (!value) throw new NotFoundError(`Demande publique introuvable : ${id}`);
@@ -46,7 +53,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function createRequest(input = {}) {
     const name = text(input.name, 'name'); const city = input.city;
     if (!city || typeof city !== 'object') throw new ValidationError('city est invalide.', { field: 'city' });
-    const normalized = { name, city: { id: text(city.id, 'city.id', 120), label: text(city.label, 'city.label'), countryCode: text(city.countryCode, 'city.countryCode', 3).toUpperCase() } };
+    const normalized = { name, city: { id: text(city.id, 'city.id', 120), label: text(city.label, 'city.label'), countryCode: text(city.countryCode, 'city.countryCode', 3).toUpperCase() }, domain: publicDomain(input.domain) };
     const key = requireKey(input.idempotencyKey); const fp = fingerprint(normalized); const previous = await store.readJson(idempotencyPath('request', key), null);
     if (previous) { if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre requête.'); return projectRequest(await readRequest(previous.requestId)); }
     const now = clock().toISOString(); const request = { id: idFactory('public-request'), schemaVersion: 'public-control-plane-v1', state: 'MATCHING', status: 'RUNNING', input: normalized, reports: [], checkpoints: [], nextAction: nextAction('DECIDE_MATCH', 'MATCH_REVIEW_REQUIRED'), warnings: [], errors: [], createdAt: now, updatedAt: now };
@@ -56,14 +63,22 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function decideMatch(requestId, input = {}) {
     const request = await readRequest(requestId); const decision = text(input.decision, 'decision', 40);
     if (!['CONFIRM', 'LOCAL_PREVIEW_WITHOUT_GMB'].includes(decision)) throw new ValidationError('decision est invalide.', { field: 'decision' });
-    request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS');
+    request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS'); await saveRequest(request);
+    if (typeof auditStarter === 'function') {
+      const reports = await auditStarter({ request: response(request), decision });
+      if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html });
+      if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
+    }
     return saveRequest(request);
   }
   async function seedSyntheticReport(requestId, { kind, html, pdf = null } = {}) {
-    const request = await readRequest(requestId); if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport synthétique invalide.');
+    return publishReport(await readRequest(requestId), { kind, html, pdf });
+  }
+  async function publishReport(request, { kind, html, pdf = null } = {}) {
+    if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport invalide.');
     const reportId = idFactory(`${kind}-report`); const htmlPath = `public-control-plane/reports/${reportId}.html`; await store.writeText(htmlPath, html, { immutable: true });
     let pdfPath = null; if (kind === 'final' && typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
-    request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: clock().toISOString() }); request.state = kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY'; request.status = 'SUCCEEDED'; request.nextAction = kind === 'gmb' ? nextAction('WAIT', 'SEO_MODULES_PENDING') : nextAction('PREPARE_SITE', 'FINAL_REPORT_READY');
+    request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: clock().toISOString() }); const finalReady = request.reports.some(report => report.kind === 'final'); request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; request.status = 'SUCCEEDED'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }
   async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: response(request.reports) }; }
