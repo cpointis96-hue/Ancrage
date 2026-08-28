@@ -50,7 +50,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
         if (!adapter) throw Object.assign(new Error('adapter unavailable'), { code: 'ADAPTER_NOT_CONFIGURED' });
         await Promise.race([Promise.resolve(adapter({ secret, definition })), new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })), timeoutMs); })]);
       } finally { clearTimeout(timer); }
-    } catch (error) { health = 'unhealthy'; lastErrorCode = error.code?.startsWith('DATAFORSEO_') ? error.code : error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'ADAPTER_NOT_CONFIGURED' ? 'ADAPTER_NOT_CONFIGURED' : 'CONNECTION_FAILED'; }
+    } catch (error) { health = 'unhealthy'; lastErrorCode = error.code?.startsWith('DATAFORSEO_') ? error.code : error.code === 'TIMEOUT' ? 'TIMEOUT' : error.code === 'ADAPTER_NOT_CONFIGURED' ? 'ADAPTER_NOT_CONFIGURED' : error.code?.startsWith('HTTP_') ? `${error.code}${error.providerCode ? `_${error.providerCode}` : ''}` : 'CONNECTION_FAILED'; }
     await saveStatus(id, { health, lastCheckedAt: clock().toISOString(), lastErrorCode, enabled: health === 'healthy' ? wasEnabled : false });
     return { ...(await list()).find(item => item.id === id), durationMs: Date.now() - started };
   }

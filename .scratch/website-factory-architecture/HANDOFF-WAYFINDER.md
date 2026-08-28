@@ -160,6 +160,9 @@ Références fonctionnelles :
 - `research/91-v1-workflow-contracts-cockpit.md`
 - `research/93-sources-licences-identification-concurrence-crawler.md`
 - `docs/spec/04-website-factory-demo-v1.md`
+- `docs/spec/07-api-control-plane-public-v1.md`
+- `docs/spec/08-demo-locale-et-branches-pauvres-v1.md`
+- `docs/spec/DEMO-MODE-LOCAL-NON-COMMERCIAL.md`
 
 ## Spec d'audit GMB/SEO actuelle
 

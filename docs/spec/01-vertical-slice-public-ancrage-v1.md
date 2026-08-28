@@ -93,7 +93,7 @@ La session navigateur ne constitue pas la source de vérité. Une reprise rechar
 8. Dès `GMB_REPORT_READY`, l'interface montre les premières conclusions et indique honnêtement que l'audit SEO continue. Elle ne remplace pas le rapport GMB par un spinner.
 9. Dès `FINAL_REPORT_READY`, le rapport rassemble GMB et SEO, sépare faits, calculs, interprétations, suggestions et limites, et expose son périmètre. Le PDF complet GMB + SEO est disponible pour sept jours, sans e-mail, compte ou paiement.
 10. Le CTA `Préparer mon site` ne démarre rien avant le clic. Après `FINAL_REPORT_READY`, il reste disponible même si des éléments manquent : l'écran de préparation affiche la checklist et demande un e-mail valide. Le consentement marketing est séparé et facultatif.
-11. Après `FINAL_REPORT_READY`, le plan de contenu est autorisé. Le clic et un e-mail valide créent ou reprennent une `DemoRequest` de préparation, mais ne lancent pas encore la génération si le dossier critique, les cinq catégories de photos ou les droits manquent. Dès que la checklist est complète, le système fige le snapshot de l'intake et des `AgentConfigurationVersion`, puis démarre le `WebsiteFactoryPipelineRun`. Il compose un `SiteSpec`, rend un artefact déterministe, exécute les gates et produit un `AcceptanceReport`.
+11. Après `FINAL_REPORT_READY`, la préparation du site est autorisée. Le clic et un e-mail valide créent ou reprennent une `DemoRequest` de préparation, mais ne lancent pas encore le plan de contenu ni la génération si le dossier critique, les cinq catégories de photos ou les droits manquent. Dès que la checklist est complète, le système fige le snapshot de l'intake et des `AgentConfigurationVersion`, puis démarre le `WebsiteFactoryPipelineRun`. Il compose un `SiteSpec`, rend un artefact déterministe, exécute les gates et produit un `AcceptanceReport`.
 12. La démo reste invisible au prospect jusqu'à `READY_FOR_OWNER_REVIEW`, puis validation explicite de l'opérateur. Après validation, l'e-mail transactionnel envoie un lien privé `noindex`, expirant et révocable, accessible sept jours après présentation.
 13. La démo contient ses CTA de contact. Un éventuel CTA de mise en production est unique, clairement secondaire par rapport à la découverte de la démo, et le paiement et la production restent hors de ce slice.
 
@@ -153,9 +153,9 @@ Depuis chaque état asynchrone, les états transverses sont `LOADING`, `EMPTY`, 
 | `MATCHING -> ENRICHING` | match fort ou confirmation | sélectionner un candidat ambigu |
 | `ENRICHING -> INTAKE_REQUIRED` | required inputs calculés | demander un formulaire complet arbitraire |
 | `AUDIT -> GMB_REPORT_READY` | checkpoint GMB validé | attendre l'audit SEO pour afficher GMB |
-| `AUDIT_START -> GMB_REPORT_READY + SEO_BASE_IN_PROGRESS` | identité suffisamment confirmée ; domaine confirmé pour la branche SEO | attendre la fin de l'intake ou de GMB pour commencer le SEO de base |
+| `AUDIT_START -> GMB_REPORT_READY + SEO_BASE_IN_PROGRESS` | identité suffisamment confirmée ; domaine confirmé pour la branche SEO | retarder GMB ou SEO de base jusqu'à la fin de l'intake ou de l'autre branche |
 | `GMB_REPORT_READY -> SEO_REPORT_IN_PROGRESS` | rapport GMB HTML livré et résultats SEO de base réutilisables ; en absence de rapport, branche GMB explicitement `PARTIAL`/`BLOCKED` | publier l'audit général comme si une donnée GMB existait |
-| `FINAL_REPORT_READY -> PREPARING_SITE` | clic prospect, que le dossier soit complet ou non | lancer la génération sans checklist |
+| `FINAL_REPORT_READY -> PREPARING_SITE` | clic prospect, que le dossier soit complet ou non | lancer le plan de contenu ou la génération sans checklist |
 | `PREPARING_SITE -> EMAIL_CONFIRMED` | e-mail valide | commencer la génération avant e-mail |
 | `EMAIL_CONFIRMED -> PREPARING_SITE / PARTIAL` | e-mail valide mais checklist incomplète | lancer le pipeline avec des éléments manquants |
 | `EMAIL_CONFIRMED -> SITE_BUILDING` | dossier critique, cinq photos et droits complets | lancer avec des éléments manquants ou non autorisés |
@@ -406,7 +406,7 @@ Ces questions ne rouvrent pas les décisions verrouillées. Elles définissent l
 ## 18. Handoff vers la prochaine spec
 
 1. `Spec UX public Ancrage` : prototypes des écrans E0 à E7, direction JetBrains Mono, états mobiles, rapport et accessibilité.
-2. `Spec API Control Plane public` : contrats JSON, transitions, idempotence, tokens, événements et erreurs.
+2. [`07-api-control-plane-public-v1.md`](07-api-control-plane-public-v1.md) : contrats JSON, transitions, idempotence, tokens, événements et erreurs.
 3. [`02-audit-gmb-seo-borné.md`](02-audit-gmb-seo-borné.md) : profils, SSRF, crawler, preuves, budgets, PDF et lifecycle.
 4. [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md) : plan post-rapport, `SiteSpec`, renderer, gates, `AcceptanceReport`, revue opérateur et livraison.
 5. Tranche ultérieure achat et production : compte, paiement, domaine, `SiteApproval` et `ProductionSite`.

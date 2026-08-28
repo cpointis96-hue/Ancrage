@@ -5,9 +5,9 @@ const workflowId = 'client-site-simulation';
 export const clientSiteWorkflow = { id: workflowId, name: 'Création de site client', version: 1, steps: [
   { id: 'dossier-validation', kind: 'deterministic', dependsOn: [], inputRefs: [], outputRefs: ['dossier'], outputTemplateId: 'audit-initial', implementation: 'simulation-dossier-validation', timeoutMs: 1000, budget: 0 },
   { id: 'gmb-audit-report', kind: 'deterministic', dependsOn: ['dossier-validation'], inputRefs: ['dossier-validation'], outputRefs: ['gmbReport'], outputTemplateId: 'audit-gmb', implementation: 'simulation-gmb-audit-report', timeoutMs: 1000, budget: 0 },
-  { id: 'content-plan', kind: 'deterministic', dependsOn: ['dossier-validation'], inputRefs: ['dossier-validation'], outputRefs: ['contentPlan'], implementation: 'simulation-content-plan', timeoutMs: 1000, budget: 0 },
+  { id: 'seo-competition-report', kind: 'deterministic', dependsOn: ['dossier-validation', 'gmb-audit-report'], inputRefs: ['dossier-validation', 'gmb-audit-report'], outputRefs: ['seoReport'], outputTemplateId: 'audit-seo', implementation: 'simulation-seo-competition-report', timeoutMs: 1000, budget: 0 },
+  { id: 'content-plan', kind: 'deterministic', dependsOn: ['seo-competition-report'], inputRefs: ['dossier-validation', 'seo-competition-report'], outputRefs: ['contentPlan'], implementation: 'simulation-content-plan', timeoutMs: 1000, budget: 0 },
   { id: 'site-build', kind: 'deterministic', dependsOn: ['content-plan'], inputRefs: ['content-plan'], outputRefs: ['site'], implementation: 'simulation-site-build', timeoutMs: 1000, budget: 0 },
-  { id: 'seo-competition-report', kind: 'deterministic', dependsOn: ['gmb-audit-report', 'site-build'], inputRefs: ['gmb-audit-report', 'site-build'], outputRefs: ['seoReport'], outputTemplateId: 'audit-seo', implementation: 'simulation-seo-competition-report', timeoutMs: 1000, budget: 0 },
   { id: 'quality-gate', kind: 'deterministic', dependsOn: ['gmb-audit-report', 'site-build', 'seo-competition-report'], inputRefs: ['gmb-audit-report', 'site-build', 'seo-competition-report'], outputRefs: ['quality'], implementation: 'simulation-quality-gate', timeoutMs: 1000, budget: 0 },
 ] , outputTemplateId: 'site-preview' };
 
@@ -42,7 +42,7 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     },
     'simulation-content-plan': async ({ input }) => {
       const source = input['dossier-validation'];
-      return { dossierId: source.dossierId, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections: ['identity', 'story', 'menu', 'contact'] };
+      return { dossierId: source.dossierId, reportId: input['seo-competition-report'].dossierId, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections: ['identity', 'story', 'menu', 'contact'] };
     },
     'simulation-gmb-audit-report': async ({ input, run, store: localStore }) => {
       const facts = input['dossier-validation'];
@@ -72,10 +72,8 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     },
     'simulation-seo-competition-report': async ({ input, run, store: localStore }) => {
       const gmb = input['gmb-audit-report'];
-      const site = input['site-build'];
       const facts = await localStore.readJson(`${dossierPaths(gmb.dossierId)}/dossier.json`, null);
-      const siteHtml = site?.artifactPath ? await localStore.readText(site.artifactPath, '') : '';
-      const body = `<section><h2>Audit SEO</h2><ul><li>Page d’accueil : ${siteHtml.includes('<h1>') ? 'titre principal présent' : 'titre principal à revoir'}</li><li>Responsive : ${siteHtml.includes('name="viewport"') && siteHtml.includes('@media') ? 'balises et adaptation présentes' : 'à vérifier'}</li></ul></section><section><h2>Mots-clés locaux</h2><ul><li>${esc(facts.name)} ${esc(facts.city)}</li><li>${esc(facts.name)} menu</li><li>${esc(facts.name)} contact</li></ul></section><section><h2>Pistes concurrentielles</h2><p>Les établissements comparables restent des pistes à corroborer par une source publique autorisée.</p></section><section><h2>Relation avec le premier rapport</h2><p>Ce rapport approfondi complète le rapport GMB ${esc(gmb.artifactHash)}.</p></section>`;
+      const body = `<section><h2>Audit SEO</h2><ul><li>Site : non généré à ce stade du parcours</li><li>Base locale : identité et rapport GMB disponibles</li></ul></section><section><h2>Mots-clés locaux</h2><ul><li>${esc(facts.name)} ${esc(facts.city)}</li><li>${esc(facts.name)} menu</li><li>${esc(facts.name)} contact</li></ul></section><section><h2>Pistes concurrentielles</h2><p>Les établissements comparables restent des pistes à corroborer par une source publique autorisée.</p></section><section><h2>Relation avec le premier rapport</h2><p>Ce rapport approfondi complète le rapport GMB ${esc(gmb.artifactHash)}.</p></section>`;
       const template = run.snapshot.steps.find(step => step.id === 'seo-competition-report')?.template;
       const artifact = await renderAuditFile(localStore, run, 'seo-competition-report', template, facts.name, body, 'body{font:16px/1.55 system-ui;max-width:820px;margin:0 auto;padding:24px;color:#20211f;background:#f5f5f2}header{padding:clamp(28px,6vw,64px);background:#173024;color:#eef4ec}header p{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:28px 0}h1,h2{letter-spacing:-.04em}li{margin:6px 0}.evidence{color:#5a635c}');
       return { reportKind: 'seo-competition', status: 'READY_FOR_REVIEW', dossierId: gmb.dossierId, artifactPath: artifact.artifactPath, artifactHash: artifact.artifactHash, templateId: artifact.templateId, templateVersionId: artifact.templateVersionId, availableAt: new Date().toISOString(), durationMs: 0 };
