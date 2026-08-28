@@ -7,7 +7,7 @@ Périmètre : parcours public d'audit, génération de démo, validation opérat
 
 ## 1. Autorité et sources
 
-L'ordre commercial est normatif dans [`87-parcours-client-reference.md`](../../.scratch/website-factory-architecture/research/87-parcours-client-reference.md) et sa consolidation détaillée dans [`89-parcours-client-complet-arbres-decision.md`](../../.scratch/website-factory-architecture/research/89-parcours-client-complet-arbres-decision.md). Les contrats d'exécution sont alignés sur [`91-v1-workflow-contracts-cockpit.md`](../../.scratch/website-factory-architecture/research/91-v1-workflow-contracts-cockpit.md), la spec publique [`01-vertical-slice-public-ancrage-v1.md`](01-vertical-slice-public-ancrage-v1.md), la spec d'audit [`02-audit-gmb-seo-borné.md`](02-audit-gmb-seo-borné.md), [`CONTEXT.md`](../../CONTEXT.md) et les ADR [`0001`](../adr/0001-hybrid-local-first-control-plane.md), [`0002`](../adr/0002-files-first-configuration-snapshots.md) et [`0003`](../adr/0003-secrets-outside-browser-and-business-store.md).
+L'ordre commercial est normatif dans [`87-parcours-client-reference.md`](../../.scratch/website-factory-architecture/research/87-parcours-client-reference.md) et sa consolidation détaillée dans [`89-parcours-client-complet-arbres-decision.md`](../../.scratch/website-factory-architecture/research/89-parcours-client-complet-arbres-decision.md). Les contrats d'exécution sont alignés sur [`91-v1-workflow-contracts-cockpit.md`](../../.scratch/website-factory-architecture/research/91-v1-workflow-contracts-cockpit.md), la spec publique [`01-vertical-slice-public-ancrage-v1.md`](01-vertical-slice-public-ancrage-v1.md), la spec d'audit [`02-audit-gmb-seo-borné.md`](02-audit-gmb-seo-borné.md), la spec de génération [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md), [`CONTEXT.md`](../../CONTEXT.md) et les ADR [`0001`](../adr/0001-hybrid-local-first-control-plane.md), [`0002`](../adr/0002-files-first-configuration-snapshots.md) et [`0003`](../adr/0003-secrets-outside-browser-and-business-store.md).
 
 Cette spec relie les tranches sans transformer une décision documentaire en preuve d'exploitation. Les prix, quotas, licences, comptes réels, RPO/RTO, sécurité d'exécution et suppression restent soumis aux gates indiqués en section 14.
 
@@ -55,7 +55,7 @@ Les objets persistants minimums sont :
 | `CostEvent` | run, étape, provider, unité, quantité, coût, timestamp | avant/après chaque consommation |
 | `ProgressCheckpoint` | clé, statut, preuves, date, texte | validé par le `Control Plane` |
 | `SEOReport` | modules, scope, version, expiration, PDF | accès signé, expirant et révocable |
-| `DemoRequest` | audit, contact e-mail, snapshot des entrées | créée après CTA + e-mail valide |
+| `DemoRequest` | audit, contact e-mail, checklist, état de préparation, snapshot des entrées | créée ou reprise après CTA + e-mail valide ; peut rester `INCOMPLETE`, snapshot nullable |
 | `WebsiteFactoryPipelineRun` | versions, budget, étapes, artefacts, état | ne modifie pas le run source |
 | `SiteSpec` | identité, pages, contenu, assets, SEO, locale, template | version immuable et rendable |
 | `AcceptanceReport` | gates, preuves, warnings, blocks, décision | `BLOCK` interdit la présentation |
@@ -81,8 +81,8 @@ Les noms publics sont ceux de la spec 01. Les noms internes historiques sont con
 | `GMB_REPORT_READY` | `GMB_REPORT_READY` | checkpoint GMB validé |
 | `SEO_REPORT_IN_PROGRESS` | `SEO_REPORT_IN_PROGRESS`, `QUALITY_REVIEW` | rapport final ou branche explicitement partielle |
 | `FINAL_REPORT_READY` | `FINAL_REPORT_READY` | rapport, périmètre, preuves et limites présents |
-| `PREPARING_SITE` / `EMAIL_REQUIRED` | `WEBSITE_FACTORY_REQUESTED` | CTA puis e-mail valide |
-| `EMAIL_CONFIRMED` / `SITE_BUILDING` | `SCHEDULED`, `CRAWLING` ou étape S6-S9 | snapshot et budget gelés |
+| `PREPARING_SITE` / `EMAIL_REQUIRED` | `WEBSITE_FACTORY_REQUESTED` | CTA puis e-mail valide, sans présenter la génération comme commencée |
+| `EMAIL_CONFIRMED` / `SITE_BUILDING` | `SCHEDULED`, `CRAWLING` ou étape S6-S9 | snapshot, budget, données critiques, photos et droits complets |
 | `READY_FOR_OWNER_REVIEW` | `QUALITY_REVIEW` | artefact et `AcceptanceReport` produits |
 | `READY_FOR_PROSPECT` | `DELIVERY_PENDING` | validation opérateur explicite |
 | `DEMO_PRESENTED` | `DELIVERED` | lien envoyé ou présenté |
@@ -90,7 +90,7 @@ Les noms publics sont ceux de la spec 01. Les noms internes historiques sont con
 
 Les états transverses `LOADING`, `EMPTY`, `PARTIAL`, `RETRYABLE_ERROR`, `BLOCKED`, `FAILED`, `RESUMABLE` et `WAITING_FOR_MAC` exigent une cause, une prochaine action et une preuve ou référence d'intervention.
 
-Transitions interdites : ville libre vers enrichissement, identité ambiguë vers audit, domaine non confirmé vers crawl, GMB seul vers PDF/CTA, CTA sans e-mail vers génération, artefact non contrôlé vers envoi, `BLOCK` vers présentation, paiement vers domaine/publication sans les gates dédiés.
+Transitions interdites : ville libre vers enrichissement, identité ambiguë vers audit, domaine non confirmé vers crawl, GMB seul vers PDF/CTA, CTA sans e-mail ou checklist complète vers génération, artefact non contrôlé vers envoi, `BLOCK` vers présentation, paiement vers domaine/publication sans les gates dédiés.
 
 ## 6. Pipeline d'audit public
 
@@ -99,31 +99,31 @@ Le pipeline A est :
 ```text
 S0 MinimalRequest
  -> S1 EstablishmentMatch
- -> S2 ProgressiveIntake + SiteCandidate
- -> S3 GMBObservation / aperçu local
- -> S4 CrawlRun + SEOFinding + CompetitorCandidate
- -> S5 SEOReport
+ -> S2 SiteCandidate + ProgressiveIntake en parallèle
+ -> S3 GMBObservation || S4 SEO base
+ -> GMB_REPORT_READY dès disponibilité
+ -> S5 SEO général + SEOReport final avec les sorties S3/S4
 ```
 
-DataForSEO est prioritaire pour les capacités publiques qu'il couvre : Google SERP, Google Maps/local pack, Business Listings, données de mots-clés, concurrence, intersections de domaines et OnPage. Chaque famille reste séparée par endpoint, version, budget, provenance, quota et `CostEvent`. L'API Google Business Profile reste réservée à un mode propriétaire OAuth et n'est pas utilisée pour la recherche publique anonyme.
+DataForSEO est prioritaire pour les capacités publiques qu'il couvre : Google SERP, Google Maps/local pack, Business Listings, données de mots-clés, concurrence, intersections de domaines et OnPage. Chaque famille reste séparée par endpoint, version, budget, provenance, quota et `CostEvent`. Dans le parcours public, les capacités SEO générales et concurrentielles attendent `GMB_REPORT_READY` lorsque ce checkpoint est disponible, ou la résolution explicite de la branche GMB en `PARTIAL`/`BLOCKED` lorsqu'il ne peut pas être produit ; elles reçoivent la sortie GMB lorsqu'elle existe, avec les données du site et les résultats SEO de base. L'audit SEO de base peut progresser en parallèle. L'API Google Business Profile reste réservée à un mode propriétaire OAuth et n'est pas utilisée pour la recherche publique anonyme.
 
 Le crawler commercial standard est interne, HTTP/HTML, non authentifié, sans exécution JavaScript, archive ni téléchargement. Lighthouse/Playwright sont des mesures ciblées contrôlées. Screaming Frog reste hors chemin commercial tant qu'une autorisation écrite compatible n'existe pas.
 
-Une fiche GMB confirmée produit son rapport dès que son checkpoint est validé. Un domaine fiable autorise ensuite l'audit SEO après validation SSRF et budget. Sans fiche confirmée, le système demande uniquement l'adresse et produit `LOCAL_PREVIEW_WITHOUT_GMB`. Sans domaine confirmé, il produit `SITE_NOT_CONFIRMED` et ne crawl pas.
+Une fiche GMB confirmée produit son rapport HTML dès que son checkpoint est validé et le livre immédiatement. L'audit SEO de base démarre en parallèle avec l'observation GMB lorsque le domaine est confirmé ; l'intake et les cinq photos n'ont pas à attendre cette collecte. `SEO_REPORT_IN_PROGRESS` poursuit ensuite l'audit général avec les données GMB lorsqu'elles existent, le site, les résultats de base, les mots-clés et la concurrence autorisés, après validation SSRF et budget. Sans fiche confirmée, le système demande uniquement l'adresse et produit `LOCAL_PREVIEW_WITHOUT_GMB`. Sans domaine confirmé, il produit `SITE_NOT_CONFIRMED`, ne crawl pas et compose une branche locale bornée.
 
 ## 7. Pipeline de génération de démo
 
-Le pipeline B ne commence qu'après `FINAL_REPORT_READY`, clic `Préparer mon site` et e-mail valide.
+Le parcours de préparation B commence après `FINAL_REPORT_READY`, clic `Préparer mon site` et e-mail valide, même si sa checklist reste incomplète. Le `WebsiteFactoryPipelineRun` réel, le plan de contenu et la génération ne commencent qu'après complétude du dossier critique, des cinq catégories de photos et des droits. Le plan de contenu ne peut pas démarrer directement depuis le dossier ou le seul rapport GMB. Les contrats détaillés de cette tranche sont dans [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md).
 
 | Étape | Entrées | Sortie et gate |
 | --- | --- | --- |
-| S6 Préparer | rapport, e-mail, consentements | snapshot d'intake, versions et budget gelés |
+| S6 Préparer | rapport, e-mail, consentements, checklist | `DemoRequest` de préparation ; snapshot, versions et budget gelés seulement quand la checklist est complète |
 | S7 Planifier et rédiger | faits, findings, intentions, langue | `content-plan.json`, `copy-draft.json`, schémas valides |
 | S8 Composer et rendre | contenu approuvé, assets, règles, template | `SiteSpec` et rendu PHP/statique déterministe |
 | S9 Contrôler | build, `SiteSpec`, preuves, budget | QA et `AcceptanceReport` |
 | S10 Valider et livrer | rapport d'acceptation, warnings, version | décision opérateur puis lien privé |
 
-Le contenu minimal est limité aux informations vérifiées : identité, menu, prix réellement fournis, horaires, adresse, coordonnées, photos autorisées et CTA réellement disponibles. La cible de 6 à 8 pages est indicative et conditionnée par les données et la valeur. Les pages locales supplémentaires ne sont indexables que si elles ont une intention réelle, des preuves, une valeur originale, un lien utile et une décision `index` explicite.
+Le plan de contenu ne devient possible qu'après `FINAL_REPORT_READY`. Le contenu minimal est limité aux informations vérifiées : identité, menu, prix réellement fournis, horaires, adresse, coordonnées, photos autorisées et CTA réellement disponibles. La cible de 6 à 8 pages est indicative et conditionnée par les données et la valeur. Les pages locales supplémentaires ne sont indexables que si elles ont une intention réelle, des preuves, une valeur originale, un lien utile et une décision `index` explicite.
 
 La traduction ne vise qu'une seule langue de publication au MVP. Toute `Translation` est versionnée et soumise à `TranslationReview` avant publication. Les assets non `OWNED`, `AUTHORIZED` ou `LICENSED` bloquent la conversion production ; un asset temporaire de démonstration ne devient jamais un asset production par défaut.
 
@@ -207,4 +207,4 @@ Un échec de sécurité, provenance, budget, restauration ou suppression bloque 
 
 Les recherches fournisseurs, provenance, marchés et pricing sont regroupées dans [`94-dataforseo-endpoints-prix-limites-provenance.md`](../../.scratch/website-factory-architecture/research/94-dataforseo-endpoints-prix-limites-provenance.md), [`95-cloudflare-neon-prix-limites-restauration.md`](../../.scratch/website-factory-architecture/research/95-cloudflare-neon-prix-limites-restauration.md), [`96-cityindex-gmb-concurrence-conservation.md`](../../.scratch/website-factory-architecture/research/96-cityindex-gmb-concurrence-conservation.md) et [`97-pricing-et-cadre-legal-marches.md`](../../.scratch/website-factory-architecture/research/97-pricing-et-cadre-legal-marches.md). Les décisions déjà consolidées restent dans `map.md` et les tickets numérotés.
 
-Au 27 août 2026, aucune capacité ne doit être annoncée comme commercialisable sur la seule base de cette spec. Les comptes réels, quotas, coûts observés, licences de datasets, rétention juridique, restauration et vertical slice sont encore des preuves à obtenir.
+Au 27 août 2026, aucune capacité ne doit être annoncée comme commercialisable sur la seule base de cette spec. Les comptes réels, quotas, coûts observés, licences de datasets, rétention juridique, restauration et vertical slice sont encore des preuves à obtenir. La simulation `client-site-simulation` reste un écart d'implémentation documenté dans [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md) : elle ne constitue pas une preuve du séquencement public.

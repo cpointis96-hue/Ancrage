@@ -12,7 +12,7 @@ La promesse centrale est simple : le prospect reçoit d'abord une valeur visible
 
 ## Parcours en une ligne
 
-`Nom + ville sélectionnée` → `Enrichissement` → `Formulaire progressif + 5 photos` → `Audit GMB visible` → `Audit SEO complet` → `Rapport final GMB + SEO` → `Préparer mon site` → `E-mail obligatoire` → `Génération du site` → `QA + validation opérateur` → `Lien de démo gratuit` → `Achat éventuel` → `Mise en production`.
+`Nom + ville sélectionnée` → `Enrichissement + intake progressif (photos en parallèle)` → `Audit GMB || SEO de base` → `Audit GMB visible dès disponibilité` → `Audit SEO complet` → `Rapport final GMB + SEO` → `Préparer mon site` → `E-mail obligatoire` → `Génération du site` → `QA + validation opérateur` → `Lien de démo gratuit` → `Achat éventuel` → `Mise en production`.
 
 ## Les 6 règles IF / THEN
 
@@ -32,7 +32,7 @@ La ville doit être sélectionnée dans la liste. Une ville écrite librement et
 
 ### IF 3 — Dossier et première valeur
 
-**IF** l'établissement est suffisamment identifié ou si la branche sans GMB possède une adresse, **THEN** le système lance l'enrichissement et le formulaire progressif.
+**IF** l'établissement est suffisamment identifié ou si la branche sans GMB possède une adresse, **THEN** le système lance l'enrichissement et le formulaire progressif. Les audits autorisés peuvent démarrer dès que leurs préconditions propres sont satisfaites ; l'intake et les photos continuent en parallèle.
 
 Le dossier de génération doit contenir les informations critiques et cinq photos obligatoires : façade, deux plats signatures, intérieur/terrasse et équipe/propriétaires/service. Une information manquante ou contradictoire ne doit jamais être inventée.
 
@@ -40,7 +40,7 @@ Dans la branche où aucun site fiable et aucune fiche GMB ne sont confirmés, le
 
 ### IF 4 — Audits et rapport progressif
 
-**IF** l'audit GMB est terminé, **THEN** le système affiche immédiatement sa restitution au prospect et montre une ligne d'avancement indiquant que l'audit SEO complet continue.
+**IF** l'audit GMB est terminé, **THEN** le système affiche immédiatement sa restitution au prospect et montre une ligne d'avancement indiquant que l'audit SEO complet continue. Si un site fiable est confirmé, l'audit SEO de base a pu démarrer en parallèle.
 
 **IF** l'audit SEO complet est terminé, **THEN** le système affiche un rapport final bien structuré qui réunit l'audit GMB et l'audit SEO.
 
@@ -50,11 +50,11 @@ Dans la branche sans GMB, le rapport indique clairement la limite et fournit un 
 
 **IF** le rapport final est disponible et que le prospect clique sur « Préparer mon site », **THEN** une animation de préparation s'affiche et demande l'adresse e-mail.
 
-La génération réelle du site ne commence pas tant qu'une adresse valide n'est pas fournie. L'animation ne doit pas prétendre qu'un site est déjà créé. L'e-mail sert à éviter les démos orphelines et à envoyer ensuite le lien privé.
+La génération réelle du site ne commence pas tant qu'une adresse valide n'est pas fournie et que le dossier critique, les cinq photos et leurs droits ne sont pas complets. L'animation ne doit pas prétendre qu'un site est déjà créé. L'e-mail sert à enregistrer ou reprendre la préparation, éviter les démos orphelines et envoyer ensuite le lien privé.
 
-Cette règle s'applique également à la branche sans site et sans GMB : dès que le dossier minimal et les cinq photos sont prêts, « Préparer mon site » est proposé ; le clic ouvre immédiatement la collecte de l'adresse e-mail, puis seulement le `WebsiteFactoryPipelineRun` peut démarrer.
+Cette règle s'applique également à la branche sans site et sans GMB : dès que le rapport local final est disponible, « Préparer mon site » est proposé. Le clic ouvre la checklist, la collecte de l'adresse e-mail et la complétion progressive des éléments manquants ; seulement lorsque le dossier minimal, les cinq photos et leurs droits sont prêts le `WebsiteFactoryPipelineRun` peut démarrer.
 
-Après l'e-mail, le `WebsiteFactoryPipelineRun` peut utiliser les informations collectées : contenu métier, mots-clés, étude locale, concurrents directs, assets, traduction éventuelle, `SiteSpec`, rendu déterministe et QA.
+Après l'e-mail, la `DemoRequest` peut rester en préparation jusqu'à complétude. Le `WebsiteFactoryPipelineRun` peut ensuite utiliser les informations collectées : contenu métier, mots-clés, étude locale, concurrents directs, assets, traduction éventuelle, `SiteSpec`, rendu déterministe et QA.
 
 ### IF 6 — Démo puis achat
 
@@ -84,7 +84,7 @@ Les agents et APIs travaillent derrière ces états. Ils ne définissent pas le 
 - `ProgressCheckpoint` : seule source de la progression affichée au prospect.
 - `EstablishmentMatch` : candidats, confiance, provenance et décision d'identité.
 - `SEOAudit` / `SEOReport` : mesures, faits, recommandations, preuves et limites séparés.
-- `WebsiteFactoryPipelineRun` : génération du contenu et du `SiteSpec` après clic et e-mail.
+- `WebsiteFactoryPipelineRun` : génération du contenu et du `SiteSpec` après clic, e-mail et checklist complète.
 - `AcceptanceReport` : preuves QA et décision de validation opérateur avant présentation.
 
 ## Comment modifier ce parcours plus tard

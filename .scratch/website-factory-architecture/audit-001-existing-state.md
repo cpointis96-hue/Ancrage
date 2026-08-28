@@ -46,7 +46,7 @@ Elle ne constitue pas encore le produit public d'audit. Le dépôt ne contient p
 ### Bloqueurs de spécification
 
 1. **Contrat d'identité et de domaine** : sources autorisées, seuils explicables pour `AUTO_CONTINUE` et `ASK_CONFIRMATION`, branche sans GMB, et règle empêchant tout crawl avant domaine confirmé.
-2. **Contrat GMB puis SEO/concurrence** : ordre, dépendances, états partiels, borne de cinq concurrents directs issus de trois intentions locales et séparation faits/calculs/interprétations/suggestions.
+2. **Contrat GMB + SEO de base puis SEO/concurrence** : parallélisation des branches disponibles, ordre des livrables, dépendances, états partiels, borne de cinq concurrents directs issus de trois intentions locales et séparation faits/calculs/interprétations/suggestions.
 3. **Provenance** : snapshot de source, date, URL canonique, paramètres non secrets, hash du brut, licence/conditions, expiration et lien de chaque affirmation vers une preuve.
 4. **Sécurité du crawl** : validation URL, résolution DNS et revalidation à chaque redirection, blocage réseaux privés/réservés, ports, credentials URL, rebinding, téléchargements, compression, isolation et nettoyage.
 5. **Budgets et dépassements** : enveloppe préautorisée, unités locales/cloud, `CostEvent`, alertes 50/80/100 %, chemin essentiel, traitement des options et blocage dur sans fallback premium silencieux.

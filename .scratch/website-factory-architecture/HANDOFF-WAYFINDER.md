@@ -27,7 +27,7 @@ Arriver au bout de Wayfinder pour l'ensemble de Website Factory :
 5. tester chaque tranche réelle ;
 6. ne déclarer aucune capacité commerciale sans preuve correspondante.
 
-Le statut `ready-for-to-spec` actuel ne concerne que la tranche documentaire audit GMB/SEO. Il ne signifie pas que tout Website Factory est prêt à construire.
+Le statut `ready-for-to-spec` actuel concerne les tranches documentaires audit GMB/SEO et coordination audit → Website Factory. Il ne signifie pas que tout Website Factory est prêt à construire.
 
 ## Règles non négociables
 
@@ -77,12 +77,15 @@ nom + ville structurée
 -> EstablishmentMatch
 -> confirmation ou branche locale sans GMB
 -> domaine confirmé si disponible
--> audit GMB public si autorisé
--> audit SEO borné et concurrence locale
+-> audit GMB public || audit SEO de base
+-> rapport GMB livré dès disponibilité
+-> audit SEO général avec GMB + site + concurrence + mots-clés
 -> rapport GMB + SEO
 -> téléchargement PDF sans e-mail
 -> clic « Préparer mon site »
 -> demande d'e-mail valide
+-> DemoRequest de préparation
+-> complétion du dossier, photos et droits
 -> WebsiteFactoryPipelineRun
 -> génération déterministe + contributions IA contrôlées
 -> QA
@@ -107,6 +110,7 @@ L'audit GMB doit être affiché dès qu'il est prêt, même si le SEO continue. 
 - Agent Plane subordonné au Control Plane.
 - Une seule langue de publication au MVP.
 - Cinq photos avant génération : façade, deux plats signatures, intérieur/terrasse, équipe ou service ; logo facultatif.
+- Intake à deux vitesses : enrichissements précoces facultatifs pour l'audit, puis photos, histoire, données métier et droits collectés progressivement après le rapport final et le clic de préparation.
 - Audit GMB et audit SEO regroupés dans un même parcours, mais séparés dans les données et le rapport.
 - Branche sans GMB : demander uniquement l'adresse et produire un aperçu local borné.
 - Branche sans site : aucun crawl ; produire seulement les éléments locaux disponibles.
@@ -155,6 +159,7 @@ Références fonctionnelles :
 - `research/90-handoff-correction-rapport-gmb-seo-pdf-email.md`
 - `research/91-v1-workflow-contracts-cockpit.md`
 - `research/93-sources-licences-identification-concurrence-crawler.md`
+- `docs/spec/04-website-factory-demo-v1.md`
 
 ## Spec d'audit GMB/SEO actuelle
 
@@ -233,7 +238,7 @@ Compléter les contrats pour :
 Réaliser puis relire avant UI de production :
 
 - parcours public nom + ville → enrichissement → rapport ;
-- rapport GMB puis SEO ;
+- rapport GMB livré dès disponibilité, avec audit SEO de base lancé en parallèle puis audit SEO général enrichi ;
 - état `PARTIAL`, erreur récupérable et timeout ;
 - CTA « Préparer mon site » ;
 - cockpit de validation finale ;
@@ -241,9 +246,9 @@ Réaliser puis relire avant UI de production :
 
 Les prototypes sont jetables. Ne pas les promouvoir automatiquement en production.
 
-### 5. Spec globale Website Factory
+### 5. Specs Website Factory finalisées
 
-Après fermeture des décisions, produire une spec globale qui relie :
+Les specs 01 à 04 relient maintenant :
 
 - audit ;
 - intake ;
@@ -264,7 +269,7 @@ Après fermeture des décisions, produire une spec globale qui relie :
 - juridique ;
 - support et sortie client.
 
-Cette spec doit définir modèles, contrats, transitions, permissions, budgets, erreurs, reprises et preuves de validation.
+La tranche suivante est l'implémentation séparée du vertical slice autorisé, puis la tranche achat et production. La simulation `client-site-simulation` doit être corrigée séparément pour respecter `identité/domaine → (rapport GMB || audit SEO de base) avec `ProgressiveIntake` en parallèle → audit SEO/concurrence général alimenté par GMB et la base → rapport final → plan de contenu → site → QA`.
 
 ## Vertical slice obligatoire
 
@@ -311,9 +316,7 @@ Un échec sécurité, provenance ou budget bloque le go commercial même si le r
 
 ## Prochaine action exacte
 
-La prochaine action n'est pas encore de coder le produit complet.
-
-Commencer par une passe de recherche et décision sur les fournisseurs, avec DataForSEO comme choix prioritaire : vérifier ses endpoints publics SERP/Maps/Business Listings/SEO, ses coûts, quotas et droits ; vérifier en parallèle Cloudflare, Neon, `CityIndex` et la méthode GMB. Reporter chaque résultat dans les tickets et la spec. Puis seulement fermer Wayfinder global et produire la spec globale.
+La prochaine action n'est pas de coder le produit complet. Exécuter les gates post-spec, en commençant par le vertical slice réel de l'issue 73 et les vérifications fournisseurs déjà documentées, puis planifier l'implémentation de la tranche audit. L'issue 40 reste la gate de revue juridique par marché avant toute activation commerciale ou copy contractuelle.
 
 Ne déclarer `production-ready`, `commercialisable` ou `audit validé` qu'après le vertical slice réel et les gates de la spec.
 

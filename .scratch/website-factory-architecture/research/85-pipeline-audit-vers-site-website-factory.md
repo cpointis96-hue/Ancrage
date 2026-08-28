@@ -11,11 +11,11 @@ Le cockpit local propose « Synchroniser ». Le backend local télécharge les l
 
 ## 1. Pipeline A — Audit and acquisition value
 
-`CITY_SELECTED` → `MATCHING` → `GMB_REPORT_READY` when available → `SEO_REPORT_IN_PROGRESS` → `FINAL_REPORT_READY`.
+`CITY_SELECTED` → `MATCHING` → `GMB observation || SEO base` selon les préconditions → `GMB_REPORT_READY` when available → `SEO_REPORT_IN_PROGRESS` → `FINAL_REPORT_READY`.
 
 If no reliable GMB match exists after the city and address are known, use `LOCAL_PREVIEW_WITHOUT_GMB` instead of fabricating a GMB result. The local preview can still include site discovery, keywords, direct competitors, and local SEO opportunities.
 
-The report is displayed progressively. The first GMB result is not discarded while the full audit continues. The final report combines the GMB and SEO modules, with sources, dates, confidence, findings, recommendations, and limits kept distinct.
+The report is displayed progressively. The first GMB result is not discarded while the base and full SEO audit continue. The final report combines the GMB and SEO modules, with sources, dates, confidence, findings, recommendations, and limits kept distinct. The base SEO branch does not wait for the GMB report or the five photos; the general SEO branch waits for the base results and the explicit resolution of the GMB branch.
 
 ## 2. Transition to Pipeline B
 

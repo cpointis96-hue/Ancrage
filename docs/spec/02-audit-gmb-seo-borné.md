@@ -13,12 +13,13 @@ nom + ville structurée
   -> rapprochement prudent
   -> confirmation ou branche locale
   -> domaine confirmé, si disponible
-  -> audit GMB public
-  -> audit SEO borné et concurrence locale
+  -> audit GMB public || audit SEO de base
+  -> rapport GMB livré dès disponibilité
+  -> audit SEO général avec GMB + SEO de base + concurrence + mots-clés
   -> rapport final
 ```
 
-L'audit GMB est affiché dès que son checkpoint est validé. Les collectes techniques indépendantes peuvent être préparées après confirmation de l'identité et du domaine, mais l'audit SEO complet, la concurrence et les mots-clés démarrent après ce rapport GMB et consomment ses données avec celles du site et les autres sources autorisées. Le rapport final réunit ensuite les modules sans présenter une branche absente comme négative ou inexistante.
+Après confirmation suffisante de l'identité et du domaine lorsqu'il existe, l'observation GMB et l'audit SEO de base démarrent en parallèle. Le `ProgressiveIntake` peut continuer en parallèle et n'attend pas les cinq photos pour l'audit. L'audit GMB est affiché dès que son checkpoint et son rapport HTML sont validés. L'audit SEO général poursuit ensuite son enrichissement avec les données GMB, du site, des mots-clés, de la concurrence et les autres sources autorisées. Le rapport final HTML/PDF réunit ensuite les modules sans présenter une branche absente comme négative ou inexistante.
 
 ## 2. Entrées et branches
 
@@ -66,12 +67,14 @@ Chaque run conserve : profil et règles versionnés, scope, deadline, budget, do
 2. Produire `EstablishmentMatch` avec candidats, provenance, conflits et décision.
 3. Demander confirmation si plusieurs candidats ou confiance insuffisante.
 4. Découvrir et confirmer le `SiteCandidate`, sans inventer de domaine.
-5. Lancer l'observation GMB publique si autorisée par la branche.
-6. Préparer `CrawlRun` après les contrôles de sécurité et de budget.
-7. Exécuter crawl HTML borné, mesures ciblées et règles déterministes.
+5. Lancer en parallèle l'observation GMB publique si autorisée et l'audit SEO de base si un domaine fiable est confirmé, sans attendre la fin des photos ou du `ProgressiveIntake` non bloquant.
+6. Afficher `GMB_REPORT_READY` dès que le rapport GMB HTML est validé.
+7. Déclencher l'audit SEO général avec le rapport GMB lorsqu'il existe, le crawl et les mesures de base, puis les mots-clés et concurrents autorisés.
 8. Sélectionner les concurrents comme pistes, puis séparer faits et interprétations.
 9. Faire intervenir l'IA uniquement sur les findings prouvés et autorisés.
 10. Exécuter revue indépendante et composer le rapport progressif puis final.
+
+Le gate de séquencement porte sur l'audit SEO général, pas sur l'audit SEO de base : le premier ne peut pas être composé sans les résultats de base et la résolution explicite de la branche GMB — `GMB_REPORT_READY` lorsqu'un rapport est disponible, ou `PARTIAL`/`BLOCKED` justifié lorsqu'elle ne peut pas aboutir. Le crawl et les mesures de base peuvent donc avancer en parallèle avec GMB, sans produire l'audit général avant les données nécessaires. L'intake critique reste une précondition de génération du site, pas une précondition générale de l'audit.
 
 ### Gates bloquants
 
@@ -210,6 +213,8 @@ La spec est prête pour planification de la tranche d'audit lorsque les décisio
 8. Aucune copy commerciale ne cite Screaming Frog, un prix provider, un quota ou une garantie de classement sans preuve correspondante.
 
 ## 14. Vertical slice obligatoire avant commercialisation
+
+La tranche de génération et de livraison qui consomme ce rapport est spécifiée dans [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md). Elle ne commence qu'après `FINAL_REPORT_READY` et un e-mail valide.
 
 Le jeu de test doit contenir au minimum : restaurant vitrine, WordPress, site multilingue, site JavaScript, erreurs SEO volontaires, blocage du crawl et site sans données structurées. Chaque cible doit avoir une autorisation écrite, un identifiant de fixture, un hash de configuration, un budget et une politique de suppression.
 

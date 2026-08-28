@@ -32,11 +32,11 @@ Le système affiche ce qu'il a trouvé et demande uniquement les champs critique
 
 ### Étape 4 — Valeur progressive
 
-L'audit GMB apparaît dès qu'il est prêt. L'audit SEO reste visible comme progression réelle. Un rapport partiel est utile mais clairement marqué.
+L'audit GMB apparaît dès qu'il est prêt. L'audit SEO de base peut avoir démarré en parallèle et l'audit SEO général reste visible comme progression réelle. Un rapport partiel est utile mais clairement marqué.
 
 ### Étape 5 — Préparer mon site
 
-Le clic lance une courte préparation honnête puis demande l'e-mail. Avant cet e-mail, aucune génération réelle ne commence.
+Le clic lance une courte préparation honnête puis demande l'e-mail. L'écran affiche ensuite les éléments manquants, notamment les photos et les informations métier, par petites étapes. Un e-mail valide enregistre la préparation, mais aucune génération réelle ne commence avant la checklist complète.
 
 ## Rapport public
 

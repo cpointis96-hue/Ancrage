@@ -36,9 +36,9 @@ Ancrage fournit un diagnostic local sourcé et une démo personnalisée avant to
 - nom et ville structurée en entrée ;
 - identification prudente, branche avec ou sans fiche GMB, découverte de site ;
 - enrichissement puis intake progressif des données critiques et des cinq photos ;
-- audit GMB public quand une fiche est confirmée, audit SEO borné si un domaine fiable est disponible ;
+- audit GMB public et audit SEO de base en parallèle quand leurs préconditions sont satisfaites ;
 - restitution progressive, rapport final web et export PDF pendant sept jours ;
-- CTA `Préparer mon site`, collecte de l'e-mail à ce moment uniquement, puis `WebsiteFactoryPipelineRun` ;
+- CTA `Préparer mon site`, collecte de l'e-mail à ce moment uniquement, `DemoRequest` de préparation, puis `WebsiteFactoryPipelineRun` après checklist complète ;
 - préparation d'une démo, QA et validation opérateur avant envoi du lien privé.
 
 ### Hors périmètre V1
@@ -88,12 +88,12 @@ La session navigateur ne constitue pas la source de vérité. Une reprise rechar
 3. Après `Nom + ville sélectionnée`, le service crée un `Prospect` et un `EstablishmentMatch`, puis affiche une progression réelle fondée sur des `ProgressCheckpoint`.
 4. L'enrichissement recherche les sources autorisées, les candidats, le site éventuel, les coordonnées, horaires, menu, prix, photos et conflits. Il ne transforme pas une source publique en fait validé sans provenance.
 5. Une correspondance unique forte affiche la fiche et une ou deux images, puis continue automatiquement après un court temps de lecture. Un lien secondaire `Ce n'est pas le bon établissement` ouvre la branche de correction, sans créer un second bouton concurrent. Plusieurs correspondances affichent deux ou trois candidats sélectionnables, puis un seul bouton contextuel `Continuer avec cet établissement` apparaît après sélection.
-6. Après identification suffisante, le formulaire progressif demande seulement les `RequiredInput` manquants ou contradictoires. Il collecte ensuite les cinq photos obligatoires : façade, deux plats signatures, intérieur ou terrasse, équipe, propriétaires ou service.
-7. Si la fiche existe, l'audit GMB est lancé avec les seules informations publiques autorisées. Si un domaine fiable existe, l'audit SEO borné peut être lancé. Les branches indépendantes peuvent tourner en parallèle après validation d'identité et de domaine.
+6. Après identification suffisante, le formulaire progressif demande seulement les `RequiredInput` manquants ou contradictoires. Il peut proposer en option un lien de menu, une fourchette de prix, la spécialité principale, une correction ou une première photo. Les cinq catégories de photos — façade, deux plats signatures, intérieur ou terrasse, équipe, propriétaires ou service — peuvent être collectées progressivement, mais aucune ne bloque l'audit.
+7. Si la fiche existe, l'observation GMB et l'audit SEO de base démarrent en parallèle dès que l'identité et le domaine sont suffisamment confirmés. Le `ProgressiveIntake` et les photos peuvent continuer en parallèle. Dès que son rapport HTML est validé et livré, l'audit SEO général poursuit son enrichissement avec les données GMB, du site, des mots-clés et des concurrents autorisés. Si aucun domaine fiable n'existe, la branche locale reste bornée et aucun crawl n'est lancé.
 8. Dès `GMB_REPORT_READY`, l'interface montre les premières conclusions et indique honnêtement que l'audit SEO continue. Elle ne remplace pas le rapport GMB par un spinner.
-9. Dès `FINAL_REPORT_READY`, le rapport rassemble GMB et SEO, sépare faits, calculs, interprétations, suggestions et limites, et expose son périmètre. Le PDF est disponible pour sept jours.
-10. Le CTA `Préparer mon site` ne démarre rien avant le clic. Au clic, l'interface peut montrer une préparation, puis demande un e-mail valide. Le consentement marketing est séparé et facultatif.
-11. Après e-mail valide, le système fige un snapshot de l'intake et des `AgentConfigurationVersion`, puis démarre le `WebsiteFactoryPipelineRun`. Il compose un `SiteSpec`, rend un artefact déterministe, exécute les gates et produit un `AcceptanceReport`.
+9. Dès `FINAL_REPORT_READY`, le rapport rassemble GMB et SEO, sépare faits, calculs, interprétations, suggestions et limites, et expose son périmètre. Le PDF complet GMB + SEO est disponible pour sept jours, sans e-mail, compte ou paiement.
+10. Le CTA `Préparer mon site` ne démarre rien avant le clic. Après `FINAL_REPORT_READY`, il reste disponible même si des éléments manquent : l'écran de préparation affiche la checklist et demande un e-mail valide. Le consentement marketing est séparé et facultatif.
+11. Après `FINAL_REPORT_READY`, le plan de contenu est autorisé. Le clic et un e-mail valide créent ou reprennent une `DemoRequest` de préparation, mais ne lancent pas encore la génération si le dossier critique, les cinq catégories de photos ou les droits manquent. Dès que la checklist est complète, le système fige le snapshot de l'intake et des `AgentConfigurationVersion`, puis démarre le `WebsiteFactoryPipelineRun`. Il compose un `SiteSpec`, rend un artefact déterministe, exécute les gates et produit un `AcceptanceReport`.
 12. La démo reste invisible au prospect jusqu'à `READY_FOR_OWNER_REVIEW`, puis validation explicite de l'opérateur. Après validation, l'e-mail transactionnel envoie un lien privé `noindex`, expirant et révocable, accessible sept jours après présentation.
 13. La démo contient ses CTA de contact. Un éventuel CTA de mise en production est unique, clairement secondaire par rapport à la découverte de la démo, et le paiement et la production restent hors de ce slice.
 
@@ -117,7 +117,7 @@ Une contradiction sur identité, adresse, téléphone, horaires, prix, menu ou d
 
 ### E-mail
 
-Avant `Préparer mon site`, aucun e-mail n'est requis pour accéder à la valeur d'audit. Au CTA, le champ est obligatoire pour démarrer la génération et livrer la démo. Le système valide syntaxe, normalisation et anti-abus serveur, sans afficher ni conserver de mot de passe. Le consentement marketing est une donnée distincte.
+Avant `Préparer mon site`, aucun e-mail n'est requis pour accéder à la valeur d'audit. Au CTA, le champ est obligatoire pour enregistrer ou reprendre la préparation et, avec la checklist complète, démarrer la génération et livrer la démo. Le système valide syntaxe, normalisation et anti-abus serveur, sans afficher ni conserver de mot de passe. Le consentement marketing est une donnée distincte.
 
 ## 7. Modèle d'état et machine à états
 
@@ -153,8 +153,12 @@ Depuis chaque état asynchrone, les états transverses sont `LOADING`, `EMPTY`, 
 | `MATCHING -> ENRICHING` | match fort ou confirmation | sélectionner un candidat ambigu |
 | `ENRICHING -> INTAKE_REQUIRED` | required inputs calculés | demander un formulaire complet arbitraire |
 | `AUDIT -> GMB_REPORT_READY` | checkpoint GMB validé | attendre l'audit SEO pour afficher GMB |
-| `FINAL_REPORT_READY -> PREPARING_SITE` | clic prospect | lancer sans CTA |
+| `AUDIT_START -> GMB_REPORT_READY + SEO_BASE_IN_PROGRESS` | identité suffisamment confirmée ; domaine confirmé pour la branche SEO | attendre la fin de l'intake ou de GMB pour commencer le SEO de base |
+| `GMB_REPORT_READY -> SEO_REPORT_IN_PROGRESS` | rapport GMB HTML livré et résultats SEO de base réutilisables ; en absence de rapport, branche GMB explicitement `PARTIAL`/`BLOCKED` | publier l'audit général comme si une donnée GMB existait |
+| `FINAL_REPORT_READY -> PREPARING_SITE` | clic prospect, que le dossier soit complet ou non | lancer la génération sans checklist |
 | `PREPARING_SITE -> EMAIL_CONFIRMED` | e-mail valide | commencer la génération avant e-mail |
+| `EMAIL_CONFIRMED -> PREPARING_SITE / PARTIAL` | e-mail valide mais checklist incomplète | lancer le pipeline avec des éléments manquants |
+| `EMAIL_CONFIRMED -> SITE_BUILDING` | dossier critique, cinq photos et droits complets | lancer avec des éléments manquants ou non autorisés |
 | `SITE_BUILDING -> READY_FOR_OWNER_REVIEW` | artefact et gates produits | publier ou envoyer directement |
 | `READY_FOR_OWNER_REVIEW -> READY_FOR_PROSPECT` | validation opérateur explicite | présenter avec un BLOCK ou sans provenance |
 
@@ -183,7 +187,7 @@ Les noms suivent [`CONTEXT.md`](../../CONTEXT.md). Les payloads ci-dessous sont 
 | `SEOFinding` | type, severity, evidenceRefs, classification, limits | faits et recommandations séparés |
 | `ProgressCheckpoint` | key, status, evidenceRefs, completedAt, displayText | seul Control Plane autorise `completed` |
 | `SEOReport` | modules, scope, generatedAt, expiresAt, pdfRef | accès signé et expirant |
-| `DemoRequest` | prospectRef, auditRef, emailContactRef, inputSnapshotRef | créée après CTA et e-mail |
+| `DemoRequest` | prospectRef, auditRef, emailContactRef, checklist, preparationStatus, inputSnapshotRef | créée après CTA et e-mail ; snapshot nullable tant que la préparation est incomplète |
 | `WebsiteFactoryPipelineRun` | configVersions, budgetRefs, checkpoints, status | aucune inférence non autorisée |
 | `AcceptanceReport` | gates, PASS/WARN/BLOCK, evidenceRefs, operatorDecision | BLOCK empêche présentation |
 
@@ -219,15 +223,15 @@ Affiche les données trouvées avec badge de classification et source accessible
 
 Affiche une barre de progression en cinq étapes, toujours dans le même ordre : `Identifier`, `Comprendre`, `Auditer`, `Préparer`, `Découvrir`. Chaque étape possède un état `terminée`, `en cours`, `à venir` ou `bloquée`, avec une phrase courte et la dernière mise à jour. La barre indique l'avancement réel des checkpoints, jamais un pourcentage estimé.
 
-`GMB_REPORT_READY` montre le rapport GMB immédiatement et la continuation SEO. Un module sans source affiche une limite, pas une carte vide trompeuse. Chaque finding garde une preuve et une qualification. La progression reste compacte sur mobile : libellé de l'étape courante, nombre d'étapes terminées et détail développable. Sur desktop, les cinq étapes peuvent être visibles en ligne, sans transformer la barre en tableau de bord.
+`GMB_REPORT_READY` montre le rapport GMB immédiatement. L'audit SEO de base a pu démarrer en parallèle ; le checkpoint GMB permet ensuite à l'audit SEO général de réutiliser les résultats de base et d'intégrer les données GMB, les mots-clés et les concurrents autorisés. Un module sans source affiche une limite, pas une carte vide trompeuse. Chaque finding garde une preuve et une qualification. La progression reste compacte sur mobile : libellé de l'étape courante, nombre d'étapes terminées et détail développable. Sur desktop, les cinq étapes peuvent être visibles en ligne, sans transformer la barre en tableau de bord.
 
 ### E4, rapport final
 
-Ordre : résumé actionnable, établissement et périmètre, GMB, SEO technique, contenu et intentions, concurrence bornée, opportunités, limites et sources. Une seule action primaire est visible : `Préparer mon site` lorsque le dossier est complet. `Télécharger le rapport PDF` est un lien secondaire placé près du titre du rapport. Si le rapport est partiel, l'action primaire devient `Compléter mon dossier` ; la reprise technique reste une action secondaire attachée au module en erreur. Aucun écran ne présente ces actions sous forme de deux boutons concurrents.
+Ordre : résumé actionnable, établissement et périmètre, GMB, SEO technique, contenu et intentions, concurrence bornée, opportunités, limites et sources. Après `FINAL_REPORT_READY`, une seule action primaire est visible : `Préparer mon site`, même si le dossier est incomplet. L'écran de préparation montre alors les éléments manquants et l'action `Enregistrer et compléter` ; il ne présente pas un build comme déjà lancé. `Télécharger le rapport PDF` est un lien secondaire placé près du titre du rapport. Si le rapport est partiel, la reprise technique reste une action secondaire attachée au module en erreur. Aucun écran ne présente ces actions sous forme de deux boutons concurrents.
 
 ### E5, préparation et e-mail
 
-Après clic sur `Préparer mon site`, ouvrir une étape dédiée qui explique calmement : « Nous utiliserons cette adresse uniquement pour vous envoyer le lien de votre démo après vérification. » Montrer les étapes `préparer les informations`, `construire`, `contrôler`, sans prétendre que le site existe déjà. Le formulaire ne contient qu'un champ e-mail, une mention de confidentialité et, séparément, une case marketing facultative. Une seule action primaire `Lancer la préparation` est disponible après validation. Annuler ou revenir au rapport est un lien secondaire, pas un bouton concurrent. Erreurs inline, pas de perte de rapport. Succès : état `EMAIL_CONFIRMED` puis progression du build.
+Après clic sur `Préparer mon site`, ouvrir une étape dédiée qui explique calmement : « Nous utiliserons cette adresse uniquement pour vous envoyer le lien de votre démo après vérification. » Montrer les étapes `préparer les informations`, `construire`, `contrôler`, sans prétendre que le site existe déjà. Afficher la checklist des éléments manquants et permettre d'ajouter les photos, l'histoire et les informations métier par petites étapes. Le formulaire contient le champ e-mail, une mention de confidentialité et, séparément, une case marketing facultative. Si la checklist est incomplète, l'action est `Enregistrer et compléter` et aucun run ne démarre. Lorsqu'elle est complète, l'action devient `Lancer la préparation`. Annuler ou revenir au rapport est un lien secondaire, pas un bouton concurrent. Erreurs inline, pas de perte de rapport.
 
 ### E6, attente de génération
 
@@ -300,7 +304,9 @@ Chaque événement doit être idempotent, horodaté, corrélé à un run opaque,
 - [ ] `Ce n'est pas mon établissement` demande seulement l'adresse.
 - [ ] Aucun crawl ne démarre sans domaine fiable et autorisé.
 - [ ] Le formulaire après enrichissement ne demande que les champs critiques manquants ou contradictoires.
+- [ ] Le menu, la fourchette de prix et les enrichissements précoces restent optionnels et n'empêchent pas l'audit.
 - [ ] La génération réelle ne démarre pas avant clic `Préparer mon site` et e-mail valide.
+- [ ] Un clic et un e-mail valides peuvent enregistrer une préparation incomplète, mais aucun `WebsiteFactoryPipelineRun` ne démarre avant les données critiques, les cinq photos et les droits requis.
 - [ ] L'e-mail marketing est séparé de la livraison transactionnelle.
 - [ ] GMB est visible dès son checkpoint, sans attendre SEO.
 - [ ] Le rapport final sépare GMB, SEO, preuves, classifications et limites.
@@ -401,8 +407,8 @@ Ces questions ne rouvrent pas les décisions verrouillées. Elles définissent l
 
 1. `Spec UX public Ancrage` : prototypes des écrans E0 à E7, direction JetBrains Mono, états mobiles, rapport et accessibilité.
 2. `Spec API Control Plane public` : contrats JSON, transitions, idempotence, tokens, événements et erreurs.
-3. `Spec audit borné` : profils, SSRF, crawler, preuves, budgets, PDF et lifecycle.
-4. `Spec intake média` : uploads, droits, scan, R2, synchronisation et suppression accusée.
-5. `Spec Website Factory pipeline` : `SiteSpec`, renderer, gates, `AcceptanceReport`, revue opérateur et livraison.
+3. [`02-audit-gmb-seo-borné.md`](02-audit-gmb-seo-borné.md) : profils, SSRF, crawler, preuves, budgets, PDF et lifecycle.
+4. [`04-website-factory-demo-v1.md`](04-website-factory-demo-v1.md) : plan post-rapport, `SiteSpec`, renderer, gates, `AcceptanceReport`, revue opérateur et livraison.
+5. Tranche ultérieure achat et production : compte, paiement, domaine, `SiteApproval` et `ProductionSite`.
 
 L'implémentation ne doit commencer qu'après résolution ou acceptation testable des questions ouvertes ci-dessus et validation du prototype public. Cette spec est complète pour cadrer le vertical slice fonctionnel, mais elle ne prétend pas clôturer les vérifications fournisseurs, sécurité ou design que la carte Wayfinder garde ouvertes.

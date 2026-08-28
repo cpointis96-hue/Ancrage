@@ -69,16 +69,19 @@ flowchart TD
   D2 -- "Aucune fiche fiable" --> N1
 
   M4 --> D5{"Site officiel fiable ?"}
-  D5 -- "Oui" --> A1["Crawl HTML borné + audit SEO"]
-  D5 -- "Non" --> A2["NO_SITE_FOUND : aucun crawl"]
+  D5 -- "Oui" --> P1["Lancer GMB + SEO de base en parallèle"]
+  D5 -- "Non" --> P2["Lancer GMB si disponible, aucun crawl"]
   N1 --> N2["Demander uniquement l'adresse"]
   N2 --> N3["LOCAL_PREVIEW_WITHOUT_GMB"]
   N3 --> D6{"Site officiel fiable ?"}
-  D6 -- "Oui" --> A1
-  D6 -- "Non" --> A2
+  D6 -- "Oui" --> P1
+  D6 -- "Non" --> P2
 
-  A1 --> I1["Enrichissement + dossier critique"]
-  A2 --> I1
+  P1 --> G1["Observation GMB si disponible"]
+  P1 --> B1["Audit SEO de base si site confirmé"]
+  P1 --> I1["ProgressiveIntake en parallèle"]
+  P2 --> G1
+  P2 --> I1
   I1 --> D7{"Dossier complet ?"}
   D7 -- "Non ou contradictoire" --> I2["ProgressiveIntake ciblé"]
   I2 --> D8{"Réponse reçue et cohérente ?"}
@@ -86,24 +89,28 @@ flowchart TD
   D8 -- "Oui" --> I3["Dossier complet"]
   D7 -- "Oui" --> I3
 
-  I3 --> G1["Audit GMB si disponible"]
-  G1 --> G2["GMB_REPORT_READY : afficher maintenant"]
-  G2 --> G3["SEO_REPORT_IN_PROGRESS"]
-  G3 --> G4["FINAL_REPORT_READY : GMB + SEO"]
-  A2 --> G5["Rapport local borné sans GMB ou sans site"]
+  G1 --> D_GMB{"Rapport GMB disponible ?"}
+  D_GMB -- "Oui" --> G2["GMB_REPORT_READY : afficher maintenant"]
+  D_GMB -- "Non" --> G5["Aperçu local borné sans GMB"]
+  G2 --> G3["Audit SEO général\nGMB si disponible + SEO de base + concurrents + mots-clés"]
+  B1 --> G3
+  G3 --> G4["FINAL_REPORT_READY : rapport complet ou local borné"]
+  G5 --> G3
   G4 --> R1["Rapport complet consultable"]
-  G5 --> R1
-  R1 --> D9{"Rapport complet arrivé ?"}
+  R1 --> D9{"Rapport final arrivé ?"}
   D9 -- "Non, SEO continue" --> R1
   D9 -- "Oui" --> PDF["Petit bouton rond PDF\nRapport complet GMB + SEO"]
   PDF --> C0["CTA Préparer mon site"]
-  C0 --> D10{"Clic Préparer mon site ?"}
-  D10 -- "Non" --> R1
-  D10 -- "Oui" --> C1["Préparation honnête"]
+  C0 --> D_CTA{"Clic Préparer mon site ?"}
+  D_CTA -- "Non" --> R1
+  D_CTA -- "Oui" --> C1["Préparation honnête"]
   C1 --> C2["Demander e-mail"]
   C2 --> D_EMAIL{"E-mail valide ?"}
   D_EMAIL -- "Non" --> C2B["Erreur, aucun run"] --> C2
-  D_EMAIL -- "Oui" --> W1["WebsiteFactoryPipelineRun"]
+  D_EMAIL -- "Oui" --> C3["DemoRequest enregistrée, checklist de préparation"]
+  C3 --> D_READY{"Dossier, photos et droits complets ?"}
+  D_READY -- "Non" --> C4["Enregistrer et compléter"] --> I2
+  D_READY -- "Oui" --> W1["WebsiteFactoryPipelineRun"]
 
   W1 --> W2["Snapshot, versions, budget"]
   W2 --> W3["Faits + findings + contenu"]
@@ -122,9 +129,9 @@ flowchart TD
   D2B --> D13["Lien privé démo, 7 jours"]
   D13 --> D14{"Achat ?"}
   D14 -- "Non" --> X2["Expiration puis archive"]
-  D14 -- "Oui" --> P1["Compte + paiement + domaine"]
-  P1 --> P2["SiteApproval + nouvelle version"]
-  P2 --> P3["Gates production puis publication"]
+  D14 -- "Oui" --> BUY1["Compte + paiement + domaine"]
+  BUY1 --> BUY2["SiteApproval + nouvelle version"]
+  BUY2 --> BUY3["Gates production puis publication"]
 ~~~
 
 ## 1. Première arrivée et identification
@@ -182,7 +189,7 @@ Une fiche forte est affichée avant la poursuite automatique. Plusieurs fiches e
 
 ### Si un site fiable est trouvé
 
-Le système crée un SiteCandidate et autorise un crawl borné. Le profil gratuit provisoire est de 50 URL maximum, 3 minutes et 25 Mo, en HTML et mesures ciblées, sans rendu JavaScript complet par défaut. Le rapport affiche son vrai périmètre, ses dates, ses preuves et ses limites.
+Le système crée un SiteCandidate et prépare un crawl borné. L'audit SEO de base peut démarrer en parallèle de l'observation GMB. L'audit SEO général, les mots-clés et la concurrence utilisent ensuite le rapport GMB dès qu'il est disponible, avec le site et les preuves de base. Le profil gratuit provisoire est de 50 URL maximum, 3 minutes et 25 Mo, en HTML et mesures ciblées, sans rendu JavaScript complet par défaut. Le rapport affiche son vrai périmètre, ses dates, ses preuves et ses limites.
 
 ### Si aucun site fiable n'est trouvé
 
@@ -265,21 +272,20 @@ RECEIVED
 -> MATCHING
 -> CONFIRMATION_REQUIRED ou AUTO_CONTINUE
 -> LOCAL_PREVIEW_WITHOUT_GMB si nécessaire
--> ENRICHMENT / ProgressiveIntake
+-> ENRICHMENT
 -> SCHEDULED
--> CRAWLING si domaine fiable
--> NORMALIZING
--> RULES_ANALYZED
+-> GMB observation || audit SEO de base || ProgressiveIntake, selon les préconditions de chaque branche
+-> GMB_REPORT_READY si GMB disponible
+-> SEO_REPORT_IN_PROGRESS avec GMB, site, mots-clés et concurrence autorisés
+-> CRAWLING / NORMALIZING / RULES_ANALYZED
 -> AI_INTERPRETATION si utile
 -> QUALITY_REVIEW
--> GMB_REPORT_READY si GMB disponible
--> SEO_REPORT_IN_PROGRESS
 -> FINAL_REPORT_READY
 ~~~
 
-Les checkpoints affichés viennent du Control Plane. La barre de progression ne doit pas être une animation indépendante du travail réel.
+Les checkpoints affichés viennent du Control Plane. La barre de progression ne doit pas être une animation indépendante du travail réel. Le rapport GMB est livré dès son checkpoint ; l'audit SEO général poursuit ensuite son enrichissement sans attendre inutilement la fin de toutes les autres branches.
 
-Après identité et domaine confirmés, les travaux indépendants peuvent être parallélisés : audit GMB public, sonde du site, crawl HTML, mesures techniques, provenance et coûts. Après normalisation, les règles peuvent être traitées par famille : indexabilité, contenu, liens, images, données structurées, performance et local.
+Après identité et domaine confirmés lorsqu'ils sont nécessaires, l'observation GMB et l'audit SEO de base sont lancés en parallèle selon leurs préconditions respectives. Le `ProgressiveIntake` et les photos peuvent continuer sans bloquer les audits. Le rapport GMB est livré dès son checkpoint. L'audit SEO général démarre ou poursuit alors son enrichissement avec la sortie GMB, le crawl et les mesures de base, les mots-clés et la concurrence autorisés. Après normalisation, les règles peuvent être traitées par famille : indexabilité, contenu, liens, images, données structurées, performance et local.
 
 ### Restitution
 
@@ -495,6 +501,7 @@ journey:
     - PARTIAL
     - BLOCKED_MISSING_DATA
     - GMB_REPORT_READY
+    - SEO_BASE_IN_PROGRESS
     - SEO_REPORT_IN_PROGRESS
     - FINAL_REPORT_READY
     - PREPARING_SITE
@@ -536,15 +543,15 @@ NEW
  -> MATCHING
  -> MATCH_CONFIRMED | ASK_CONFIRMATION | ASK_ADDRESS | MATCH_BLOCKED
  -> ENRICHING
- -> INTAKE_REQUIRED | INTAKE_PARTIAL | INTAKE_COMPLETE
- -> AUDIT_IN_PROGRESS
- -> GMB_REPORT_READY si la branche GMB existe
+ -> AUDIT_IN_PROGRESS || PROGRESSIVE_INTAKE
+ -> GMB_REPORT_READY et SEO_BASE_IN_PROGRESS en parallèle si leurs préconditions sont satisfaites
  -> SEO_REPORT_IN_PROGRESS ou LOCAL_PREVIEW_WITHOUT_GMB
  -> FINAL_REPORT_READY
  -> PREPARING_SITE
  -> EMAIL_REQUIRED
  -> EMAIL_CONFIRMED
- -> SITE_BUILDING
+ -> SITE_BUILDING si dossier, photos et droits complets
+ -> PREPARING_SITE / PARTIAL si des éléments manquent
  -> READY_FOR_OWNER_REVIEW
  -> READY_FOR_PROSPECT
  -> DEMO_PRESENTED
@@ -573,8 +580,11 @@ doit nommer la cause, la prochaine action et la preuve ou le ticket attendu.
 | `MATCHING -> ENRICHING` | match fort ou confirmation | choisir un candidat ambigu |
 | `ENRICHING -> INTAKE_REQUIRED` | champs manquants calculés | afficher un long questionnaire arbitraire |
 | `AUDIT -> GMB_REPORT_READY` | checkpoint GMB validé | attendre SEO pour afficher GMB |
-| `FINAL_REPORT_READY -> PREPARING_SITE` | clic du prospect sur le CTA | demander l'e-mail avant génération |
+| `AUDIT -> SEO_BASE_IN_PROGRESS` | domaine confirmé et contrôles d'accès passés | attendre le rapport GMB ou les cinq photos pour commencer |
+| `GMB_REPORT_READY -> SEO_REPORT_IN_PROGRESS` | rapport GMB livré et base SEO disponible ou explicitement partielle | publier l'audit général sans sortie GMB |
+| `FINAL_REPORT_READY -> PREPARING_SITE` | clic du prospect sur le CTA | lancer la génération sans checklist |
 | `PREPARING_SITE -> EMAIL_CONFIRMED` | e-mail valide | générer avant e-mail |
+| `EMAIL_CONFIRMED -> SITE_BUILDING` | dossier critique, cinq photos et droits complets | lancer avec des éléments manquants ou non autorisés |
 | `SITE_BUILDING -> READY_FOR_OWNER_REVIEW` | artefact et gates produits | publier ou envoyer directement |
 | `READY_FOR_OWNER_REVIEW -> READY_FOR_PROSPECT` | validation opérateur | présenter avec BLOCK ou provenance critique absente |
 
@@ -611,9 +621,9 @@ IA :
    logo dans certains cas, alors que le parcours de référence présente les
    cinq catégories comme obligatoires. La règle produit doit préciser si cette
    exception bloque ou non la génération.
-3. **Statut des tickets 77 et 78** : ils sont encore marqués ouverts alors
-   qu'ils contiennent déjà une décision de parcours. La décision de 87 reste
-   la référence commerciale.
+3. **Statut des tickets 77 et 78** : ils contiennent déjà une décision de
+   parcours et sont résolus. Leurs preuves d'exécution restent des gates ; la
+   décision de 87 reste la référence commerciale.
 4. **Portée** : la spec V1 cadre le vertical slice public et exclut le cockpit
    complet et la production, tandis que la doc UX 07 décrit le parcours cible
    jusqu'à la conversion. Il faut distinguer parcours cible, vertical slice et

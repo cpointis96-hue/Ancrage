@@ -17,7 +17,7 @@ Corriger le parcours public autour de l’audit GMB, de l’audit SEO, du rappor
 
 ## Séquence canonique
 
-GMB_REPORT_READY → afficher le rapport GMB → SEO en cours et progression → FINAL_REPORT_READY (GMB + SEO) → afficher le rapport complet + bouton PDF + CTA Préparer mon site → clic CTA → demander l’e-mail → valider l’e-mail → lancer la génération → QA → validation opérateur → envoyer la démo.
+GMB_REPORT_READY → afficher le rapport GMB → SEO de base déjà lancé en parallèle, puis SEO général en cours et progression → FINAL_REPORT_READY (GMB + SEO) → afficher le rapport complet + bouton PDF + CTA Préparer mon site → clic CTA → demander l’e-mail → valider l’e-mail → lancer la génération → QA → validation opérateur → envoyer la démo.
 
 ## Correction explicite de l’ancien schéma
 
