@@ -135,6 +135,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
         if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
+        if (kind === 'final' && report) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
       }
       if (!reports.gmb) {
         reports.gmb = { html: `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Rapport GMB · ${request.input.name}</title></head><body><h1>${request.input.name}</h1><p>${request.input.city.label}</p><p>Rapport GMB partiel : le provider public n’a pas livré de résultat exploitable.</p></body></html>` };

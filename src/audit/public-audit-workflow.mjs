@@ -37,6 +37,34 @@ function renderReport(result, kind) {
     : `<p>Site : ${escapeHtml(result.input.domain ?? result.modules.site?.candidates?.[0]?.url ?? 'non confirmé')}.</p><p>${result.modules.seo?.summary ? `${escapeHtml(result.modules.seo.summary.pagesAnalyzed)} page(s) analysée(s).` : 'Audit SEO de base non exécuté.'}</p><p>${result.modules.keywords?.ideas?.length ?? 0} piste(s) de mots-clés et ${result.modules.keywords?.competitors?.length ?? 0} concurrent(s) retournés.</p>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)}</title><style>body{font:16px/1.55 system-ui;max-width:860px;margin:auto;padding:24px;color:#20211f;background:#f5f5f2}header{background:#173024;color:#eef4ec;padding:32px}header small{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:24px 0}li{margin:8px 0;overflow-wrap:anywhere}small{color:#5a635c}</style></head><body><header><small>${escapeHtml(title.toUpperCase())} · ${escapeHtml(result.status)}</small><h1>${escapeHtml(result.input.name)}</h1><p>${escapeHtml(result.input.city.label)} · Observation : ${escapeHtml(result.startedAt)}</p></header><main><section><h2>Périmètre</h2>${modules}</section><section><h2>Étapes</h2><ul>${stages}</ul></section><section><h2>Limites</h2><p>Les branches absentes, partielles ou non confirmées restent explicitement signalées. Aucun résultat provider non observé n’est remplacé par une valeur synthétique.</p></section><section><h2>Preuves</h2>${evidence ? `<ul>${evidence}</ul>` : '<p>Aucune preuve provider livrée.</p>'}</section></main></body></html>`;
 }
+function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
+function renderPdf(result) {
+  const lines = [
+    'Rapport final SEO et concurrence',
+    result.input.name,
+    `${result.input.city.label} - observation ${result.startedAt}`,
+    '',
+    `Statut : ${result.status}`,
+    `Etablissements retournes : ${result.modules.gmb?.candidates?.length ?? 0}`,
+    `Pistes de mots-cles : ${result.modules.keywords?.ideas?.length ?? 0}`,
+    `Concurrents : ${result.modules.keywords?.competitors?.length ?? 0}`,
+    `Preuves provider : ${result.evidence.length}`,
+    '',
+    'Les branches absentes, partielles ou non confirmees restent signalees.',
+  ];
+  const commands = ['BT', '/F1 11 Tf', '50 760 Td', ...lines.flatMap((line, index) => [index ? '0 -18 Td' : '', `(${pdfText(line)}) Tj`]).filter(Boolean), 'ET'].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(commands, 'ascii')} >>\nstream\n${commands}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n'; const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) { offsets.push(Buffer.byteLength(pdf, 'ascii')); pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`; }
+  const xref = Buffer.byteLength(pdf, 'ascii'); pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return pdf;
+}
 
 export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
   async function get(id) {
@@ -51,13 +79,17 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
   async function publishReport(result, kind) {
     const path = reportPath(result.id, kind);
     await store.writeText(path, renderReport(result, kind), { immutable: true });
-    result.reports = [...(result.reports ?? []).filter(item => item.kind !== kind), { kind, path, status: kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? 'PARTIAL' : result.status, availableAt: clock().toISOString() }];
+    const pdfPath = kind === 'final' ? reportPath(result.id, 'final').replace(/\.html$/, '.pdf') : null;
+    if (pdfPath) await store.writeText(pdfPath, renderPdf(result), { immutable: true });
+    result.reports = [...(result.reports ?? []).filter(item => item.kind !== kind), { kind, path, pdfPath, status: kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? 'PARTIAL' : result.status, availableAt: clock().toISOString() }];
   }
-  async function readReport(id, kind = 'final') {
+  async function readReport(id, kind = 'final', format = 'html') {
     const run = await get(id); if (!['gmb', 'final'].includes(kind)) throw new ValidationError('Rapport invalide.', { field: 'kind' });
     const report = run.reports?.find(item => item.kind === kind); if (!report) throw new NotFoundError('Rapport introuvable.');
-    const value = await store.readText(report.path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
-    return { value, contentType: 'text/html; charset=utf-8', report };
+    if (!['html', 'pdf'].includes(format) || (format === 'pdf' && kind !== 'final') || (format === 'pdf' && run.status !== 'SUCCEEDED' && run.status !== 'PARTIAL')) throw new ValidationError('Format de rapport invalide.');
+    const path = format === 'pdf' ? report.pdfPath : report.path; if (!path) throw new NotFoundError('Rapport introuvable.');
+    const value = await store.readText(path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
+    return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8', report };
   }
   async function addIndex(id) {
     const currentText = await store.readText(INDEX_PATH, null);
