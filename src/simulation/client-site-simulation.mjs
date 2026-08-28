@@ -42,7 +42,8 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     },
     'simulation-content-plan': async ({ input }) => {
       const source = input['dossier-validation'];
-      return { dossierId: source.dossierId, reportId: input['seo-competition-report'].dossierId, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections: ['identity', 'story', 'menu', 'contact'] };
+      const siteSpec = { schemaVersion: 'site-spec-v1', title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, sections: ['identity', 'story', 'menu', 'contact'], assetCount: source.assets.length };
+      return { dossierId: source.dossierId, reportId: input['seo-competition-report'].dossierId, siteSpec, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections: siteSpec.sections };
     },
     'simulation-gmb-audit-report': async ({ input, run, store: localStore }) => {
       const facts = input['dossier-validation'];
