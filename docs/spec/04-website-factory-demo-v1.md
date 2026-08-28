@@ -7,6 +7,8 @@ Hors périmètre : achat, paiement, enregistrement de domaine et publication en 
 
 Cette spec complète [`01-vertical-slice-public-ancrage-v1.md`](01-vertical-slice-public-ancrage-v1.md), [`02-audit-gmb-seo-borné.md`](02-audit-gmb-seo-borné.md) et [`03-website-factory-global-v1.md`](03-website-factory-global-v1.md). Elle ne transforme ni le pré-slice local ni la simulation `client-site-simulation` en preuve de fonctionnement métier complet.
 
+Pour les essais opérateur actuels, appliquer [`DEMO-MODE-LOCAL-NON-COMMERCIAL.md`](DEMO-MODE-LOCAL-NON-COMMERCIAL.md) : le paiement et les gates juridiques sont différés, tandis que l'e-mail, le dossier métier, les cinq catégories de photos, les droits, la QA et la validation opérateur restent requis.
+
 ## 1. Autorité, objectifs et frontières
 
 L'ordre commercial normatif est défini par [`87-parcours-client-reference.md`](../../.scratch/website-factory-architecture/research/87-parcours-client-reference.md), détaillé par [`89-parcours-client-complet-arbres-decision.md`](../../.scratch/website-factory-architecture/research/89-parcours-client-complet-arbres-decision.md) et corrigé pour la livraison progressive par [`90-handoff-correction-rapport-gmb-seo-pdf-email.md`](../../.scratch/website-factory-architecture/research/90-handoff-correction-rapport-gmb-seo-pdf-email.md).
@@ -195,7 +197,7 @@ Le rapport HTML et le PDF suivent leur expiration commerciale de sept jours. La 
 - [ ] La démo n'est envoyée qu'après validation opérateur explicite.
 - [ ] La démo est privée, `noindex`, révocable, expirante et consultable sans compte ni paiement.
 - [ ] Une reprise conserve l'incident initial et ne relance pas silencieusement une dépense.
-- [ ] La simulation `client-site-simulation` est identifiée comme non probante tant que son graphe ne respecte pas cette séquence.
+- [x] Le graphe local `client-site-simulation` respecte désormais l'ordre `dossier → GMB → SEO/concurrence → plan de contenu → site → QA` ; il reste une simulation déterministe et ne remplace pas les preuves provider du parcours public.
 
 ## 11. Gates avant planification et production
 
@@ -212,10 +214,10 @@ Avant une implémentation de production, il faut :
 
 Ces gates sont des preuves à obtenir. Elles ne sont pas remplacées par le pré-slice local ni par la simulation client.
 
-## 12. Écart connu et prochaine tranche
+## 12. État de l'implémentation et prochaine tranche
 
-`src/simulation/client-site-simulation.mjs` fait actuellement dépendre `content-plan` de `dossier-validation`, construit le site avant `seo-competition-report`, puis vérifie la qualité après coup. Cette simulation prouve seulement des artefacts synthétiques, une reprise locale et des contrôles de test. Elle ne prouve pas l'ordre métier public, la livraison progressive, l'e-mail, les droits, les providers, la validation opérateur ni la démo avant paiement.
+Le Control Plane public et le parcours local relient maintenant `identité/domaine → (GMB || branche partielle) → rapport final → clic + e-mail → dossier/photos/droits → plan de contenu → rendu → QA → validation opérateur`. La simulation `client-site-simulation` respecte l'ordre interne et produit des artefacts déterministes ; elle ne constitue toutefois pas une preuve provider et ne remplace pas le test réel du parcours public.
 
-Correction ultérieure séparée : remplacer le graphe de simulation par `identité/domaine → (rapport GMB || audit SEO de base) avec intake en parallèle → audit SEO/concurrence général alimenté par GMB et la base → rapport final → clic + e-mail → complétion du dossier/photos/droits → plan de contenu → SiteSpec/rendu → QA → validation opérateur`, puis ajouter les contrats public-facing et les tests correspondants. Cette correction ne fait pas partie de la présente passe documentaire.
+Restent à fermer avant une mise en production : vertical slice réel de l'issue 73, vérification des coûts/quotas/droits de restitution par marché, sécurité opérationnelle complète des uploads et des liens, service d'e-mail, conservation et revue juridique. Ces points ne sont pas requis pour le mode démo local non commercial.
 
 La tranche suivante couvrira l'achat après démo, l'`Account`, le paiement, la `DomainOwnershipVerification`, la `SiteApproval`, la nouvelle `SiteVersion` et la publication `ProductionSite`, avec ses propres gates juridiques et fournisseurs.

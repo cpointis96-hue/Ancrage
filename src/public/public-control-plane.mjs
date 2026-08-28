@@ -42,6 +42,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   }
   function projectRequest(value) {
     const result = response(value); delete result.emailHash;
+    result.reports = (result.reports ?? []).map(({ id, kind, status, createdAt }) => ({ id, kind, status, createdAt }));
     if (result.demoRequestId) result.preparation = { id: result.demoRequestId, status: result.preparationStatus };
     return result;
   }
@@ -83,7 +84,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
     request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: clock().toISOString() }); const finalReady = request.reports.some(report => report.kind === 'final'); request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; request.status = 'SUCCEEDED'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }
-  async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: response(request.reports) }; }
+  async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: request.reports.map(({ id, kind, status, createdAt }) => ({ id, kind, status, createdAt })) }; }
   async function readReport(requestId, reportId, format = 'html') {
     const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError();
     if (format === 'pdf' && (!report.pdfPath || request.state !== 'FINAL_REPORT_READY')) throw new AppError('Le PDF final n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 });
