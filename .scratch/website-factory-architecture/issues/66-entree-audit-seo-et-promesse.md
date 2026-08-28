@@ -26,7 +26,7 @@ Si aucun site officiel fiable n'est trouvé, le système n'affiche pas une erreu
 
 ## Décision e-mail et relation commerciale
 
-L'adresse e-mail est demandée à la fin, après génération, QA et validation opérateur, comme `Contact` lié au `Prospect`, à la `Demo` et à la livraison de son lien privé. Elle ne devient pas un `Customer` avant achat. Le consentement marketing facultatif, les préférences de communication, les rebonds et les demandes de suppression sont stockés séparément. L'adresse n'est pas nécessaire pour voir la valeur d'audit dans le parcours ni pour lancer la préparation de la démo.
+L'adresse e-mail est demandée après le clic sur « Préparer mon site », avant toute génération réelle, comme `Contact` lié au `Prospect`, à la `DemoRequest` et à la livraison de son lien privé. Elle ne devient pas un `Customer` avant achat. Le consentement marketing facultatif, les préférences de communication, les rebonds et les demandes de suppression sont stockés séparément. L'adresse n'est pas nécessaire pour voir la valeur d'audit ni le rapport final, mais elle est obligatoire pour lancer la préparation réelle de la démo.
 
 ## Impact
 

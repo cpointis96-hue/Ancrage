@@ -18,6 +18,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Recherches officielles du 27 août 2026** — DataForSEO, Cloudflare/Neon, licences d'index géographique, GMB/concurrence/conservation et pricing/cadre légal sont capturés dans [94](research/94-dataforseo-endpoints-prix-limites-provenance.md), [95](research/95-cloudflare-neon-prix-limites-restauration.md), [96](research/96-cityindex-gmb-concurrence-conservation.md) et [97](research/97-pricing-et-cadre-legal-marches.md). Ces notes séparent `MESURÉ`, `DOCUMENTÉ`, `DÉDUIT`, `À TESTER` et `NON OBSERVABLE`.
 - **Tranche locale audit du 27 août 2026** — les findings SEO déterministes portent maintenant un `EvidenceSnapshot` local hashé et le registre d’audits accepte une clé d'idempotence rejouable, avec conflit sur empreinte divergente. Les tests loopback confirment la reprise sans second crawl ; les comptes, droits de restitution, coûts provider, rétention cloud, restauration et sites autorisés restent des gates ouvertes.
 - **Workflow public local du 27 août 2026** — `POST /api/audits/local` compose un run `public-audit-v1` avec recherche établissement/site, observation GMB, crawl SEO local, capacités DataForSEO pour OnPage/mots-clés/concurrence et stratégie déterministe. Les appels externes exigent santé provider, enveloppe et coût par endpoint ; les preuves sont hashées, les branches absentes restent `PARTIAL`/`BLOCKED`, et aucune activation réelle n'est déclarée.
+- **Ordre canonique réaffirmé le 28 août 2026** — après validation du dossier et de l'identité, le système termine l'observation GMB, produit et expose le premier rapport HTML, puis déclenche l'audit SEO complet avec les données GMB, la concurrence, les mots-clés, le site et les autres données autorisées. Le rapport final HTML/PDF est composé ensuite ; le plan du site ne démarre qu'après ce rapport final. La simulation `client-site-simulation` ne respecte pas encore cet ordre et reste un écart d'implémentation à traiter dans une spec dédiée.
 - **Profil et enveloppe standard du 27 août 2026** — le run utilise par défaut 50 URL, 25 Mo et 3 minutes sans rendu JavaScript, avec une enveloppe de pilotage estimée à 2 USD et des coûts d'appel de 0,10 à 0,30 USD selon la capacité. Ces montants servent au fail-closed local, ne prétendent pas remplacer la tarification DataForSEO et devront être recalibrés sur des coûts observés autorisés.
 - **Fondation Ancrage V1 implémentée localement** — le dépôt contient maintenant un `LocalBridge` loopback, un stockage atomique, un registre de prompts versionnés, un registre Provider sans secret navigateur, un moteur DAG avec runs et artefacts persistants, une API JSON et un cockpit `app/` raccordé. La preuve automatisée est dans `test/e2e/local-vertical-slice.test.mjs`. Les intégrations externes, Keychain réel, restauration sur support et validation navigateur restent ouvertes et ne sont pas déclarées comme prouvées.
 - **Configuration Workflows compacte — 27 août 2026** — Workflows devient le centre unique de configuration : étapes, acteurs, providers, modèles, prompts, profils d’exécution, budgets, contrats et templates de sortie sont liés au workflow. Les limites par défaut sont `50` URL, `3` minutes, `25` Mo et `2` USD, toutes modifiables. Les templates locaux suivent le même cycle brouillon → version immuable → activation, avec import, remplacement, suppression confirmée et resynchronisation explicite ; aucun provider réel ni credential n’est créé ou appelé par cette surface. La validation courante couvre persistance/versionnement et absence d’overflow à 390 px.
@@ -140,7 +141,7 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Stockage audit à trois niveaux — provisoire** — Neon conserve les métadonnées minimales, R2 les rapports et artefacts nécessaires avec lifecycle, et le Mac une copie locale chiffrée des exports lourds ; le Mac ne devient jamais la seule source de vérité ([76](issues/76-stockage-audits-local-cloud.md)).
 - **Archives locales** — les crawls et exports complets restent sur le Mac sans suppression automatique, sauf suppression demandée, obligation légale, compromission ou action manuelle ; chiffrement, sauvegarde et alerte d'espace sont obligatoires.
 - **Expérience rapport continue** — après nom/ville et enrichissement, l'audit GMB est affiché dès qu'il est prêt avec une progression vers l'audit SEO complet ; le rapport final réunit GMB et SEO. Le clic de préparation affiche une animation puis demande l'e-mail avant toute génération réelle ; le navigateur affiche ensuite la démo via une URL cloud privée, gratuite et accessible sept jours avant toute décision de paiement.
-- **Parallélisation bornée** — identification validée puis GMB, sonde site, crawl et mesures indépendantes peuvent tourner en parallèle ; les règles déterministes précèdent les agents, les petits modèles sont privilégiés et chaque branche possède budget, timeout et état partiel ([77-progression-rapport-et-agents-paralleles.md](issues/77-progression-rapport-et-agents-paralleles.md)).
+- **Parallélisation bornée** — après l'identité autorisée, la découverte technique indépendante peut préparer ses données, mais l'audit SEO complet, la concurrence et les mots-clés ne démarrent qu'après validation et production du premier rapport GMB ; ils consomment alors les données GMB avec les données du site et les autres sources autorisées. Le rapport final attend ces résultats ; le plan du site attend le rapport final. Les règles déterministes précèdent les agents, les petits modèles sont privilégiés et chaque branche possède budget, timeout et état partiel ([77-progression-rapport-et-agents-paralleles.md](issues/77-progression-rapport-et-agents-paralleles.md)).
 - **Deux pipelines coordonnés** — après l'audit, un `PipelineRun` Website Factory peut lancer les sous-agents nécessaires au contenu, à la traduction, aux assets et au `SiteSpec`, puis un renderer déterministe et les QA ; les études concurrentielles et de marché restent des pipelines futurs.
 - **Progression fondée sur des checkpoints** — la barre et le CTA du frontend reflètent les `ProgressCheckpoint` validés par le Control Plane ; un agent ne peut pas falsifier l'avancement.
 - **CTA audit vers Website Factory** — le rapport est affiché automatiquement après une progression réelle, mais le second `PipelineRun` ne démarre qu'après confirmation explicite du prospect via un CTA ; le site reste invisible jusqu'à `READY_FOR_OWNER_REVIEW` puis validation du propriétaire.
@@ -152,11 +153,11 @@ La carte est terminée lorsqu'il ne reste plus de décision structurante, de con
 - **Screaming Frog hors chemin commercial** — le MVP s'appuie sur le crawler HTTP/HTML interne ; le CLI Screaming Frog reste une intervention opérateur conditionnée à une licence compatible vérifiée par écrit.
 - **Crawl fail-closed** — validation DNS/IP avant connexion et après redirection, limites de ressources, isolation, absence d'exécution/téléchargement et logs expurgés sont des gates bloquants ; la preuve d'exécution appartient au vertical slice.
 - **Stockage audit borné** — Neon pour les métadonnées, R2 pour le rapport/PDF pendant sept jours par défaut, archive locale chiffrée pour les exports lourds sans réplication supplémentaire acceptée au MVP ; une restauration Mac éteint reste `WAITING_FOR_MAC`.
-- **Orchestration audit** — les branches indépendantes ne démarrent qu'après identité/domaine autorisés ; chaque branche publie un checkpoint, un budget et un état partial ; le rapport final, le PDF et le CTA de préparation attendent les preuves et la revue.
+- **Orchestration audit** — `GMB_REPORT_READY` est le premier livrable client ; `SEO_REPORT_IN_PROGRESS` est déclenché ensuite avec la sortie GMB ; `FINAL_REPORT_READY` réunit les deux ; `content-plan` et toute génération Website Factory sont bloqués jusqu'à ce rapport final et au clic de préparation suivi d'un e-mail valide.
 
-## Fog restante avant `to-spec`
+## Gates restantes après `to-spec`
 
-La direction produit et l'architecture de l'audit sont décidées. Il reste des validations d'exécution, des prototypes et des preuves externes bornées :
+La direction produit et l'architecture de l'audit sont décidées. Les éléments ci-dessous ne sont plus des choix structurants à inventer dans la map ; ce sont des validations d'exécution, des prototypes ou des preuves externes à traiter après passage en specs :
 
 ### Gates d'exécution après `to-spec`
 
@@ -185,6 +186,19 @@ La direction produit et l'architecture de l'audit sont décidées. Il reste des 
 - **Cockpit audit/CLI** : décider le niveau d'accès local au launcher, les profils autorisés et la frontière entre pilotage et terminal exceptionnel ([75](issues/75-cockpit-rapport-et-cli-screaming-frog.md)).
 - **Vertical slice audit** : exécuter un jeu de sites explicitement autorisés et mesurer exactitude, coût, délai, qualité et suppression ([73](issues/73-vertical-slice-audit-seo.md)) ; aucune cible réelle ni donnée externe n'a été ajoutée pendant cette passe.
 - **Pré-slice audit local** : le crawler, le service, le registre immuable, les routes API et le rapport échappé sont implémentés et testés sur sept fixtures synthétiques ; le ledger de coûts et les adapters DataForSEO sont testés séparément, sans fermer le gate réel.
+- **Écart de séquencement à corriger dans l'implémentation** : la simulation `client-site-simulation` doit être alignée sur `dossier → gmb-report → audit SEO/concurrence avec sortie GMB → rapport final → plan de contenu → site → QA`; son plan de contenu ne doit plus dépendre directement de la seule validation du dossier.
+- **Juridique par marché** : le ticket [40](issues/40-cadre-legal-cgv-par-pays.md) reste ouvert comme validation externe ; les textes contractuels, la juridiction et la conformité doivent être revus avant production, sans bloquer la rédaction des specs techniques.
+
+### État de fermeture Wayfinder
+
+| Domaine | État | Ce qui est fixé | Ce qui reste hors de la map |
+|---|---|---|---|
+| Parcours commercial | fermé | audit GMB visible, audit SEO ensuite, rapport final, CTA, e-mail, démo avant paiement | mesure de conversion réelle |
+| Workflow d'audit | fermé pour `to-spec` | dépendances, rapports, branches, provenance, partialité, budgets et gates | comptes, coûts et quotas réellement observés |
+| Workflow Website Factory | fermé au niveau architecture | génération après rapport final et e-mail, contenu après audit, rendu, QA, validation opérateur | implémentation et vertical slice |
+| Sécurité et données | fermé au niveau décision | SSRF, secrets, provenance, conservation, suppression et séparation cloud/local | tests runtime, restauration et revue juridique |
+| Offre et marché | cadré, non commercialisé | segment initial, offre bornée, langues et limites de promesse | prix finaux, CGV, test marché |
+| Preuve d'exécution | ouverte par nature | pré-slice synthétique documenté | ticket [73](issues/73-vertical-slice-audit-seo.md), sites autorisés et go/no-go |
 
 ### Non-bloqueurs pouvant rester ouverts
 
@@ -197,7 +211,7 @@ La direction produit et l'architecture de l'audit sont décidées. Il reste des 
 
 ### Frontière `to-spec`
 
-Le projet peut passer à `to-spec` pour la tranche d'audit GMB/SEO : aucun choix produit fondamental de ce périmètre ne reste implicite. La construction et la commercialisation restent conditionnées aux gates d'exécution de la spec 02 ; elles ne sont pas déclarées réalisées par la présente carte.
+Le projet peut passer à `to-spec` pour la tranche d'audit GMB/SEO et pour la coordination audit → Website Factory : aucun choix produit fondamental de ce périmètre ne reste implicite. Les tickets [40](issues/40-cadre-legal-cgv-par-pays.md) et [73](issues/73-vertical-slice-audit-seo.md) restent des gates de production et de commercialisation, pas des raisons de réouvrir l'architecture déjà décidée. La construction et la commercialisation ne sont pas déclarées réalisées par la présente carte.
 
 ## Out of scope
 

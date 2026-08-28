@@ -18,7 +18,7 @@ nom + ville structurée
   -> rapport final
 ```
 
-L'audit GMB est affiché dès que son checkpoint est validé. L'audit SEO continue en parallèle seulement après identité et domaine suffisamment confirmés. Le rapport final réunit les modules sans présenter une branche absente comme négative ou inexistante.
+L'audit GMB est affiché dès que son checkpoint est validé. Les collectes techniques indépendantes peuvent être préparées après confirmation de l'identité et du domaine, mais l'audit SEO complet, la concurrence et les mots-clés démarrent après ce rapport GMB et consomment ses données avec celles du site et les autres sources autorisées. Le rapport final réunit ensuite les modules sans présenter une branche absente comme négative ou inexistante.
 
 ## 2. Entrées et branches
 

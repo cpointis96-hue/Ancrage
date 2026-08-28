@@ -188,26 +188,12 @@ Elle fixe notamment :
 
 Reprendre les tickets encore ouverts et distinguer : décision d'architecture, preuve externe, prototype, recherche commerciale ou travail différé.
 
-Tickets actuellement ouverts :
+Tickets restant réellement ouverts :
 
-- `07-fit-fournisseurs-cloud-et-qa.md`
-- `08-apis-domaines-seo-concurrence-et-provenance.md`
-- `09-worker-mac-et-admin-api.md`
-- `10-securite-donnees-et-standards.md`
-- `22-familles-templates-restaurant.md`
-- `28-chatbot-gratuit-et-fournisseurs.md`
-- `30-pricing-marches-et-recurrence.md`
-- `38-base-de-donnees-centrale-quasi-gratuite.md`
 - `40-cadre-legal-cgv-par-pays.md`
-- `41-confiance-visuelle-et-localisation-sri-lanka.md`
-- `43-architecture-ux-avant-implementation.md`
-- `45-protection-demo-anti-aspiration.md`
-- `46-seo-local-pages-et-valeur-editoriale.md`
-- `50-registre-fournisseurs-et-routage-ia.md`
-- `72-prototype-rapport-audit-seo.md`
 - `73-vertical-slice-audit-seo.md`
-- `78-progression-reelle-cta-mobile.md`
-- `79-comparatif-prix-et-promesse-marche.md`
+
+Les tickets précédemment listés sont résolus dans leurs fichiers. Leurs preuves d'exécution, tests fournisseurs, revue juridique ou validation commerciale restent des gates de production et ne doivent pas être confondues avec des décisions Wayfinder ouvertes.
 
 ### 2. Priorité immédiate : recherche fournisseurs
 
