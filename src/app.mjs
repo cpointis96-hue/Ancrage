@@ -21,6 +21,7 @@ import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
 import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
+import { createSeoResearchPlanner } from './audit/seo-research-planner.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
 import { createPublicControlPlane } from './public/public-control-plane.mjs';
 import { createDemoWorkbench } from './demo/demo-workbench.mjs';
@@ -119,7 +120,8 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const artifacts = createArtifactRegistry({ store, runs });
   const demos = createDemoRegistry({ store, artifacts, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
-  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup });
+  const seoResearchPlanner = createSeoResearchPlanner({ providers, adapters: providerAdapters, prompts, workflows, contracts });
+  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, seoResearchPlanner });
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
@@ -175,11 +177,15 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedContract(store, contracts, 'domain-candidates');
     await seedContract(store, contracts, 'audit-report');
     await seedContract(store, contracts, 'copy-draft');
-    const domainResearch = JSON.parse(await readFile(new URL('workflows/domain-research.json', defaultsRoot), 'utf8'));
-    await workflows.ensure(domainResearch);
-    await workflows.ensure(clientSiteWorkflow);
+    await seedContract(store, contracts, 'seo-research-plan');
     await seedPrompt(store, prompts, 'audit-analyst');
     await seedPrompt(store, prompts, 'copywriter');
+    await seedPrompt(store, prompts, 'local-seo-research-planner');
+    const domainResearch = JSON.parse(await readFile(new URL('workflows/domain-research.json', defaultsRoot), 'utf8'));
+    const localSeoResearch = JSON.parse(await readFile(new URL('workflows/local-seo-research.json', defaultsRoot), 'utf8'));
+    await workflows.ensure(domainResearch);
+    await workflows.ensure(localSeoResearch);
+    await workflows.ensure(clientSiteWorkflow);
     await seedTemplate(store, templates, 'site-preview');
     await seedTemplate(store, templates, 'audit-initial');
     await seedTemplate(store, templates, 'audit-gmb');

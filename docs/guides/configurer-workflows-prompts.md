@@ -35,6 +35,16 @@ Pour chaque étape :
 - `Contrat de sortie` indique le JSON Schema qui valide le résultat ;
 - `Timeout` et `Budget maximum` bornent l’exécution.
 
+## Recherche SEO locale
+
+Le workflow `local-seo-research` utilise l’étape IA `research-plan`. Son prompt actif, `local-seo-research-planner`, est modifiable et versionné dans `Configuration > Prompts`. Le modèle est choisi dans l’étape du workflow, pas dans le prompt.
+
+Cette étape ne rédige pas un audit et ne calcule aucun chiffre. Elle propose au plus six requêtes de départ depuis le nom, la localité et la catégorie primaire observée. Sa sortie est validée par le contrat `seo-research-plan`. Une catégorie ou une requête qui ne respecte pas les faits fournis est rejetée et le moteur utilise le plan déterministe minimal.
+
+La sortie IA est plafonnée à 700 tokens et le budget déclaré de l’étape est de 0,05 USD. Les appels DataForSEO ont, séparément, une enveloppe stricte de 0,50 USD par audit public. Les résolutions de localisation et de langue passent avant les appels payants ; le coût réellement retourné par DataForSEO est conservé dans le ledger du run.
+
+Les métriques DataForSEO Labs sont étiquetées comme métriques de marché pays/langue. Les concurrents locaux viennent exclusivement d’un résultat Maps/Local Finder centré sur les coordonnées validées Google Places.
+
 Créer une définition ne crée pas automatiquement son implémentation. Un workflow personnalisé devient exécutable quand chaque nom d’implémentation correspond à un script ou un adapter enregistré dans le moteur.
 
 ## Modifier ou créer un prompt

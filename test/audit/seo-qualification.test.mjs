@@ -9,7 +9,7 @@ test('construit les seeds depuis la catégorie observée et la ville', () => {
   assert.equal(plan.scope, 'local-business-category');
 });
 
-test('rejette les mots-clés hors localité ou hors ancre métier', () => {
+test('rejette les mots-clés hors activité mais conserve les opportunités de marché liées à la catégorie', () => {
   const plan = buildSeoResearchPlan({ cityLabel: 'Teyran', country: 'FR', identity: { primaryType: 'restaurant' } });
   const result = qualifyKeywordResults({ tasks: [{ result: [{ items: [
     { keyword: 'restaurant Teyran menu', keyword_info: { search_volume: 30 } },
@@ -18,8 +18,8 @@ test('rejette les mots-clés hors localité ou hors ancre métier', () => {
     { keyword: 'restaurant Teyran', keyword_info: { search_volume: null } },
   ] }] }] }, plan);
   assert.deepEqual(result.selected.map(item => item.keyword), ['restaurant Teyran menu', 'restaurant Teyran']);
-  assert.equal(result.rejected.find(item => item.keyword === 'menu cantine à Lyon').reason, 'LOCALITY_NOT_CONFIRMED');
-  assert.equal(result.rejected.find(item => item.keyword === 'menu cantine monde').reason, 'LOCALITY_NOT_CONFIRMED');
+  assert.equal(result.rejected.find(item => item.keyword === 'menu cantine à Lyon').reason, 'BUSINESS_ANCHOR_NOT_CONFIRMED');
+  assert.equal(result.rejected.find(item => item.keyword === 'menu cantine monde').reason, 'BUSINESS_ANCHOR_NOT_CONFIRMED');
   assert.equal(result.selected[1].searchVolume, null);
 });
 

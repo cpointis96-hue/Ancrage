@@ -36,12 +36,8 @@ function includesPhraseOrWords(haystack, phrase) {
 }
 
 function categoryValues(identity = {}) {
-  return [
-    ['identity.primaryTypeDisplayName', identity.primaryTypeDisplayName],
-    ['identity.primaryType', identity.primaryType],
-    ...(Array.isArray(identity.types) ? identity.types.map(value => ['identity.types', value]) : []),
-    ...(Array.isArray(identity.categories) ? identity.categories.map(value => ['identity.categories', value]) : []),
-  ].filter(([, value]) => typeof value === 'string' && value.trim());
+  return [identity.primaryTypeDisplayName, identity.primaryType]
+    .filter(value => typeof value === 'string' && value.trim());
 }
 
 function keywordValue(item) {
@@ -67,25 +63,29 @@ function domainOf(value) {
   } catch { return null; }
 }
 
-export function buildSeoResearchPlan({ name, cityLabel, country, identity = {} } = {}) {
+export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, planned = null } = {}) {
   const locality = String(cityLabel ?? '').trim();
-  const categoryEntries = categoryValues(identity);
-  const anchors = unique(categoryEntries.map(([, value]) => normalize(value)).filter(Boolean));
+  const anchors = unique(categoryValues(identity).map(normalize).filter(Boolean));
   const primaryAnchor = anchors[0] ?? null;
-  const seeds = primaryAnchor && locality
+  const plannedQueries = Array.isArray(planned?.queries) ? planned.queries : [];
+  const seeds = plannedQueries.length
+    ? unique(plannedQueries.map(item => String(item?.query ?? '').trim()).filter(Boolean)).slice(0, 6)
+    : primaryAnchor && locality
     ? unique([
       `${primaryAnchor} ${locality}`,
       `${primaryAnchor} ${locality} menu`,
-      `${primaryAnchor} ${locality} reservation`,
+      name ? `${name} ${locality}` : `${primaryAnchor} ${locality} reservation`,
     ])
     : [];
   return {
     locality,
     country: String(country ?? '').trim().toUpperCase() || null,
     anchors,
+    category: planned?.category ?? primaryAnchor,
     seeds,
     scope: primaryAnchor ? 'local-business-category' : 'local-business-category-unknown',
-    reasons: primaryAnchor ? ['OBSERVED_IDENTITY_CATEGORY'] : ['IDENTITY_CATEGORY_NOT_OBSERVED'],
+    planner: plannedQueries.length ? 'configured-ai' : 'deterministic-fallback',
+    reasons: primaryAnchor ? ['OBSERVED_PRIMARY_CATEGORY'] : ['IDENTITY_CATEGORY_NOT_OBSERVED'],
   };
 }
 
@@ -100,7 +100,7 @@ function normalizedKeywordRow(item, plan) {
   const competition = info.competition ?? null;
   const cpc = info.cpc ?? null;
   const keywordDifficulty = info.keyword_difficulty ?? item?.keyword_data?.keyword_info?.keyword_difficulty ?? null;
-  const priority = (localityMatch ? 50 : 0) + (businessMatch ? 30 : 0) + (intent !== 'discovery' ? 10 : 0) + (typeof searchVolume === 'number' && searchVolume > 0 ? 5 : 0) + (typeof keywordDifficulty === 'number' ? 5 : 0);
+  const priority = (localityMatch ? 50 : 0) + (businessMatch ? 35 : 0) + (intent !== 'discovery' ? 10 : 0) + (typeof searchVolume === 'number' && searchVolume > 0 ? 5 : 0) + (typeof keywordDifficulty === 'number' ? 5 : 0);
   return {
     keyword,
     canonicalKeyword: normalize(keyword),
@@ -113,6 +113,8 @@ function normalizedKeywordRow(item, plan) {
     sourceSeed: item?.seed ?? item?.source_seed ?? item?.keyword_data?.seed ?? null,
     localityMatch,
     businessMatch,
+    scope: localityMatch ? 'local-query' : 'market-query',
+    evidence: localityMatch && businessMatch ? 'category-and-locality' : businessMatch ? 'observed-category' : 'unconfirmed',
     priority,
   };
 }
@@ -128,11 +130,7 @@ export function qualifyKeywordResults(result, plan) {
     seen.add(row.canonicalKeyword);
     const reason = !plan.anchors.length
       ? 'BUSINESS_CATEGORY_NOT_OBSERVED'
-      : !row.localityMatch
-        ? 'LOCALITY_NOT_CONFIRMED'
-        : !row.businessMatch
-          ? 'BUSINESS_ANCHOR_NOT_CONFIRMED'
-          : null;
+      : !row.businessMatch ? 'BUSINESS_ANCHOR_NOT_CONFIRMED' : null;
     if (reason) rejected.push({ ...row, reason });
     else selected.push(row);
   }

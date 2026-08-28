@@ -72,6 +72,17 @@ test('génère du JSON avec les adapters IA autorisés', async () => {
   assert.equal(JSON.stringify(outputs).includes('-key'), false);
 });
 
+test('borne la réponse OpenAI configurée sans exposer le credential', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: '{}' } }] }) };
+  } });
+  await adapters.openai.generate({ secret: 'openai-secret', model: 'model-test', system: 'JSON', input: {}, maxOutputTokens: 700 });
+  assert.equal(JSON.parse(calls[0].options.body).max_completion_tokens, 700);
+  assert.equal(JSON.stringify(calls).includes('openai-secret'), true);
+});
+
 test('découvre les modèles IA sans exposer le credential', async () => {
   const calls = [];
   const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options = {}) => {

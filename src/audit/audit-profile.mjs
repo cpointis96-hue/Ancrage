@@ -5,17 +5,18 @@ export const STANDARD_AUDIT_PROFILE = Object.freeze({
 });
 
 export const STANDARD_AUDIT_BUDGET = Object.freeze({
-  hardLimit: 2,
+  hardLimit: 0.5,
   currency: 'USD',
   endpointCosts: Object.freeze({
-    serpMaps: 0.3,
-    serpOrganicLiveAdvanced: 0.15,
-    businessListings: 0.2,
-    onPage: 0.3,
-    keywordSearchVolume: 0.1,
-    keywordIdeas: 0.1,
-    keywordOverview: 0.2,
-    serpCompetitors: 0.3,
+    serpMaps: 0.01,
+    serpOrganicLiveAdvanced: 0.01,
+    businessListings: 0.005,
+    onPage: 0.01,
+    keywordSearchVolume: 0.005,
+    keywordIdeas: 0.02,
+    keywordOverview: 0.015,
+    serpCompetitors: 0.02,
+    serpLocalFinder: 0.01,
   }),
 });
 

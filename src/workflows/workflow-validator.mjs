@@ -11,6 +11,7 @@ export function validateWorkflowDefinition(definition) {
     if (!step.implementation) throw new WorkflowValidationError('Implémentation d’étape manquante.');
     if (!Number.isInteger(step.timeoutMs) || step.timeoutMs < 100 || step.timeoutMs > 900000) throw new WorkflowValidationError('Timeout d’étape invalide.');
     if (typeof step.budget !== 'number' || step.budget < 0) throw new WorkflowValidationError('Budget d’étape invalide.');
+    if (step.maxOutputTokens !== undefined && (!Number.isInteger(step.maxOutputTokens) || step.maxOutputTokens < 1 || step.maxOutputTokens > 16000)) throw new WorkflowValidationError('Limite de sortie invalide.');
     if (step.kind === 'ai' && (!step.promptRef || !step.model)) throw new WorkflowValidationError('Prompt et modèle obligatoires pour une étape IA.');
     if (step.model && (typeof step.model !== 'string' || step.model.length > 160)) throw new WorkflowValidationError('Modèle d’étape invalide.');
     for (const dep of step.dependsOn ?? []) if (!definition.steps.some(candidate => candidate.id === dep)) throw new WorkflowValidationError('Dépendance absente.');
