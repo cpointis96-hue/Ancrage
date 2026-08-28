@@ -71,15 +71,61 @@ test('refuse le démarrage jusqu aux cinq catégories et droits connus', async (
   await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
   const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-3' });
   await assert.rejects(() => controlPlane.start(preparation.id), error => error.code === 'PREPARATION_INCOMPLETE');
-  await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR' });
+  await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR', address: '1 rue du Port', contact: 'contact@example.test', menu: [{ name: 'Plat', price: '14 €' }] });
   for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 });
   await assert.rejects(() => controlPlane.start(preparation.id), error => error.code === 'PIPELINE_NOT_CONFIGURED');
+});
+
+test('ne fait pas confiance à criticalComplete et reprend la DemoRequest par e-mail', async () => {
+  const { controlPlane } = await fixture({ pipelineStarter: async () => ({ runId: 'run-replay-1', acceptanceReport: { status: 'PASS' } }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-replay' });
+  await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-replay-1' });
+  const resumed = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-replay-2' });
+  assert.equal(resumed.id, preparation.id);
+  await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR' });
+  for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 });
+  await assert.rejects(() => controlPlane.start(preparation.id), error => error.code === 'PREPARATION_INCOMPLETE');
+  await assert.rejects(() => controlPlane.createPreparation(request.id, { email: 'other@example.test', idempotencyKey: 'prep-replay-3' }), error => error.code === 'CONFLICT');
+  await controlPlane.updateIntake(preparation.id, { address: '1 rue du Port', contact: 'contact@example.test', menu: [{ name: 'Plat', price: '14 €' }] });
+  const started = await controlPlane.start(preparation.id);
+  assert.equal(started.status, 'READY_FOR_OWNER_REVIEW');
+  assert.equal((await controlPlane.start(preparation.id)).pipelineRunId, 'run-replay-1');
+  await assert.rejects(() => controlPlane.updateIntake(preparation.id, { story: 'Modification après gel.' }), error => error.code === 'CONFLICT');
+});
+
+test('bloque la présentation si l’AcceptanceReport est bloquant', async () => {
+  const { controlPlane } = await fixture({ pipelineStarter: async () => ({ runId: 'run-blocked-1', acceptanceReport: { status: 'BLOCK' } }), demoPresenter: async () => ({ href: '/demo/should-not-exist' }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-blocked' });
+  await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-blocked' });
+  await controlPlane.updateIntake(preparation.id, { locale: 'fr-FR', address: '1 rue du Port', contact: 'contact@example.test', menu: [{ name: 'Plat', price: 14 }] });
+  for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 });
+  const started = await controlPlane.start(preparation.id);
+  assert.equal(started.status, 'BLOCKED');
+  await assert.rejects(() => controlPlane.validateDemo(preparation.id, 'APPROVED'), error => error.code === 'DEMO_NOT_READY_FOR_REVIEW');
+});
+
+test('conserve un pipeline sans AcceptanceReport comme état bloqué', async () => {
+  const { controlPlane } = await fixture({ pipelineStarter: async () => ({ runId: 'run-missing-report-1' }) });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-missing-report' });
+  await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-missing-report' });
+  await controlPlane.updateIntake(preparation.id, { locale: 'fr-FR', address: '1 rue du Port', contact: 'contact@example.test', menu: [{ name: 'Plat', price: 14 }] });
+  for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 });
+  await assert.rejects(() => controlPlane.start(preparation.id), error => error.code === 'ACCEPTANCE_REPORT_INVALID');
+  const blocked = await controlPlane.getDemoRequest(preparation.id);
+  assert.equal(blocked.status, 'ACCEPTANCE_REPORT_INVALID');
+  assert.equal(blocked.acceptanceReport, null);
 });
 
 test('ne fabrique pas un identifiant de pipeline et délègue le run réel au starter configuré', async () => {
   const { root } = await fixture(); let calls = 0;
   const controlPlane = createPublicControlPlane({ store: createAtomicStore(root), pipelineStarter: async ({ request, preparation }) => { calls += 1; assert.equal(request.input.name, 'Maison Sillage'); assert.equal(preparation.status, 'INCOMPLETE'); return { runId: 'run-real-1', status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: 'PASS' } }; } });
-  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-4' }); await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' }); await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' }); const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-4' }); await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR' }); for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 }); const started = await controlPlane.start(preparation.id); assert.equal(calls, 1); assert.equal(started.pipelineRunId, 'run-real-1'); assert.equal(started.status, 'READY_FOR_OWNER_REVIEW'); assert.deepEqual(started.acceptanceReport, { status: 'PASS' });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-4' }); await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' }); await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>', pdf: '%PDF-synthetic' }); const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-4' }); await controlPlane.updateIntake(preparation.id, { criticalComplete: true, locale: 'fr-FR', address: '1 rue du Port', contact: 'contact@example.test', menu: [{ name: 'Plat', price: 14 }] }); for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 }); const started = await controlPlane.start(preparation.id); assert.equal(calls, 1); assert.equal(started.pipelineRunId, 'run-real-1'); assert.equal(started.status, 'READY_FOR_OWNER_REVIEW'); assert.deepEqual(started.acceptanceReport, { status: 'PASS' }); assert.equal((await controlPlane.start(preparation.id)).pipelineRunId, 'run-real-1'); assert.equal(calls, 1);
 });
 
 test('relie l’identité publique, l’audit et la demande de démo listable par le cockpit', async () => {

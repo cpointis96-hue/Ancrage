@@ -37,6 +37,29 @@ function publicIdentity(value) {
 
 function nextAction(kind, reasonCode) { return { kind, reasonCode }; }
 
+function optionalText(value, field, max = 4000) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' || value.length > max) throw new ValidationError(`${field} est invalide.`, { field });
+  return value.trim();
+}
+
+function normalizeMenu(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new ValidationError('menu est invalide.', { field: 'menu' });
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object') throw new ValidationError('Plat invalide.', { field: `menu.${index}` });
+    const name = optionalText(item.name, `menu.${index}.name`, 160);
+    const priceText = String(item.price ?? '').trim().replace(',', '.');
+    const price = Number(priceText.match(/^\d+(?:\.\d+)?/)?.[0] ?? NaN);
+    if (!name || !Number.isFinite(price) || price < 0 || price > 100000) throw new ValidationError('Chaque plat doit avoir un nom et un prix valide.', { field: `menu.${index}` });
+    return { name, price };
+  });
+}
+
+function hasCriticalIntake(preparation) {
+  const intake = preparation.intake ?? {};
+  return Boolean(optionalText(intake.address, 'address', 500) && optionalText(intake.contact, 'contact', 320) && Array.isArray(intake.menu) && intake.menu.length > 0 && intake.menu.every(item => item?.name && Number.isFinite(item.price)));
+}
+
 export function createPublicControlPlane({ store, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, pipelineStarter = null, demoPresenter = null } = {}) {
   async function readRequest(id) {
     const value = await store.readJson(requestPath(id), null);
@@ -59,8 +82,8 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   function requireFinalReport(request) { if (request.state !== 'FINAL_REPORT_READY') throw new AppError('Le rapport final n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 }); }
   function checklist(preparation) {
     const photos = [...categories].every(category => preparation.assets.some(asset => asset.category === category));
-    const rights = preparation.assets.length === 5 && preparation.assets.every(asset => knownRights.has(asset.rightsStatus));
-    return { ...preparation.checklist, photos, rights };
+    const rights = photos && preparation.assets.length === 5 && preparation.assets.every(asset => knownRights.has(asset.rightsStatus));
+    return { ...preparation.checklist, criticalComplete: hasCriticalIntake(preparation), locale: Boolean(preparation.locale), photos, rights };
   }
   async function createRequest(input = {}) {
     const name = text(input.name, 'name'); const city = input.city;
@@ -108,15 +131,23 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
   async function createPreparation(requestId, input = {}) {
     const request = await readRequest(requestId); requireFinalReport(request); const email = text(input.email, 'email', 320); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError('email est invalide.', { field: 'email' });
     const key = requireKey(input.idempotencyKey); const fp = fingerprint({ requestId, emailHash: emailHash(email) }); const previous = await store.readJson(idempotencyPath('preparation', key), null); if (previous) { if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre préparation.'); return projectPreparation(await readPreparation(previous.preparationId)); }
+    if (request.demoRequestId) {
+      const existing = await readPreparation(request.demoRequestId);
+      if (existing.emailHash !== emailHash(email)) throw new ConflictError('Cette demande de démo est déjà liée à une autre adresse e-mail.');
+      await store.writeJson(idempotencyPath('preparation', key), { fingerprint: fp, preparationId: existing.id }, { immutable: true });
+      return projectPreparation(existing);
+    }
     const id = idFactory('demo-request'); const now = clock().toISOString(); const preparation = { id, requestId, emailHash: emailHash(email), status: 'INCOMPLETE', checklist: { criticalComplete: false, locale: false, photos: false, rights: false }, assets: [], pipelineRunId: null, createdAt: now, updatedAt: now };
     await store.writeJson(preparationPath(id), preparation); await store.writeJson(idempotencyPath('preparation', key), { fingerprint: fp, preparationId: id }, { immutable: true }); request.demoRequestId = id; request.preparationStatus = 'INCOMPLETE'; await saveRequest(request); return projectPreparation(preparation);
   }
   async function readPreparation(id) { const value = await store.readJson(preparationPath(id), null); if (!value) throw new NotFoundError(`Demande de démo introuvable : ${id}`); return value; }
   function projectPreparation(value) { const result = response(value); delete result.emailHash; for (const asset of result.assets ?? []) { delete asset.assetPath; delete asset.mimeType; } return result; }
+  function requireEditable(preparation) { if (preparation.pipelineRunId) throw new ConflictError('La préparation est gelée pendant et après le pipeline.'); }
   async function savePreparation(value) { value.checklist = checklist(value); value.status = value.pipelineRunId ? (value.pipelineStatus ?? 'WEBSITE_FACTORY_RUNNING') : 'INCOMPLETE'; value.updatedAt = clock().toISOString(); await store.writeJson(preparationPath(value.id), value); return projectPreparation(value); }
-  async function updateIntake(id, input = {}) { const preparation = await readPreparation(id); if (input.criticalComplete !== undefined && typeof input.criticalComplete !== 'boolean') throw new ValidationError('criticalComplete est invalide.', { field: 'criticalComplete' }); if (input.locale !== undefined) preparation.locale = text(input.locale, 'locale', 20); for (const field of ['address', 'contact', 'story', 'menu']) if (input[field] !== undefined) preparation.intake = { ...(preparation.intake ?? {}), [field]: input[field] }; preparation.checklist.criticalComplete = input.criticalComplete ?? preparation.checklist.criticalComplete; preparation.checklist.locale = Boolean(preparation.locale); return savePreparation(preparation); }
+  async function updateIntake(id, input = {}) { const preparation = await readPreparation(id); requireEditable(preparation); if (input.criticalComplete !== undefined && typeof input.criticalComplete !== 'boolean') throw new ValidationError('criticalComplete est invalide.', { field: 'criticalComplete' }); if (input.locale !== undefined) preparation.locale = text(input.locale, 'locale', 20); for (const field of ['address', 'contact', 'story']) if (input[field] !== undefined) preparation.intake = { ...(preparation.intake ?? {}), [field]: optionalText(input[field], field, field === 'story' ? 12000 : field === 'address' ? 500 : 320) }; if (input.menu !== undefined) preparation.intake = { ...(preparation.intake ?? {}), menu: normalizeMenu(input.menu) }; return savePreparation(preparation); }
   async function addAsset(id, input = {}) {
     const preparation = await readPreparation(id);
+    requireEditable(preparation);
     const asset = { assetId: text(input.assetId, 'assetId', 120), category: text(input.category, 'category', 40), rightsStatus: text(input.rightsStatus, 'rightsStatus', 20), hash: text(input.hash, 'hash', 128), size: Number.isInteger(input.size) && input.size > 0 ? input.size : 0 };
     if (!categories.has(asset.category) || !knownRights.has(asset.rightsStatus) || !asset.size) throw new ValidationError('Asset photo invalide ou non autorisé.');
     if (preparation.assets.some(item => item.category === asset.category)) throw new ConflictError('Cette catégorie de photo est déjà renseignée.');
@@ -139,7 +170,7 @@ export function createPublicControlPlane({ store, clock = () => new Date(), idFa
     preparation.assets.push(asset);
     return savePreparation(preparation);
   }
-  async function start(id) { const preparation = await readPreparation(id); preparation.checklist = checklist(preparation); if (!preparation.checklist.criticalComplete || !preparation.checklist.locale || !preparation.checklist.photos || !preparation.checklist.rights) throw new AppError('La préparation est incomplète.', { code: 'PREPARATION_INCOMPLETE', status: 409 }); if (typeof pipelineStarter !== 'function') throw new AppError('Le pipeline de démo n’est pas configuré.', { code: 'PIPELINE_NOT_CONFIGURED', status: 503 }); const request = await readRequest(preparation.requestId); const started = await pipelineStarter({ request: response(request), preparation }); if (!started?.runId) throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 }); preparation.pipelineRunId = text(started.runId, 'pipelineRunId', 120); preparation.pipelineStatus = started.status ?? 'WEBSITE_FACTORY_RUNNING'; preparation.acceptanceReport = started.acceptanceReport ?? null; return savePreparation(preparation); }
-  async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.', { field: 'decision' }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
+  async function start(id) { const preparation = await readPreparation(id); preparation.checklist = checklist(preparation); if (preparation.pipelineRunId) return projectPreparation(preparation); if (!preparation.checklist.criticalComplete || !preparation.checklist.locale || !preparation.checklist.photos || !preparation.checklist.rights) throw new AppError('La préparation est incomplète.', { code: 'PREPARATION_INCOMPLETE', status: 409 }); if (typeof pipelineStarter !== 'function') throw new AppError('Le pipeline de démo n’est pas configuré.', { code: 'PIPELINE_NOT_CONFIGURED', status: 503 }); const request = await readRequest(preparation.requestId); const started = await pipelineStarter({ request: response(request), preparation }); if (!started?.runId) throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 }); const runId = text(started.runId, 'pipelineRunId', 120); const acceptanceStatus = started.acceptanceReport?.status; if (!['PASS', 'WARN', 'BLOCK'].includes(acceptanceStatus)) { preparation.pipelineRunId = runId; preparation.pipelineStatus = 'ACCEPTANCE_REPORT_INVALID'; preparation.acceptanceReport = null; await savePreparation(preparation); throw new AppError('Le pipeline n’a pas fourni d’AcceptanceReport exploitable.', { code: 'ACCEPTANCE_REPORT_INVALID', status: 503 }); } preparation.pipelineRunId = runId; preparation.pipelineStatus = acceptanceStatus === 'BLOCK' ? 'BLOCKED' : 'READY_FOR_OWNER_REVIEW'; preparation.acceptanceReport = started.acceptanceReport; return savePreparation(preparation); }
+  async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.'); if (preparation.status !== 'READY_FOR_OWNER_REVIEW') throw new AppError('La démo n’est pas prête pour la validation opérateur.', { code: 'DEMO_NOT_READY_FOR_REVIEW', status: 409 }); if (decision === 'APPROVED' && preparation.acceptanceReport?.status === 'BLOCK') throw new AppError('Une démo bloquée ne peut pas être présentée.', { code: 'ACCEPTANCE_BLOCKED', status: 409 }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); if (decision === 'APPROVED' && (!presented || typeof presented.href !== 'string' || !presented.href.startsWith('/demo/'))) throw new AppError('La présentation de démo n’a pas fourni de lien vérifiable.', { code: 'DEMO_PRESENTATION_INVALID', status: 503 }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
   return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, seedSyntheticReport, start, updateIntake, validateDemo };
 }

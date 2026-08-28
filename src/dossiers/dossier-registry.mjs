@@ -49,7 +49,10 @@ function decodeImage(photo) {
       ? value[0] === 0xff && value[1] === 0xd8 && value[2] === 0xff
       : value.subarray(0, 4).toString('ascii') === 'RIFF' && value.subarray(8, 12).toString('ascii') === 'WEBP';
   if (!validSignature) throw new ValidationError('Le contenu de l’image ne correspond pas à son format.', { field: 'photo' });
-  return { value, type: match[1], extension: IMAGE_TYPES.get(match[1]), alt: text(photo.alt, 'photo.alt', { max: 180 }) };
+  const metadata = {};
+  if (photo.category !== undefined) metadata.category = text(photo.category, 'photo.category', { required: true, max: 80 });
+  if (photo.rightsStatus !== undefined) metadata.rightsStatus = text(photo.rightsStatus, 'photo.rightsStatus', { required: true, max: 40 });
+  return { value, type: match[1], extension: IMAGE_TYPES.get(match[1]), alt: text(photo.alt, 'photo.alt', { max: 180 }), ...metadata };
 }
 
 export function createDossierRegistry({ store, opener = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) }) {
@@ -110,7 +113,7 @@ export function createDossierRegistry({ store, opener = null, clock = () => new 
     for (const [index, photo] of decodedPhotos.entries()) {
       const name = `photo-${index + 1}.${photo.extension}`;
       const written = await store.writeBuffer(dossierPath(id, `assets/${name}`), photo.value, { expectedHash: null });
-      dossier.assets.push({ name, type: photo.type, size: photo.value.length, hash: written.hash, alt: photo.alt, source: 'intake-upload' });
+      dossier.assets.push({ name, type: photo.type, size: photo.value.length, hash: written.hash, alt: photo.alt, source: 'intake-upload', ...(photo.category ? { category: photo.category } : {}), ...(photo.rightsStatus ? { rightsStatus: photo.rightsStatus } : {}) });
     }
     await store.writeJson(dossierPath(id, 'dossier.json'), dossier, { expectedHash: null });
     await store.writeText(dossierPath(id, 'story.md'), story, { expectedHash: null });

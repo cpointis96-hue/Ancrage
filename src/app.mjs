@@ -155,7 +155,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         contact: intake.contact ?? '',
         story: intake.story ?? '',
         menu: Array.isArray(intake.menu) ? intake.menu : [],
-        photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name })),
+        photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name, category: asset.category, rightsStatus: asset.rightsStatus })),
       }, { source: 'public-demo-intake' });
       const run = await simulation.startDossier(dossier.id);
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
