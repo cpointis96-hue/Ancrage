@@ -526,9 +526,9 @@ async function renderConfiguration() {
       event.stopPropagation();
       await perform(button, () => api.openWorkflowResource(button.dataset.workflowId, { stepId: button.dataset.stepId, field: button.dataset.resourceField, reference: button.dataset.resourceReference }), 'Fichier affiché dans Finder.');
     });
-    detail.onclick = event => {
-      const button = event.target.closest('[data-workflow-step] .step-main');
-      if (!button || event.target.closest('[data-open-workflow-resource]')) return;
+    document.querySelectorAll('[data-workflow-step] .step-main').forEach(button => button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
       const scrollTop = detail.scrollTop;
       const scrollLeft = detail.scrollLeft;
       const pageTop = document.scrollingElement?.scrollTop ?? 0;
@@ -536,9 +536,15 @@ async function renderConfiguration() {
       const step = button.closest('[data-workflow-step]');
       const id = step.querySelector('[data-step-field="id"]')?.value ?? '';
       const open = !step.classList.contains('is-open');
+      document.querySelectorAll('[data-workflow-step]').forEach(other => {
+        if (other === step) return;
+        other.classList.remove('is-open');
+        other.querySelector('.step-main')?.setAttribute('aria-expanded', 'false');
+      });
       step.classList.toggle('is-open', open);
       button.setAttribute('aria-expanded', String(open));
-      if (open) state.configurationOpenSteps.add(id); else state.configurationOpenSteps.delete(id);
+      state.configurationOpenSteps.clear();
+      if (open) state.configurationOpenSteps.add(id);
       const restore = () => {
         detail.scrollTop = scrollTop;
         detail.scrollLeft = scrollLeft;
@@ -549,7 +555,7 @@ async function renderConfiguration() {
       };
       requestAnimationFrame(restore);
       setTimeout(restore, 50);
-    };
+    }));
     document.querySelectorAll('[data-step-field="kind"]').forEach(select => select.addEventListener('change', () => render()));
     bindAll('[data-activate-template]', async button => { const item = templates.find(template => template.id === button.dataset.activateTemplate); const version = item?.versions.at(-1); if (!version) { notify('Créez une version avant activation.'); return; } const result = await perform(button, () => api.activateTemplate(item.id, version.id), 'Template activé.'); if (result.ok) await render(); });
     bindAll('[data-delete-template]', async button => { if (!window.confirm('Supprimer ce template local ?')) return; const result = await perform(button, () => api.deleteTemplate(button.dataset.deleteTemplate), 'Template supprimé.'); if (result.ok) await render(); });
