@@ -5,7 +5,7 @@ import { createCostLedger } from '../runs/cost-ledger.mjs';
 import { createEvidenceSnapshot } from './evidence.mjs';
 import { runSeoAudit } from './seo-audit-service.mjs';
 import { resolveAuditBudget, resolveAuditProfile } from './audit-profile.mjs';
-import { buildSeoResearchPlan, competitorType, domainOf, mergeKeywordMetrics, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from './seo-qualification.mjs';
+import { buildSeoResearchPlan, domainOf, mergeKeywordMetrics, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from './seo-qualification.mjs';
 import { renderPublicAuditReport } from './public-audit-report.mjs';
 
 const INDEX_PATH = 'audit-runs/index.json';
@@ -315,14 +315,14 @@ function findLabsPair(result, country, preferred = 'en') {
       ? await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'serp/google/local_finder/live/advanced', endpoint: 'serpLocalFinder', tasks: [{ keyword: researchPlan.seeds[0], location_coordinate: `${coordinates.latitude},${coordinates.longitude}`, language_code: serpTarget.language_code, depth: 10 }], estimate: costs.serpLocalFinder })
       : notRun(coordinates ? 'NO_LOCAL_QUERY' : 'GOOGLE_PLACES_COORDINATES_REQUIRED');
     const localCandidates = normalizeCandidates(localFinder, researchPlan.seeds[0])
-      .map(item => ({ ...item, scope: 'local-serp', classification: 'LOCAL_COMPETITOR_OBSERVED', type: competitorType(item), source: 'dataforseo_local_finder' }));
+      .map(item => ({ ...item, scope: 'local-serp', classification: 'LOCAL_COMPETITOR_OBSERVED', businessConfirmed: true, source: 'dataforseo_local_finder' }));
     const selectedCompetitors = selectBusinessCompetitors([...localCandidates, ...qualifiedCompetitors.candidates], { targetDomain: domain, targetName: name });
-    const localCompetitors = selectedCompetitors.selected.filter(item => item.scope === 'local-serp');
+    const localCompetitors = selectedCompetitors.selected.filter(item => item.scopes.includes('local-serp'));
     const allCompetitors = selectedCompetitors.selected;
     const keywordStatus = keywordIdeas.length || allCompetitors.length ? 'SUCCEEDED' : 'PARTIAL';
     const researchCause = ideas.cause ?? overview.cause ?? competitors.cause ?? localFinder.cause ?? resultResolutionError ?? (keywordStatus === 'PARTIAL' ? 'NO_USABLE_KEYWORD_OR_COMPETITOR_RESULTS' : null);
     result.stages.push(stage('competitor-keywords', keywordStatus, { cause: researchCause, providerState: ready.state, execution: [ideas, overview, competitors, localFinder].some(item => item.execution === 'real-http-call') ? 'real-http-call' : [ideas, overview, competitors, localFinder].some(item => item.execution) ? 'adapter-call-no-network' : 'not-run', durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs + localFinder.durationMs }));
-    result.modules.keywords = { ideas: keywordIdeas, rejected: qualifiedKeywords.rejected, overview: summarizeProviderCall(overview), competitors: allCompetitors, competitorCandidates: selectedCompetitors.candidates, competitorRejected: [...qualifiedCompetitors.rejected, ...selectedCompetitors.rejected], localCompetitors, researchPlan, planner: { status: planner.status, cause: planner.cause ?? null, execution: planner.execution, source: planner.source }, location: labTarget, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run', localFinder: localFinder.execution ?? 'not-run' } };
+    result.modules.keywords = { ideas: keywordIdeas, rejected: qualifiedKeywords.rejected, overview: summarizeProviderCall(overview), competitors: allCompetitors, competitorCandidates: selectedCompetitors.candidates, competitorRejected: selectedCompetitors.rejected, localCompetitors, researchPlan, planner: { status: planner.status, cause: planner.cause ?? null, execution: planner.execution, source: planner.source }, location: labTarget, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run', localFinder: localFinder.execution ?? 'not-run' } };
     for (const item of [ideas, overview, competitors, localFinder]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: researchPlan.seeds.map(value => ({ value, classification: 'SUGGESTED' })), recommendations: [!domain ? 'Confirmer le site officiel avant toute conclusion SEO technique.' : null, !gmbCandidates.length ? 'Vérifier l’identité et l’adresse avant de retenir une fiche GMB.' : null, !keywordIdeas.length && !allCompetitors.length ? 'Aucune recommandation concurrentielle n’est fondée sans résultat exploitable.' : null].filter(Boolean), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: planner.status, cause: planner.cause ?? null } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));

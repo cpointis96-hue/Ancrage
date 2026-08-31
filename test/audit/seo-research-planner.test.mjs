@@ -44,6 +44,7 @@ test('exécute le plan IA configuré et borne sa sortie', async () => {
   const context = await ledger();
   const result = await planner({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger, costEventsRef: 'runs/planner-run/cost-events.jsonl' });
   assert.equal(result.status, 'SUCCEEDED');
+  assert.equal(result.execution, 'adapter-call-no-network');
   assert.equal(result.plan.queries[0].query, 'restaurant Assas');
   assert.equal(result.source.maxOutputTokens, 700);
   assert.equal(result.source.costEvent.type, 'COST_SETTLED');
@@ -79,6 +80,46 @@ test('libère l’autorisation IA lorsque le provider échoue', async () => {
   const context = await ledger();
   const result = await createSeoResearchPlanner(failing)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
   assert.equal(result.cause, 'AI_PROVIDER_FAILED');
+  assert.equal(result.execution, 'adapter-call-no-network-failed');
+  assert.equal(result.source.costEvent.type, 'COST_RELEASED');
   const events = (await readFile(path.join(context.store.root, 'runs/planner-run/cost-events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(events.map(item => item.type), ['COST_AUTHORIZED', 'COST_RELEASED']);
+});
+
+test('conserve la réservation si le coût réel manque après l’appel', async () => {
+  const missingCost = dependencies({ category: 'restaurant', queries: [] });
+  missingCost.adapters.openai.generate = async () => ({ output: { category: 'restaurant', queries: [] }, usage: { total_tokens: 12 } });
+  const context = await ledger();
+  const result = await createSeoResearchPlanner(missingCost)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
+  assert.equal(result.cause, 'AI_COST_UNAVAILABLE_AFTER_CALL');
+  assert.equal(result.execution, 'adapter-call-no-network');
+  assert.equal(result.source.ledgerReconciliation, 'REQUIRED');
+  assert.equal(context.ledger.snapshot().reserved, 0.05);
+  const events = (await readFile(path.join(context.store.root, 'runs/planner-run/cost-events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.map(item => item.type), ['COST_AUTHORIZED']);
+});
+
+test('conserve la réservation et la preuve si le règlement échoue', async () => {
+  const context = await ledger();
+  const failingLedger = { ...context.ledger, async settle() { throw Object.assign(new Error('ledger indisponible'), { code: 'COST_LEDGER_BUSY' }); } };
+  const result = await createSeoResearchPlanner(dependencies({ category: 'restaurant', queries: [] }))({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: failingLedger });
+  assert.equal(result.cause, 'AI_COST_SETTLE_FAILED');
+  assert.equal(result.execution, 'adapter-call-no-network');
+  assert.equal(result.source.actualCost, 0.005);
+  assert.equal(result.source.ledgerReconciliation, 'REQUIRED');
+  assert.equal(context.ledger.snapshot().reserved, 0.05);
+});
+
+test('garde l’erreur provider et demande une réconciliation si la release échoue', async () => {
+  const failing = dependencies({ category: 'restaurant', queries: [] });
+  failing.adapters.openai.executionType = 'http';
+  failing.adapters.openai.generate = async () => { throw Object.assign(new Error('indisponible'), { code: 'AI_PROVIDER_FAILED' }); };
+  const context = await ledger();
+  const failingLedger = { ...context.ledger, async cancel() { throw Object.assign(new Error('ledger indisponible'), { code: 'COST_LEDGER_BUSY' }); } };
+  const result = await createSeoResearchPlanner(failing)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: failingLedger });
+  assert.equal(result.cause, 'AI_COST_RELEASE_FAILED');
+  assert.equal(result.execution, 'real-http-call-failed');
+  assert.equal(result.source.providerErrorCode, 'AI_PROVIDER_FAILED');
+  assert.equal(result.source.ledgerReconciliation, 'REQUIRED');
+  assert.equal(context.ledger.snapshot().reserved, 0.05);
 });

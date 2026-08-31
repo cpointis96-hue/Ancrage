@@ -285,3 +285,33 @@ test('ne présente pas l’établissement audité comme concurrent local', async
   assert.equal(result.modules.keywords.localCompetitors.some(item => item.title === 'Le Midi-Teyranais'), false);
   assert.equal(result.modules.keywords.localCompetitors.some(item => item.title === 'Restaurant voisin'), true);
 });
+
+test('persiste des candidats concurrents canoniques et fusionne une collision locale et nationale', async () => {
+  const calls = [];
+  const configuredAdapters = adapters(calls);
+  configuredAdapters.dataforseo.keywordIdeasLive = async input => {
+    calls.push({ name: 'keywordIdeasLive', input });
+    return { tasks: [{ result: [{ items: [{ keyword: 'restaurant Teyran', keyword_info: { search_volume: 20 } }] }] }] };
+  };
+  configuredAdapters.dataforseo.serpCompetitors = async input => {
+    calls.push({ name: 'serpCompetitors', input });
+    return { tasks: [{ result: [{ items: [{ domain: 'www.voisin.example', keywords: ['restaurant Teyran'], is_business: true }] }] }] };
+  };
+  configuredAdapters.dataforseo.serpLocalFinder = async input => {
+    calls.push({ name: 'serpLocalFinder', input });
+    return { tasks: [{ result: [{ items: [
+      { title: 'Restaurant voisin Teyran', url: 'https://voisin.example/menu' },
+      { title: 'Maison Sillage restaurant Teyran', url: 'https://www.example.com/' },
+    ] }] }] };
+  };
+  const workflow = createPublicAuditWorkflow({
+    store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-competitor-merge-'))), providers: providerState(), adapters: configuredAdapters,
+    secretStore: createMemorySecretStore({ 'provider:dataforseo': JSON.stringify({ login: 'fixture-user', password: 'fixture-pass' }) }),
+  });
+  const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, domain: 'https://example.com', identity: { source: 'google-places', placeId: 'place-1', coordinates: { latitude: 43.68, longitude: 3.93 }, primaryType: 'restaurant' } });
+  const voisin = result.modules.keywords.competitorCandidates.find(item => item.domain === 'voisin.example');
+  assert.deepEqual(voisin.scopes.sort(), ['local-serp', 'national-seo']);
+  assert.equal(voisin.mergedCandidateCount, 2);
+  assert.equal(result.modules.keywords.competitors.length, 1);
+  assert.equal(result.modules.keywords.competitorRejected.filter(item => item.reason === 'AUDITED_DOMAIN_EXCLUDED').length, 1);
+});

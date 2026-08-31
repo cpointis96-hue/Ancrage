@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSeoResearchPlan, qualifyCompetitorResults, qualifyKeywordResults } from '../../src/audit/seo-qualification.mjs';
+import { buildSeoResearchPlan, competitorType, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from '../../src/audit/seo-qualification.mjs';
 
 test('construit les seeds depuis la catégorie observée et la ville', () => {
   const plan = buildSeoResearchPlan({ cityLabel: 'Teyran', country: 'FR', identity: { primaryType: 'restaurant' } });
@@ -33,9 +33,9 @@ test('refuse toute shortlist sans catégorie observée', () => {
 
 test('déduplique les concurrents, exclut le domaine audité et les qualifie comme SEO nationaux', () => {
   const result = qualifyCompetitorResults({ tasks: [{ result: [{ items: [
-    { domain: 'www.example.com', visibility: 90, keywords: ['restaurant Teyran'] },
-    { domain: 'competitor.fr', visibility: 5, avg_position: 4, keywords: ['restaurant Teyran'] },
-    { url: 'https://competitor.fr/page', visibility: 8, keywords_count: 3, keywords: ['restaurant Teyran'] },
+    { domain: 'www.example.com', visibility: 90, keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'competitor.fr', visibility: 5, avg_position: 4, keywords: ['restaurant Teyran'], is_business: true },
+    { url: 'https://competitor.fr/page', visibility: 8, keywords_count: 3, keywords: ['restaurant Teyran'], is_business: true },
   ] }] }] }, { targetDomain: 'https://example.com', selectedKeywords: ['restaurant Teyran'], locality: 'Teyran' });
   assert.equal(result.selected.length, 1);
   assert.equal(result.selected[0].domain, 'competitor.fr');
@@ -49,20 +49,45 @@ test('déduplique les concurrents, exclut le domaine audité et les qualifie com
 test('conserve les candidats et rejette les annuaires, médias et plateformes sans compléter artificiellement', () => {
   const items = [
     { domain: 'tripadvisor.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'guide-local.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'guide.local.fr', keywords: ['restaurant Teyran'] },
     { domain: 'instagram.com', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-a.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-b.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-c.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-d.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-e.fr', keywords: ['restaurant Teyran'] },
-    { domain: 'restaurant-f.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-a.fr', keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'restaurant-b.fr', keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'restaurant-c.fr', keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'restaurant-d.fr', keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'restaurant-e.fr', keywords: ['restaurant Teyran'], is_business: true },
+    { domain: 'restaurant-f.fr', keywords: ['restaurant Teyran'], is_business: true },
   ];
   const result = qualifyCompetitorResults({ tasks: [{ result: [{ items }] }] }, { selectedKeywords: ['restaurant Teyran'] });
   assert.equal(result.candidates.length, 9);
   assert.deepEqual(result.selected.map(item => item.domain), ['restaurant-a.fr', 'restaurant-b.fr', 'restaurant-c.fr', 'restaurant-d.fr', 'restaurant-e.fr']);
   assert.deepEqual(result.rejected.filter(item => item.reason === 'NON_BUSINESS_COMPETITOR').map(item => item.type).sort(), ['directory', 'media', 'platform']);
   assert.equal(result.rejected.some(item => item.reason === 'COMPETITOR_SHORTLIST_LIMIT'), true);
+});
+
+test('canonise les URL, fusionne local et national, et motive chaque exclusion une seule fois', () => {
+  const selection = selectBusinessCompetitors([
+    { title: 'Restaurant voisin', url: 'https://www.voisin.fr/menu', scope: 'local-serp', source: 'dataforseo_local_finder', businessConfirmed: true },
+    { title: 'Restaurant voisin SEO', domain: 'voisin.fr', scope: 'national-seo', source: 'dataforseo_labs_serp_competitors', matchedKeywords: ['restaurant Teyran'], is_business: true },
+    { title: 'Établissement audité', url: 'https://www.example.com/', scope: 'local-serp', source: 'dataforseo_local_finder', businessConfirmed: true },
+  ], { targetDomain: 'https://example.com', targetName: 'Établissement audité' });
+  assert.equal(selection.candidates.length, 2);
+  const voisin = selection.candidates.find(item => item.domain === 'voisin.fr');
+  assert.deepEqual(voisin.scopes.sort(), ['local-serp', 'national-seo']);
+  assert.deepEqual(voisin.sources.sort(), ['dataforseo_labs_serp_competitors', 'dataforseo_local_finder']);
+  assert.equal(voisin.mergedCandidateCount, 2);
+  assert.equal(voisin.mergeReason, 'CANONICAL_DOMAIN_COLLISION');
+  assert.equal(selection.selected.length, 1);
+  assert.equal(selection.rejected.length, 1);
+  assert.equal(selection.rejected[0].reason, 'AUDITED_DOMAIN_EXCLUDED');
+});
+
+test('ne classe pas un titre ambigu comme média et rejette l’identité métier inconnue', () => {
+  assert.equal(competitorType({ domain: 'restaurant.example', title: 'Le Guide Gourmand', businessConfirmed: true }), 'business');
+  assert.equal(competitorType({ url: 'https://guide.restaurant.example/page', title: 'Restaurant voisin', businessConfirmed: true }), 'media');
+  const result = selectBusinessCompetitors([{ domain: 'inconnu.example', title: 'Restaurant voisin', scope: 'national-seo', source: 'dataforseo_labs_serp_competitors' }]);
+  assert.equal(result.selected.length, 0);
+  assert.equal(result.rejected[0].reason, 'BUSINESS_IDENTITY_NOT_CONFIRMED');
 });
 
 test('écarte les villes et enseignes remontées par une idée nationale', () => {

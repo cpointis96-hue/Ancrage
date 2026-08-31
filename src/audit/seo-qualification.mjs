@@ -199,41 +199,101 @@ function competitorMetrics(item) {
   };
 }
 
-const DIRECTORY_DOMAINS = ['tripadvisor.', 'yelp.', 'pagesjaunes.', 'google.', 'foursquare.', 'thefork.'];
-const MEDIA_TERMS = ['guide', 'magazine', 'journal', 'news', 'media', 'presse'];
-const PLATFORM_DOMAINS = ['facebook.', 'instagram.', 'tiktok.', 'booking.', 'deliveroo.', 'ubereats.', 'linkedin.', 'wikipedia.'];
+const DIRECTORY_HOSTS = ['tripadvisor', 'yelp', 'pagesjaunes', 'google', 'foursquare', 'thefork'];
+const PLATFORM_HOSTS = ['facebook', 'instagram', 'tiktok', 'booking', 'deliveroo', 'ubereats', 'linkedin', 'wikipedia'];
+const MEDIA_LABELS = new Set(['guide', 'magazine', 'journal', 'news', 'media', 'presse']);
 
-export function competitorType({ domain = null, title = null } = {}) {
-  const value = `${domain ?? ''} ${title ?? ''}`.toLocaleLowerCase('fr');
-  if (DIRECTORY_DOMAINS.some(term => value.includes(term))) return 'directory';
-  if (PLATFORM_DOMAINS.some(term => value.includes(term))) return 'platform';
-  if (MEDIA_TERMS.some(term => value.includes(term))) return 'media';
-  return 'business';
+function hostnameMatches(domain, names) {
+  return names.some(name => domain === name || domain.startsWith(`${name}.`) || domain.endsWith(`.${name}`) || domain.includes(`.${name}.`));
+}
+function hasMediaLabel(domain) { return domain.split('.').some(label => MEDIA_LABELS.has(label)); }
+function sourceValues(candidate) { return unique([...(candidate.sources ?? []), candidate.source]); }
+function scopeValues(candidate) { return unique([...(candidate.scopes ?? []), candidate.scope]); }
+function matchedKeywordValues(candidate) { return unique(candidate.matchedKeywords ?? []); }
+function businessConfirmed(candidate) {
+  return candidate.businessConfirmed === true
+    || sourceValues(candidate).includes('dataforseo_local_finder')
+    || candidate.providerBusinessType === 'business';
+}
+
+export function competitorType(candidate = {}) {
+  const domain = domainOf(candidate.domain) ?? domainOf(candidate.url) ?? '';
+  if (hostnameMatches(domain, DIRECTORY_HOSTS)) return 'directory';
+  if (hostnameMatches(domain, PLATFORM_HOSTS)) return 'platform';
+  if (hasMediaLabel(domain)) return 'media';
+  return businessConfirmed(candidate) ? 'business' : 'unknown';
+}
+
+function candidateKey(candidate) { return candidate.domain ?? (candidate.title ? `title:${normalize(candidate.title)}` : null); }
+function mergeMetrics(left, right) {
+  const avgPosition = Math.min(left.avgPosition ?? Infinity, right.avgPosition ?? Infinity);
+  const medianPosition = Math.min(left.medianPosition ?? Infinity, right.medianPosition ?? Infinity);
+  return {
+    keywordsCount: Math.max(left.keywordsCount ?? 0, right.keywordsCount ?? 0) || null,
+    visibility: Math.max(left.visibility ?? 0, right.visibility ?? 0) || null,
+    avgPosition: Number.isFinite(avgPosition) ? avgPosition : null,
+    medianPosition: Number.isFinite(medianPosition) ? medianPosition : null,
+    trafficEstimate: Math.max(left.trafficEstimate ?? 0, right.trafficEstimate ?? 0) || null,
+  };
+}
+
+export function mergeCompetitorCandidates(candidates) {
+  const byKey = new Map();
+  for (const candidate of candidates) {
+    const domain = domainOf(candidate?.domain) ?? domainOf(candidate?.url);
+    const normalized = {
+      ...candidate,
+      domain,
+      scopes: scopeValues(candidate),
+      sources: sourceValues(candidate),
+      matchedKeywords: matchedKeywordValues(candidate),
+      provenances: unique([...(candidate.provenances ?? []), `${candidate.scope ?? 'unknown'}:${candidate.source ?? 'unknown'}`]),
+      businessConfirmed: businessConfirmed(candidate),
+      mergedCandidateCount: candidate.mergedCandidateCount ?? 1,
+    };
+    const key = candidateKey(normalized);
+    if (!key) continue;
+    const previous = byKey.get(key);
+    if (!previous) { byKey.set(key, normalized); continue; }
+    const merged = {
+      ...previous,
+      title: previous.title ?? normalized.title ?? null,
+      scopes: unique([...previous.scopes, ...normalized.scopes]),
+      sources: unique([...previous.sources, ...normalized.sources]),
+      matchedKeywords: unique([...previous.matchedKeywords, ...normalized.matchedKeywords]),
+      provenances: unique([...previous.provenances, ...normalized.provenances]),
+      businessConfirmed: previous.businessConfirmed || normalized.businessConfirmed,
+      mergedCandidateCount: (previous.mergedCandidateCount ?? 1) + 1,
+      mergeReason: 'CANONICAL_DOMAIN_COLLISION',
+      ...mergeMetrics(previous, normalized),
+    };
+    byKey.set(key, merged);
+  }
+  return [...byKey.values()].map(candidate => ({ ...candidate, type: competitorType(candidate) }))
+    .sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || String(left.domain ?? left.title).localeCompare(String(right.domain ?? right.title)));
 }
 
 export function selectBusinessCompetitors(candidates, { targetDomain = null, targetName = null } = {}) {
   const target = domainOf(targetDomain);
   const targetTitle = normalize(targetName);
+  const merged = mergeCompetitorCandidates(candidates);
   const accepted = [];
   const rejected = [];
-  const seen = new Set();
-  for (const candidate of candidates) {
-    const key = candidate.domain ?? normalize(candidate.title);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+  for (const candidate of merged) {
     if (candidate.domain && candidate.domain === target) { rejected.push({ ...candidate, reason: 'AUDITED_DOMAIN_EXCLUDED' }); continue; }
     if (targetTitle && normalize(candidate.title) === targetTitle) { rejected.push({ ...candidate, reason: 'AUDITED_BUSINESS_EXCLUDED' }); continue; }
+    if (candidate.type === 'unknown') { rejected.push({ ...candidate, reason: 'BUSINESS_IDENTITY_NOT_CONFIRMED' }); continue; }
     if (candidate.type !== 'business') { rejected.push({ ...candidate, reason: 'NON_BUSINESS_COMPETITOR' }); continue; }
     accepted.push(candidate);
   }
-  return { candidates, selected: accepted.slice(0, 5), rejected: [...rejected, ...accepted.slice(5).map(item => ({ ...item, reason: 'COMPETITOR_SHORTLIST_LIMIT' }))] };
+  return { candidates: merged, selected: accepted.slice(0, 5), rejected: [...rejected, ...accepted.slice(5).map(item => ({ ...item, reason: 'COMPETITOR_SHORTLIST_LIMIT' }))] };
 }
 
 export function qualifyCompetitorResults(result, { targetDomain = null, selectedKeywords = [], locality = null } = {}) {
   const wanted = new Set(selectedKeywords.map(value => normalize(typeof value === 'string' ? value : value?.keyword)).filter(Boolean));
   const byDomain = new Map();
   for (const item of flattenItems(result)) {
-    const domain = domainOf(item?.domain ?? item?.url ?? item?.target);
+    const domain = domainOf(item?.domain) ?? domainOf(item?.url) ?? domainOf(item?.target);
     if (!domain) continue;
     const metrics = competitorMetrics(item);
     const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : [];
@@ -246,8 +306,9 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
       scope: 'national-seo',
       locality: locality ?? null,
       classification: 'SEO_COMPETITOR_CANDIDATE',
-      type: competitorType({ domain, title: item?.title ?? item?.name ?? null }),
       matchedKeywords,
+      businessConfirmed: item?.is_business === true || item?.business === true,
+      providerBusinessType: item?.business_type ?? item?.entity_type ?? item?.type ?? null,
       ...metrics,
       source: item?.source ?? 'dataforseo_labs_serp_competitors',
     };
@@ -255,8 +316,8 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
     else byDomain.set(domain, {
       ...existing,
       matchedKeywords: unique([...existing.matchedKeywords, ...matchedKeywords]),
-      keywordsCount: Math.max(existing.keywordsCount ?? 0, row.keywordsCount ?? 0) || null,
-      visibility: Math.max(existing.visibility ?? 0, row.visibility ?? 0) || null,
+      businessConfirmed: existing.businessConfirmed || row.businessConfirmed,
+      ...mergeMetrics(existing, row),
     });
   }
   const candidates = [...byDomain.values()].sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || left.domain.localeCompare(right.domain));
