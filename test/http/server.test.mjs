@@ -219,7 +219,7 @@ test('expose un audit SEO local, son rapport, puis le recharge', async () => {
     url,
     status: 200,
     headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(auditHtml)) : null },
-    text: async () => auditHtml,
+    body: new ReadableStream({ start(controller) { controller.enqueue(Buffer.from(auditHtml)); controller.close(); } }),
   });
   const auditRunner = input => runSeoAudit({ ...input, fetchImpl, lookup: async () => ['93.184.216.34'] });
   const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), auditRunner });

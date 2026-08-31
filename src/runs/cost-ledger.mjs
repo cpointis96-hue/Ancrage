@@ -1,4 +1,4 @@
-import { mkdir, open, unlink } from 'node:fs/promises';
+import { mkdir, open, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { assertResourceId, createId } from '../core/ids.mjs';
 import { ValidationError } from '../core/errors.mjs';
@@ -29,6 +29,10 @@ function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
+}
+
+function isInside(root, candidate) {
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
 }
 
 export function createCostLedger({ store, runId, envelope = {}, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
@@ -161,7 +165,10 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
 
   async function acquireLock() {
     const lockPath = store.resolveSafe(LOCK_PATH(runId));
-    await mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+    const parent = path.dirname(lockPath);
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    const [realRoot, realParent] = await Promise.all([realpath(store.root), realpath(parent)]);
+    if (!isInside(realRoot, realParent)) throw costError('Répertoire de verrou invalide.', 'COST_LEDGER_LOCK_INVALID');
     const deadline = Date.now() + lockTimeoutMs;
     while (true) {
       try {
@@ -182,6 +189,7 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
     try {
       reset();
       await hydrate();
+      await recoverThresholds();
       return await action();
     } finally {
       await release();
@@ -255,6 +263,10 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
       firedThresholds.add(threshold);
       await append({ type: 'BUDGET_THRESHOLD', phase: 'after', threshold, state: state() });
     }
+  }
+
+  async function recoverThresholds() {
+    await emitThresholds();
   }
 
   return { authorize, cancel, ready, settle, snapshot: state };

@@ -116,6 +116,13 @@ async function cancelBody(response, signal) {
   }
 }
 
+function stopIterator(body, iterator) {
+  try {
+    if (typeof iterator.return === 'function') Promise.resolve(iterator.return()).catch(() => {});
+    else if (typeof body.destroy === 'function') body.destroy();
+  } catch { /* cancellation is best-effort after the bounded read has stopped */ }
+}
+
 async function readHtml(response, { signal, remainingBytes, consumeBytes }) {
   const declaredLength = contentLength(response);
   if (declaredLength !== null && declaredLength > remainingBytes()) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
@@ -145,30 +152,30 @@ async function readHtml(response, { signal, remainingBytes, consumeBytes }) {
   }
 
   if (response.body?.[Symbol.asyncIterator]) {
+    const body = response.body;
+    const iterator = body[Symbol.asyncIterator]();
     const chunks = [];
     try {
-      for await (const value of response.body) {
+      while (true) {
+        const next = await awaitWithSignal(iterator.next(), signal);
+        if (next.done) break;
+        const value = next.value;
         const chunk = Buffer.from(value);
         consumeBytes(chunk.byteLength);
         if (remainingBytes() < 0) {
-          await cancelBody(response, signal).catch(() => {});
+          stopIterator(body, iterator);
           throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
         }
         chunks.push(chunk);
       }
     } catch (error) {
-      if (signal?.aborted) await cancelBody(response, signal).catch(() => {});
+      if (signal?.aborted) stopIterator(body, iterator);
       throw error;
     }
     return Buffer.concat(chunks).toString('utf8');
   }
 
-  if (declaredLength === null) throw crawlerError('Corps non borné.', 'BODY_NOT_BOUNDED');
-  const html = await awaitWithSignal(response.text(), signal);
-  const size = Buffer.byteLength(html, 'utf8');
-  consumeBytes(size);
-  if (remainingBytes() < 0) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
-  return html;
+  throw crawlerError('Corps non borné.', 'BODY_NOT_BOUNDED');
 }
 
 function redirectTarget(response, base) {

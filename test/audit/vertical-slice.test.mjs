@@ -36,7 +36,7 @@ test('relie un crawl capturé à l’analyse sans exposer le HTML brut', async (
     target,
     observedAt,
     lookup: async () => [{ address: '93.184.216.34', family: 4 }],
-    fetchImpl: async url => ({ status: 200, url, headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html' : name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(html)) : null }, text: async () => html }),
+    fetchImpl: async url => ({ status: 200, url, headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html' : name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(html)) : null }, body: new ReadableStream({ start(controller) { controller.enqueue(Buffer.from(html)); controller.close(); } }) }),
     profile: { maxPages: 1, maxBytes: 10000, timeoutMs: 1000 },
   });
 

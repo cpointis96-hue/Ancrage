@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -105,4 +105,34 @@ test('échoue fermé sans supprimer un verrou de ledger persistant', async () =>
   const ledger = createCostLedger({ store, runId: 'run-busy', envelope: { hardLimit: 5 }, lockTimeoutMs: 10 });
   await assert.rejects(() => ledger.ready, error => error.code === 'COST_LEDGER_BUSY');
   assert.equal(await store.readText('runs/run-busy/cost-events.lock'), 'processus interrompu');
+});
+
+test('récupère les seuils absents après un append partiel', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const atomicStore = createAtomicStore(root);
+  const failingStore = {
+    ...atomicStore,
+    appendJsonLine: async (relativePath, event) => {
+      if (event.type === 'BUDGET_THRESHOLD' && event.threshold === 0.8) throw new Error('append interrompu');
+      return atomicStore.appendJsonLine(relativePath, event);
+    },
+  };
+  const ledger = createCostLedger({ store: failingStore, runId: 'run-threshold-recovery', envelope: { hardLimit: 10 } });
+  const authorization = await ledger.authorize({ stepId: 'serp', provider: 'dataforseo', unit: 'task', estimatedCost: 10 });
+  await assert.rejects(() => ledger.settle({ authorizationId: authorization.authorizationId, actualCost: 10 }));
+
+  const resumed = createCostLedger({ store: atomicStore, runId: 'run-threshold-recovery', envelope: { hardLimit: 10 } });
+  await resumed.ready;
+  const events = (await readFile(path.join(root, 'runs/run-threshold-recovery/cost-events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.filter(event => event.type === 'BUDGET_THRESHOLD').map(event => event.threshold), [0.5, 0.8, 1]);
+});
+
+test('refuse un parent de verrou symlinké sans créer de verrou externe', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const external = await mkdtemp(path.join(tmpdir(), 'ancrage-external-'));
+  await mkdir(path.join(root, 'runs'), { recursive: true });
+  await symlink(external, path.join(root, 'runs', 'run-symlink'));
+  const ledger = createCostLedger({ store: createAtomicStore(root), runId: 'run-symlink', envelope: { hardLimit: 5 } });
+  await assert.rejects(() => ledger.ready, error => error.code === 'COST_LEDGER_LOCK_INVALID');
+  await assert.rejects(() => readFile(path.join(external, 'cost-events.lock')));
 });
