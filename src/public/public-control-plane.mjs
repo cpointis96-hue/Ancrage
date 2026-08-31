@@ -113,7 +113,7 @@ function preparationDraft(request, preparation) {
   };
 }
 
-export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, pipelineReconciler = null, demoPresenter = null, startLockTimeoutMs = 60_000 } = {}) {
+export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, pipelineReconciler = null, demoPresenter = null, startLockTimeoutMs = 60_000, startLeaseHooks = null } = {}) {
   const starts = new Map();
   if (!Number.isInteger(startLockTimeoutMs) || startLockTimeoutMs < 1 || startLockTimeoutMs > 300_000) throw new ValidationError('startLockTimeoutMs est invalide.', { field: 'startLockTimeoutMs' });
   const lockPath = id => store.resolveSafe(`public-control-plane/preparations/${id}.start.lock`);
@@ -167,6 +167,8 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (lock.released) return false;
       const metadata = await readLockMetadata(lock.lockPath);
       if (!metadata || metadata.token !== lock.token || lock.released) return false;
+      await startLeaseHooks?.afterRead?.({ token: lock.token });
+      if (lock.released) return false;
       await writeStartLock(lock.lockPath, lock.token);
       return !lock.released;
     });

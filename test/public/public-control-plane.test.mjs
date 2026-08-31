@@ -197,6 +197,28 @@ test('réserve atomiquement le démarrage et refuse les rapports incohérents', 
   const { controlPlane: inconsistent } = await fixture({ pipelineStarter: async () => ({ runId: 'run-inconsistent', acceptanceReport: { ...acceptanceReport('PASS'), gates: [{ ...acceptanceReport('PASS').gates[0], status: 'BLOCK' }] } }) }); const inconsistentRequest = await inconsistent.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-inconsistent' }); await inconsistent.seedSyntheticReport(inconsistentRequest.id, { kind: 'final', html: '<h1>Final</h1>' }); const inconsistentPreparation = await inconsistent.createPreparation(inconsistentRequest.id, { email: 'owner@example.test', idempotencyKey: 'prep-inconsistent' }); await completePreparation(inconsistent, inconsistentPreparation); await assert.rejects(() => inconsistent.start(inconsistentPreparation.id), error => error.code === 'ACCEPTANCE_REPORT_INVALID'); await assert.rejects(() => inconsistent.validateDemo(inconsistentPreparation.id, 'APPROVED'), error => error.code === 'DEMO_NOT_READY_FOR_REVIEW');
 });
 
+test('attend un heartbeat engagé avant de libérer le bail de démarrage', async () => {
+  let pipelineStarted = false; let heartbeatBlocked = false; let unblockRenewal; let renewalBlocked; let releaseStarter; let starterEntered;
+  const renewalGate = new Promise(resolve => { unblockRenewal = resolve; }); const renewalObserved = new Promise(resolve => { renewalBlocked = resolve; });
+  const starterGate = new Promise(resolve => { releaseStarter = resolve; }); const starterObserved = new Promise(resolve => { starterEntered = resolve; });
+  const first = await fixture({
+    startLockTimeoutMs: 10,
+    startLeaseHooks: { afterRead: async () => { if (pipelineStarted && !heartbeatBlocked) { heartbeatBlocked = true; renewalBlocked(); await renewalGate; } } },
+    pipelineStarter: async () => { pipelineStarted = true; starterEntered(); await starterGate; throw new Error('interruption A'); },
+    pipelineReconciler: async () => null,
+  });
+  const second = createPublicControlPlane({ store: first.store, contracts: first.contracts, startLockTimeoutMs: 10, siteSpecComposer: async () => validSiteSpec(), pipelineStarter: async () => ({ runId: 'run-b', acceptanceReport: acceptanceReport('PASS') }) });
+  const preparation = await readyPreparation(first.controlPlane, 'heartbeat-release');
+  const starting = first.controlPlane.start(preparation.id); await starterObserved; await renewalObserved;
+  releaseStarter();
+  await assert.rejects(() => second.start(preparation.id), error => error.code === 'PIPELINE_START_IN_PROGRESS');
+  unblockRenewal();
+  await assert.rejects(() => starting, /interruption A/);
+  await first.controlPlane.reconcileStart(preparation.id, { action: 'CONFIRM_NO_RUN' });
+  const recovered = await second.start(preparation.id);
+  assert.equal(recovered.pipelineRunId, 'run-b');
+});
+
 test('réconcilie un verrou expiré seulement après avoir recherché le run réservé', async () => {
   let reconciledReservation = null; let starterCalls = 0;
   const { controlPlane, store } = await fixture({
