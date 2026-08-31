@@ -99,7 +99,7 @@ function preparationDraft(request, preparation) {
   const intake = preparation.intake ?? {};
   return {
     id: `draft-${preparation.id}`,
-    auditPacketRef: request.audit?.id ?? request.id,
+    auditPacketRef: request.audit?.auditPacket?.packetId ?? request.audit?.id ?? request.id,
     revision: 1,
     locale: preparation.locale,
     values: [

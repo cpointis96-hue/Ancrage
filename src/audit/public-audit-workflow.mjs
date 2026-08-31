@@ -7,12 +7,14 @@ import { runSeoAudit } from './seo-audit-service.mjs';
 import { resolveAuditBudget, resolveAuditProfile } from './audit-profile.mjs';
 import { buildSeoResearchPlan, domainOf, mergeKeywordMetrics, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from './seo-qualification.mjs';
 import { renderPublicAuditReport } from './public-audit-report.mjs';
+import { assembleAuditPacket, projectAuditPacket } from './audit-packet.mjs';
 
 const INDEX_PATH = 'audit-runs/index.json';
 const IDEMPOTENCY_PATH = key => `audit-runs/idempotency/${createHash('sha256').update(key).digest('hex')}.json`;
 const WORKFLOW_VERSION = 'public-audit-v1';
 const STAGES = ['establishment-search', 'site-discovery', 'gmb-audit', 'seo-audit', 'competitor-keywords', 'strategy'];
 const reportPath = (id, kind) => `audit-runs/${id}/reports/${kind}.html`;
+const packetPath = (id, revision) => `audit-runs/${id}/packets/${revision}.json`;
 
 function pathFor(id) { return `audit-runs/${id}/run.json`; }
 function text(value, field, max = 200) {
@@ -31,17 +33,18 @@ function fingerprint(input) { return JSON.stringify(input); }
 function stage(id, status, extra = {}) { return { id, status, ...extra }; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
 function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
-function renderPdf(result) {
+export function renderPublicAuditPdf(result, auditPacket = null) {
+  const projection = auditPacket ? projectAuditPacket(auditPacket) : null;
   const lines = [
     'Rapport final SEO et concurrence',
     result.input.name,
     `${result.input.city.label} - observation ${result.startedAt}`,
     '',
-    `Statut : ${result.status}`,
-    `Etablissements retournes : ${result.modules.gmb?.candidates?.length ?? 0}`,
-    `Pistes de mots-cles : ${result.modules.keywords?.ideas?.length ?? 0}`,
-    `Concurrents : ${result.modules.keywords?.competitors?.length ?? 0}`,
-    `Preuves provider : ${result.evidence.length}`,
+    `Statut : ${projection?.status ?? result.status}`,
+    `Etablissements retournes : ${projection?.metrics.gmbCandidates ?? result.modules.gmb?.candidates?.length ?? 0}`,
+    `Pistes de mots-cles : ${projection?.metrics.keywordOpportunities ?? result.modules.keywords?.ideas?.length ?? 0}`,
+    `Concurrents : ${projection?.metrics.competitors ?? result.modules.keywords?.competitors?.length ?? 0}`,
+    `Preuves provider : ${projection?.metrics.evidence ?? result.evidence.length}`,
     '',
     'Les branches absentes, partielles ou non confirmees restent signalees.',
   ];
@@ -69,11 +72,29 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const ids = await store.readJson(INDEX_PATH, []);
     return Promise.all(ids.map(get));
   }
+  function packetArtifacts(result, overrides = {}) {
+    const current = Object.fromEntries((result.reports ?? []).map(item => [item.kind, item]));
+    return {
+      gmbReport: overrides.gmbReport ?? current.gmb?.path ?? null,
+      finalReport: overrides.finalReport ?? current.final?.path ?? null,
+      pdf: overrides.pdf ?? current.final?.pdfPath ?? null,
+    };
+  }
+  async function publishPacket(result, artifacts = {}) {
+    const revision = (result.auditPacket?.revision ?? 0) + 1;
+    const assembled = assembleAuditPacket({ auditRun: result, revision, artifacts: packetArtifacts(result, artifacts) });
+    const snapshotRef = packetPath(result.id, revision);
+    await store.writeJson(snapshotRef, assembled.packet, { immutable: true });
+    result.auditPacket = { packetId: assembled.packet.packetId, revision, hash: assembled.hash, snapshotRef };
+    result.auditProjection = projectAuditPacket(assembled.packet);
+    return assembled.packet;
+  }
   async function publishReport(result, kind) {
     const path = reportPath(result.id, kind);
-    await store.writeText(path, renderPublicAuditReport(result, kind), { immutable: true });
     const pdfPath = kind === 'final' ? reportPath(result.id, 'final').replace(/\.html$/, '.pdf') : null;
-    if (pdfPath) await store.writeText(pdfPath, renderPdf(result), { immutable: true });
+    const packet = await publishPacket(result, kind === 'gmb' ? { gmbReport: path } : { finalReport: path, pdf: pdfPath });
+    await store.writeText(path, renderPublicAuditReport(result, kind, packet), { immutable: true });
+    if (pdfPath) await store.writeText(pdfPath, renderPublicAuditPdf(result, packet), { immutable: true });
     result.reports = [...(result.reports ?? []).filter(item => item.kind !== kind), { kind, path, pdfPath, status: kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? 'PARTIAL' : result.status, availableAt: clock().toISOString() }];
   }
   async function readReport(id, kind = 'final', format = 'html') {
@@ -83,6 +104,13 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const path = format === 'pdf' ? report.pdfPath : report.path; if (!path) throw new NotFoundError('Rapport introuvable.');
     const value = await store.readText(path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
     return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8', report };
+  }
+  async function readPacket(id) {
+    const run = await get(id);
+    if (!run.auditPacket?.snapshotRef) throw new NotFoundError('AuditPacket introuvable.');
+    const packet = await store.readJson(run.auditPacket.snapshotRef, null);
+    if (!packet) throw new NotFoundError('AuditPacket introuvable.');
+    return { packet, snapshot: run.auditPacket };
   }
   async function addIndex(id) {
     const currentText = await store.readText(INDEX_PATH, null);
@@ -247,7 +275,7 @@ function findLabsPair(result, country, preferred = 'en') {
     result.stages.push(stage('establishment-search', establishmentStatus, { cause: maps.cause ?? null, providerState: maps.providerState ?? ready.state, execution: maps.execution ?? 'not-run', durationMs: maps.durationMs })); if (maps.evidence) result.evidence.push(maps.evidence); result.modules.establishment = { selected: identityConfirmed ? { source: 'google-places', placeId: identity.placeId ?? null, name, address: identity.address ?? null } : null, candidates: establishmentCandidates };
     if (maps.status === 'BLOCKED' && !independentlyConfirmed) {
       for (const remaining of STAGES.slice(1)) result.stages.push(stage(remaining, 'BLOCKED', { cause: 'ESTABLISHMENT_GATE_FAILED', execution: 'not-run' }));
-      result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await save();
+      result.status = 'BLOCKED'; result.budget = actualLedger.snapshot(); result.durationMs = Date.now() - runStarted; result.updatedAt = clock().toISOString(); await publishPacket(result); await save();
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return result;
     }
@@ -344,5 +372,5 @@ function findLabsPair(result, country, preferred = 'en') {
     if (options.waitFor === 'gmb') return { ...result, completion: continueAfterGmb() };
     return continueAfterGmb();
   }
-  return { create, get, list, readReport };
+  return { create, get, list, readPacket, readReport };
 }

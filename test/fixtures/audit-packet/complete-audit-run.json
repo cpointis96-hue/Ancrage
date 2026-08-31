@@ -1,0 +1,44 @@
+{
+  "id": "audit-complete-1",
+  "workflowVersion": "public-audit-v1",
+  "status": "SUCCEEDED",
+  "startedAt": "2026-08-31T10:00:00.000Z",
+  "updatedAt": "2026-08-31T10:02:00.000Z",
+  "input": {
+    "name": "Maison Sillage",
+    "city": { "id": "fr-nantes", "label": "Nantes", "country": "FR" },
+    "address": "1 rue du Port",
+    "domain": "https://maison-sillage.example",
+    "domainSource": "google-places",
+    "mode": "CONFIRM",
+    "identity": { "primaryTypeDisplayName": "Restaurant", "address": "1 rue du Port" }
+  },
+  "stages": [
+    { "id": "establishment-search", "status": "SUCCEEDED" },
+    { "id": "site-discovery", "status": "SUCCEEDED" },
+    { "id": "gmb-audit", "status": "SUCCEEDED" },
+    { "id": "seo-audit", "status": "SUCCEEDED" },
+    { "id": "competitor-keywords", "status": "SUCCEEDED" },
+    { "id": "strategy", "status": "SUCCEEDED" }
+  ],
+  "evidence": [
+    { "id": "evidence-gmb", "ruleVersion": "public-audit-v1", "provider": "dataforseo", "canonicalUrl": "https://api.example/gmb" },
+    { "id": "evidence-seo", "ruleVersion": "seo-rules-v1", "provider": null, "canonicalUrl": "https://maison-sillage.example" }
+  ],
+  "budget": { "currency": "USD", "hardLimit": 0.5, "spent": 0.18, "reserved": 0 },
+  "reports": [],
+  "modules": {
+    "establishment": { "selected": { "name": "Maison Sillage", "address": "1 rue du Port" } },
+    "site": { "confirmation": { "status": "CONFIRMED" } },
+    "gmb": { "candidates": [{ "title": "Maison Sillage" }, { "title": "Maison Sillage Centre" }] },
+    "seo": { "ruleVersion": "seo-rules-v1", "summary": { "pagesAnalyzed": 4 }, "findings": [{ "code": "MISSING_META_DESCRIPTION", "severity": "WARN", "classification": "CALCULATED", "evidence": { "id": "evidence-seo" } }] },
+    "keywords": {
+      "location": { "language_code": "fr" },
+      "ideas": [{ "keyword": "restaurant nantes", "intent": "local", "scope": "local-query", "searchVolume": 720, "cpc": 1.2 }],
+      "competitors": [{ "title": "Le Passage", "domain": "le-passage.example", "scope": "local-serp", "type": "business" }],
+      "competitorCandidates": [{ "title": "Le Passage", "domain": "le-passage.example", "scope": "local-serp", "type": "business" }],
+      "planner": { "status": "SUCCEEDED", "execution": "adapter-call-no-network", "cause": null }
+    },
+    "strategy": { "recommendations": ["Compléter les meta descriptions prioritaires."] }
+  }
+}
