@@ -17,7 +17,7 @@ async function fixture(options = {}) {
     const schema = JSON.parse(await readFile(new URL(`../../fixtures/defaults/contracts/${id}.schema.json`, import.meta.url), 'utf8'));
     await contracts.save(id, { name: id, schema }, { expectedHash: null }); await contracts.ensure(id);
   }
-  const controlPlane = createPublicControlPlane({ store, contracts, ...options });
+  const controlPlane = createPublicControlPlane({ store, contracts, siteSpecComposer: async () => validSiteSpec(), ...options });
   return { root, store, contracts, controlPlane };
 }
 
@@ -126,6 +126,7 @@ test('bloque sans horaires, confirmation, prix, droits ou catégorie photo', asy
     { ownerConfirmed: false },
     { hours: [] },
   ]) await assert.rejects(async () => { const { controlPlane: fresh } = await fixture(); const req = await fresh.createRequest({ name: 'Maison Sillage', city, idempotencyKey: `req-${JSON.stringify(patch)}` }); await fresh.seedSyntheticReport(req.id, { kind: 'final', html: '<h1>Final</h1>' }); const prep = await fresh.createPreparation(req.id, { email: 'owner@example.test', idempotencyKey: `prep-${JSON.stringify(patch)}` }); await completePreparation(fresh, prep, { ...patch }); return fresh.start(prep.id); }, error => error.code === 'PREPARATION_INCOMPLETE' || error.code === 'VALIDATION_ERROR');
+  await assert.rejects(() => controlPlane.updateIntake(preparation.id, { hours: [{ day: 'TUESDAY', opens: '24:60', closes: '99:99' }] }), error => error.code === 'VALIDATION_ERROR');
 });
 
 test('ne fait pas confiance à criticalComplete et reprend la DemoRequest par e-mail', async () => {
@@ -170,7 +171,15 @@ test('refuse un SiteSpec ou AcceptanceReport hors contrat', async () => {
   const blocked = await controlPlane.getDemoRequest(preparation.id);
   assert.equal(blocked.status, 'ACCEPTANCE_REPORT_INVALID');
   assert.equal(blocked.acceptanceReport, null);
-  const { controlPlane: malformedSpec } = await fixture({ pipelineStarter: async () => ({ runId: 'run-invalid-site-spec', siteSpec: {}, acceptanceReport: acceptanceReport('PASS') }) }); const specRequest = await malformedSpec.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-invalid-site-spec' }); await malformedSpec.seedSyntheticReport(specRequest.id, { kind: 'final', html: '<h1>Final</h1>' }); const specPreparation = await malformedSpec.createPreparation(specRequest.id, { email: 'owner@example.test', idempotencyKey: 'prep-invalid-site-spec' }); await completePreparation(malformedSpec, specPreparation); await assert.rejects(() => malformedSpec.start(specPreparation.id), error => error.code === 'SITE_SPEC_INVALID');
+  let starterCalls = 0; const { controlPlane: malformedSpec } = await fixture({ siteSpecComposer: async () => ({}), pipelineStarter: async () => { starterCalls += 1; return { runId: 'run-invalid-site-spec', acceptanceReport: acceptanceReport('PASS') }; } }); const specRequest = await malformedSpec.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-invalid-site-spec' }); await malformedSpec.seedSyntheticReport(specRequest.id, { kind: 'final', html: '<h1>Final</h1>' }); const specPreparation = await malformedSpec.createPreparation(specRequest.id, { email: 'owner@example.test', idempotencyKey: 'prep-invalid-site-spec' }); await completePreparation(malformedSpec, specPreparation); await assert.rejects(() => malformedSpec.start(specPreparation.id), error => error.code === 'SITE_SPEC_INVALID'); assert.equal(starterCalls, 0);
+});
+
+test('réserve atomiquement le démarrage et refuse les rapports incohérents', async () => {
+  let release; let enteredStarter; let calls = 0; const delayed = new Promise(resolve => { release = resolve; }); const entered = new Promise(resolve => { enteredStarter = resolve; });
+  const { controlPlane } = await fixture({ pipelineStarter: async () => { calls += 1; enteredStarter(); await delayed; return { runId: 'run-once', acceptanceReport: acceptanceReport('PASS') }; } });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-concurrent' }); await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>' }); const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-concurrent' }); await completePreparation(controlPlane, preparation);
+  const first = controlPlane.start(preparation.id); const second = controlPlane.start(preparation.id); await entered; assert.equal(calls, 1); release(); const [started, replay] = await Promise.all([first, second]); assert.equal(started.pipelineRunId, 'run-once'); assert.equal(replay.pipelineRunId, 'run-once');
+  const { controlPlane: inconsistent } = await fixture({ pipelineStarter: async () => ({ runId: 'run-inconsistent', acceptanceReport: { ...acceptanceReport('PASS'), gates: [{ ...acceptanceReport('PASS').gates[0], status: 'BLOCK' }] } }) }); const inconsistentRequest = await inconsistent.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-inconsistent' }); await inconsistent.seedSyntheticReport(inconsistentRequest.id, { kind: 'final', html: '<h1>Final</h1>' }); const inconsistentPreparation = await inconsistent.createPreparation(inconsistentRequest.id, { email: 'owner@example.test', idempotencyKey: 'prep-inconsistent' }); await completePreparation(inconsistent, inconsistentPreparation); await assert.rejects(() => inconsistent.start(inconsistentPreparation.id), error => error.code === 'ACCEPTANCE_REPORT_INVALID'); await assert.rejects(() => inconsistent.validateDemo(inconsistentPreparation.id, 'APPROVED'), error => error.code === 'DEMO_NOT_READY_FOR_REVIEW');
 });
 
 test('ne fabrique pas un identifiant de pipeline et délègue le run réel au starter configuré', async () => {

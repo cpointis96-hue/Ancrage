@@ -84,7 +84,7 @@ function normalizeHours(value) {
     const day = text(item.day, `hours.${index}.day`, 12).toUpperCase();
     const opens = text(item.opens, `hours.${index}.opens`, 5);
     const closes = text(item.closes, `hours.${index}.closes`, 5);
-    if (!['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'].includes(day) || !/^\d{2}:\d{2}$/.test(opens) || !/^\d{2}:\d{2}$/.test(closes) || days.has(day)) throw new ValidationError('hours est invalide.', { field: `hours.${index}` });
+    if (!['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'].includes(day) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(opens) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(closes) || days.has(day)) throw new ValidationError('hours est invalide.', { field: `hours.${index}` });
     days.add(day);
     return { day, opens, closes };
   });
@@ -108,7 +108,8 @@ function preparationDraft(request, preparation) {
   };
 }
 
-export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, pipelineStarter = null, demoPresenter = null } = {}) {
+export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, demoPresenter = null } = {}) {
+  const starts = new Map();
   async function validateContract(id, value, code) {
     if (!contracts?.getActiveVersion) throw new AppError('Le contrat requis n’est pas configuré.', { code, status: 503 });
     let contract;
@@ -117,8 +118,18 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     } catch (error) {
       throw new AppError('La sortie ne respecte pas son contrat.', { code, status: 503 });
     }
-    try { return validateJsonSchema(contract.schema, value); }
+    try {
+      const validated = validateJsonSchema(contract.schema, value);
+      if (id === 'acceptance-report' && !isAcceptanceReportConsistent(validated)) throw new ValidationError('AcceptanceReport incohérent.');
+      return validated;
+    }
     catch { throw new AppError('La sortie ne respecte pas son contrat.', { code, status: 503 }); }
+  }
+  function isAcceptanceReportConsistent(report) {
+    const gateStatuses = report.gates.map(gate => gate.status);
+    if (report.status === 'PASS') return gateStatuses.every(status => status === 'PASS');
+    if (report.status === 'WARN') return gateStatuses.includes('WARN') && !gateStatuses.includes('BLOCK');
+    return report.status === 'BLOCK' && gateStatuses.includes('BLOCK');
   }
   function checkpoint(key, status, { reportId = null, blockedReason = null, progressLabel = null } = {}) {
     const defaultLabels = { match: 'Établissement confirmé.', 'gmb-report': 'Rapport GMB disponible.', 'final-report': 'Rapport final disponible.' };
@@ -227,27 +238,56 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
           : value.subarray(0, 4).toString('ascii') === 'RIFF' && value.subarray(8, 12).toString('ascii') === 'WEBP';
       if (!value.length || value.length > maxImageBytes || !signature || value.length !== asset.size) throw new ValidationError('Le contenu de l’image est invalide.', { field: 'dataUrl' });
       const assetPath = `public-control-plane/preparations/${preparation.id}/assets/${asset.category}.${imageTypes.get(match[1])}`;
-      await store.writeBuffer(assetPath, value, { expectedHash: null });
+      const written = await store.writeBuffer(assetPath, value, { expectedHash: null });
       asset.assetPath = assetPath;
       asset.mimeType = match[1];
+      asset.hash = written.hash;
     }
     preparation.assets.push(asset);
     return savePreparation(preparation);
   }
-  async function start(id) {
-    const preparation = await readPreparation(id);
+  async function startLocked(id) {
+    const currentText = await store.readText(preparationPath(id), null);
+    if (currentText === null) throw new NotFoundError(`Demande de démo introuvable : ${id}`);
+    const preparation = JSON.parse(currentText);
     preparation.checklist = checklist(preparation);
     if (preparation.pipelineRunId) return projectPreparation(preparation);
+    if (preparation.pipelineStatus === 'WEBSITE_FACTORY_STARTING') throw new AppError('Le pipeline de démo est déjà en cours de démarrage.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
+    if (preparation.pipelineStatus === 'PIPELINE_START_FAILED') throw new AppError('Le pipeline précédent doit être vérifié avant reprise.', { code: 'PIPELINE_RECOVERY_REQUIRED', status: 409, details: { retryable: false, nextAction: 'OPERATOR_REVIEW' } });
     if (!preparation.checklist.criticalComplete || !preparation.checklist.locale || !preparation.checklist.hours || !preparation.checklist.ownerConfirmation || !preparation.checklist.photos || !preparation.checklist.rights) throw new AppError('La préparation est incomplète.', { code: 'PREPARATION_INCOMPLETE', status: 409 });
     if (typeof pipelineStarter !== 'function') throw new AppError('Le pipeline de démo n’est pas configuré.', { code: 'PIPELINE_NOT_CONFIGURED', status: 503 });
     const request = await readRequest(preparation.requestId);
     const draft = await validateContract('preparation-draft', preparationDraft(request, preparation), 'PREPARATION_DRAFT_INVALID');
+    if (typeof siteSpecComposer !== 'function') throw new AppError('Le composeur SiteSpec n’est pas configuré.', { code: 'SITE_SPEC_NOT_CONFIGURED', status: 503 });
+    const siteSpec = await validateContract('site-spec', await siteSpecComposer({ request: response(request), preparation: response(preparation), preparationDraft: response(draft) }), 'SITE_SPEC_INVALID');
     preparation.preparationDraft = draft;
-    const started = await pipelineStarter({ request: response(request), preparation: response(preparation), preparationDraft: response(draft) });
-    if (!started?.runId) throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 });
+    preparation.siteSpec = siteSpec;
+    preparation.pipelineStatus = 'WEBSITE_FACTORY_STARTING';
+    preparation.pipelineReservation = idFactory('pipeline-start');
+    preparation.updatedAt = clock().toISOString();
+    try {
+      await store.writeJson(preparationPath(id), preparation, { expectedHash: store.hashText(currentText) });
+    } catch (error) {
+      if (error instanceof ConflictError) return startLocked(id);
+      throw error;
+    }
+    let started;
+    try {
+      started = await pipelineStarter({ request: response(request), preparation: response(preparation), preparationDraft: response(draft), siteSpec: response(siteSpec) });
+    } catch (error) {
+      preparation.pipelineStatus = 'PIPELINE_START_FAILED';
+      preparation.updatedAt = clock().toISOString();
+      await store.writeJson(preparationPath(id), preparation);
+      throw error;
+    }
+    if (!started?.runId) {
+      preparation.pipelineStatus = 'PIPELINE_START_FAILED';
+      preparation.updatedAt = clock().toISOString();
+      await store.writeJson(preparationPath(id), preparation);
+      throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 });
+    }
     const runId = text(started.runId, 'pipelineRunId', 120);
     try {
-      preparation.siteSpec = await validateContract('site-spec', started.siteSpec, 'SITE_SPEC_INVALID');
       preparation.acceptanceReport = await validateContract('acceptance-report', started.acceptanceReport, 'ACCEPTANCE_REPORT_INVALID');
     } catch (error) {
       preparation.pipelineRunId = runId;
@@ -257,8 +297,16 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       throw error;
     }
     preparation.pipelineRunId = runId;
+    delete preparation.pipelineReservation;
     preparation.pipelineStatus = preparation.acceptanceReport.status === 'BLOCK' ? 'BLOCKED' : 'READY_FOR_OWNER_REVIEW';
     return savePreparation(preparation);
+  }
+  async function start(id) {
+    const active = starts.get(id);
+    if (active) return active;
+    const pending = startLocked(id).finally(() => starts.delete(id));
+    starts.set(id, pending);
+    return pending;
   }
   async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.'); if (preparation.status !== 'READY_FOR_OWNER_REVIEW') throw new AppError('La démo n’est pas prête pour la validation opérateur.', { code: 'DEMO_NOT_READY_FOR_REVIEW', status: 409 }); if (decision === 'APPROVED' && preparation.acceptanceReport?.status === 'BLOCK') throw new AppError('Une démo bloquée ne peut pas être présentée.', { code: 'ACCEPTANCE_BLOCKED', status: 409 }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); if (decision === 'APPROVED' && (!presented || typeof presented.href !== 'string' || !presented.href.startsWith('/demo/'))) throw new AppError('La présentation de démo n’a pas fourni de lien vérifiable.', { code: 'DEMO_PRESENTATION_INVALID', status: 503 }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
   return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, seedSyntheticReport, start, updateIntake, validateDemo };

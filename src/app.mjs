@@ -160,15 +160,10 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       }
       return reports;
     },
-    pipelineStarter: async ({ request, preparation, preparationDraft }) => {
-      const intake = preparation.intake ?? {};
-      const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
-      if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
-      const photoFiles = await Promise.all(preparation.assets.map(async asset => ({ asset, value: await store.readBuffer(asset.assetPath, null) })));
-      if (photoFiles.some(item => !item.value)) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
+    siteSpecComposer: async ({ request, preparation, preparationDraft }) => {
       const template = await templates.getActiveVersion('site-preview');
       const confirmedAt = new Date().toISOString();
-      const siteSpec = {
+      return {
         schemaVersion: 'site-spec-v1',
         title: request.input.name,
         locale: preparation.locale,
@@ -178,6 +173,13 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         pages: [{ path: '/', title: request.input.name, sections: ['identity', 'story', 'menu', 'contact'], provenanceRefs: [preparationDraft.auditPacketRef, preparationDraft.id], confirmation: 'CONFIRMED' }],
         assets: preparation.assets.map(asset => ({ id: asset.assetId, artifactRef: asset.assetPath, rightsStatus: asset.rightsStatus, provenanceRefs: [asset.hash], confirmation: 'CONFIRMED' })),
       };
+    },
+    pipelineStarter: async ({ request, preparation, siteSpec }) => {
+      const intake = preparation.intake ?? {};
+      const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
+      if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
+      const photoFiles = await Promise.all(preparation.assets.map(async asset => ({ asset, value: await store.readBuffer(asset.assetPath, null) })));
+      if (photoFiles.some(item => !item.value)) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
       const dossier = await dossiers.create({
         name: request.input.name,
         city: request.input.city.label,

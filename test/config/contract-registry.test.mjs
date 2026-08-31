@@ -61,6 +61,8 @@ test('valide les fixtures de contrats DataForSEO / Ancrage', async () => {
   const schema = JSON.parse(await readFile(new URL('establishment-resolution.schema.json', contractsRoot), 'utf8'));
   const noCandidateResolution = { ...contractSamples['establishment-resolution'], candidates: [], siteCandidates: [], decision: 'ASK_MORE_DATA' };
   assert.equal(validateJsonSchema(schema, noCandidateResolution), noCandidateResolution);
+  const acceptanceSchema = JSON.parse(await readFile(new URL('acceptance-report.schema.json', contractsRoot), 'utf8'));
+  assert.throws(() => validateJsonSchema(acceptanceSchema, { ...contractSamples['acceptance-report'], gates: [{ ...contractSamples['acceptance-report'].gates[0], evidenceRefs: [] }] }), ValidationError);
 });
 
 test('refuse les contraintes de taille, format et bornes numériques', () => {
