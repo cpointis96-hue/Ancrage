@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "establishment-resolution",
+  "type": "object",
+  "required": ["candidates", "decision", "ambiguities", "evidenceRefs"],
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "score", "evidenceRefs"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "evidenceRefs": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "decision": { "type": "string", "enum": ["AUTO_CONTINUE", "ASK_CONFIRMATION", "ASK_MORE_DATA", "LOCAL_PREVIEW_WITHOUT_GMB"] },
+    "ambiguities": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 500 } },
+    "evidenceRefs": { "type": "array", "maxItems": 50, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
+  },
+  "additionalProperties": false
+}

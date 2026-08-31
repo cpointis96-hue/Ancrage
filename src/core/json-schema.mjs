@@ -13,6 +13,15 @@ function matchesType(value, type) {
 function findError(schema, value, path = '$') {
   if (schema?.type && !matchesType(value, schema.type)) return `${path} doit être de type ${schema.type}`;
   if (schema?.enum && !schema.enum.some(item => Object.is(item, value))) return `${path} a une valeur interdite`;
+  if (schema?.type === 'string') {
+    if (schema.minLength !== undefined && value.length < schema.minLength) return `${path} doit contenir au moins ${schema.minLength} caractères`;
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) return `${path} doit contenir au plus ${schema.maxLength} caractères`;
+    if (schema.pattern !== undefined && !(new RegExp(schema.pattern).test(value))) return `${path} ne respecte pas le format attendu`;
+  }
+  if (schema?.type === 'number' || schema?.type === 'integer') {
+    if (schema.minimum !== undefined && value < schema.minimum) return `${path} doit être supérieur ou égal à ${schema.minimum}`;
+    if (schema.maximum !== undefined && value > schema.maximum) return `${path} doit être inférieur ou égal à ${schema.maximum}`;
+  }
   if (schema?.type === 'object') {
     for (const key of schema.required ?? []) if (!Object.prototype.hasOwnProperty.call(value, key)) return `${path}.${key} est requis`;
     if (schema.additionalProperties === false) for (const key of Object.keys(value)) if (!schema.properties?.[key]) return `${path}.${key} est interdit`;
@@ -21,6 +30,8 @@ function findError(schema, value, path = '$') {
     }
   }
   if (schema?.type === 'array') {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return `${path} doit contenir au moins ${schema.minItems} éléments`;
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return `${path} doit contenir au plus ${schema.maxItems} éléments`;
     for (const [index, item] of value.entries()) { const error = findError(schema.items, item, `${path}[${index}]`); if (error) return error; }
   }
   return null;

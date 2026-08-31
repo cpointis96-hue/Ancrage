@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit-packet",
+  "type": "object",
+  "required": ["schemaVersion", "packetId", "revision", "status", "subject", "coverage", "evidenceRefs", "findings", "limitations", "cost", "lineage", "artifacts", "preparationDraft"],
+  "properties": {
+    "schemaVersion": { "type": "string", "enum": ["audit-packet-v1"] },
+    "packetId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string", "enum": ["SUCCEEDED", "PARTIAL", "BLOCKED"] },
+    "subject": { "type": "object" },
+    "coverage": { "type": "object" },
+    "evidenceRefs": { "type": "array", "maxItems": 200, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "findings": { "type": "array", "maxItems": 200, "items": { "type": "object" } },
+    "limitations": { "type": "array", "maxItems": 100, "items": { "type": "string", "minLength": 1, "maxLength": 1000 } },
+    "cost": {
+      "type": "object",
+      "required": ["currency", "hardLimit", "spent", "reserved", "costEventsRef"],
+      "properties": {
+        "currency": { "type": "string", "enum": ["USD"] },
+        "hardLimit": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "spent": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "reserved": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "costEventsRef": { "type": "string", "minLength": 1, "maxLength": 300 }
+      },
+      "additionalProperties": false
+    },
+    "lineage": { "type": "object" },
+    "artifacts": { "type": "object" },
+    "preparationDraft": { "type": "object" }
+  },
+  "additionalProperties": false
+}
