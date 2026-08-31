@@ -31,11 +31,12 @@ test('couvre les sept profils du pré-slice local sans accès réseau', () => {
 });
 
 test('relie un crawl capturé à l’analyse sans exposer le HTML brut', async () => {
+  const html = '<html lang="fr"><head><title>Fixture</title><meta name="description" content="Fixture"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://fixture.example.test/"></head><body><h1>Fixture</h1></body></html>';
   const audit = await runSeoAudit({
     target,
     observedAt,
     lookup: async () => [{ address: '93.184.216.34', family: 4 }],
-    fetchImpl: async url => ({ status: 200, url, headers: { get: () => 'text/html' }, text: async () => '<html lang="fr"><head><title>Fixture</title><meta name="description" content="Fixture"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://fixture.example.test/"></head><body><h1>Fixture</h1></body></html>' }),
+    fetchImpl: async url => ({ status: 200, url, headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html' : name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(html)) : null }, text: async () => html }),
     profile: { maxPages: 1, maxBytes: 10000, timeoutMs: 1000 },
   });
 

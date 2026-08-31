@@ -8,6 +8,7 @@ const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_TIMEOUT_MS = 3 * 60 * 1000;
 const MAX_REDIRECTS = 10;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function crawlerError(message, code) { return Object.assign(new Error(message), { code }); }
 
@@ -95,9 +96,29 @@ function links(html, base, origin) {
   return result;
 }
 
+function contentLength(response) {
+  const value = header(response, 'content-length');
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  if (!/^\d+$/.test(normalized)) return null;
+  const length = Number(normalized);
+  return Number.isSafeInteger(length) ? length : null;
+}
+
+async function cancelBody(response, signal) {
+  const body = response.body;
+  if (!body) return;
+  if (typeof body.cancel === 'function') return awaitWithSignal(body.cancel(), signal);
+  if (typeof body.destroy === 'function') { body.destroy(); return; }
+  if (typeof body[Symbol.asyncIterator] === 'function') {
+    const iterator = body[Symbol.asyncIterator]();
+    if (typeof iterator.return === 'function') await awaitWithSignal(iterator.return(), signal);
+  }
+}
+
 async function readHtml(response, { signal, remainingBytes, consumeBytes }) {
-  const contentLength = Number(header(response, 'content-length'));
-  if (Number.isFinite(contentLength) && contentLength > remainingBytes()) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
+  const declaredLength = contentLength(response);
+  if (declaredLength !== null && declaredLength > remainingBytes()) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
 
   if (response.body?.getReader) {
     const reader = response.body.getReader();
@@ -108,8 +129,9 @@ async function readHtml(response, { signal, remainingBytes, consumeBytes }) {
         const next = await awaitWithSignal(reader.read(), signal);
         if (next.done) break;
         const chunk = Buffer.from(next.value);
+        consumeBytes(chunk.byteLength);
         size += chunk.byteLength;
-        if (size > remainingBytes()) {
+        if (remainingBytes() < 0) {
           await reader.cancel().catch(() => {});
           throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
         }
@@ -119,14 +141,33 @@ async function readHtml(response, { signal, remainingBytes, consumeBytes }) {
       if (signal?.aborted) await reader.cancel().catch(() => {});
       throw error;
     }
-    consumeBytes(size);
     return Buffer.concat(chunks).toString('utf8');
   }
 
+  if (response.body?.[Symbol.asyncIterator]) {
+    const chunks = [];
+    try {
+      for await (const value of response.body) {
+        const chunk = Buffer.from(value);
+        consumeBytes(chunk.byteLength);
+        if (remainingBytes() < 0) {
+          await cancelBody(response, signal).catch(() => {});
+          throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
+        }
+        chunks.push(chunk);
+      }
+    } catch (error) {
+      if (signal?.aborted) await cancelBody(response, signal).catch(() => {});
+      throw error;
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  if (declaredLength === null) throw crawlerError('Corps non borné.', 'BODY_NOT_BOUNDED');
   const html = await awaitWithSignal(response.text(), signal);
   const size = Buffer.byteLength(html, 'utf8');
-  if (size > remainingBytes()) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
   consumeBytes(size);
+  if (remainingBytes() < 0) throw crawlerError('Payload trop volumineux.', 'PAYLOAD_TOO_LARGE');
   return html;
 }
 
@@ -168,8 +209,12 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
           if (current.origin !== root.origin) throw crawlerError('Redirection hors origin.', 'REDIRECT_OUT_OF_ORIGIN');
           response = await awaitWithSignal(fetchImpl(current.href, { redirect: 'manual', signal }), signal);
           const status = Number(response.status ?? 200);
-          if (status < 300 || status >= 400) break;
+          if (!REDIRECT_STATUSES.has(status)) {
+            if (status >= 300 && status < 400) throw crawlerError(`Réponse HTTP ${status}.`, `HTTP_${status}`);
+            break;
+          }
           if (redirects === MAX_REDIRECTS) throw crawlerError('Trop de redirections.', 'REDIRECT_LIMIT');
+          await cancelBody(response, signal);
           current = redirectTarget(response, current.href);
         }
         const status = Number(response.status ?? 200);

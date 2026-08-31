@@ -59,3 +59,50 @@ test('hydrate le ledger sans rejouer les événements ou les seuils au redémarr
   const resumedEvents = (await readFile(path.join(root, journalPath), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(resumedEvents.filter(event => event.type === 'BUDGET_THRESHOLD').map(event => event.threshold), [0.5, 0.8]);
 });
+
+test('sérialise deux ledgers concurrents avant autorisation', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const atomicStore = createAtomicStore(root);
+  const store = { ...atomicStore, appendJsonLine: async (...args) => { await new Promise(resolve => setTimeout(resolve, 30)); return atomicStore.appendJsonLine(...args); } };
+  const first = createCostLedger({ store, runId: 'run-concurrent', envelope: { hardLimit: 5 } });
+  const second = createCostLedger({ store, runId: 'run-concurrent', envelope: { hardLimit: 5 } });
+  await Promise.all([first.ready, second.ready]);
+  const outcomes = await Promise.allSettled([
+    first.authorize({ stepId: 'one', provider: 'dataforseo', unit: 'task', estimatedCost: 4 }),
+    second.authorize({ stepId: 'two', provider: 'dataforseo', unit: 'task', estimatedCost: 4 }),
+  ]);
+  assert.equal(outcomes.filter(item => item.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.find(item => item.status === 'rejected').reason.code, 'BUDGET_EXCEEDED');
+
+  const resumed = createCostLedger({ store: atomicStore, runId: 'run-concurrent', envelope: { hardLimit: 5 } });
+  await resumed.ready;
+  assert.equal(resumed.snapshot().reserved, 4);
+});
+
+test('refuse un eventId conflictuel ou un journal sémantiquement corrompu', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const store = createAtomicStore(root);
+  const ledger = createCostLedger({ store, runId: 'run-corrupt', envelope: { hardLimit: 5 } });
+  const authorization = await ledger.authorize({ stepId: 'serp', provider: 'dataforseo', unit: 'task', estimatedCost: 2 });
+  const journalPath = 'runs/run-corrupt/cost-events.jsonl';
+  const event = JSON.parse((await readFile(path.join(root, journalPath), 'utf8')).trim());
+  await store.appendJsonLine(journalPath, { ...event, authorizationId: `${authorization.authorizationId}-other` });
+
+  const conflicted = createCostLedger({ store, runId: 'run-corrupt', envelope: { hardLimit: 5 } });
+  await assert.rejects(() => conflicted.ready, error => error.code === 'COST_LEDGER_INVALID');
+
+  const secondRoot = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const secondStore = createAtomicStore(secondRoot);
+  await secondStore.appendJsonLine('runs/run-corrupt-type/cost-events.jsonl', { eventId: 'unknown-event', occurredAt: new Date().toISOString(), runId: 'run-corrupt-type', currency: 'USD', type: 'COST_UNKNOWN' });
+  const corrupted = createCostLedger({ store: secondStore, runId: 'run-corrupt-type', envelope: { hardLimit: 5 } });
+  await assert.rejects(() => corrupted.ready, error => error.code === 'COST_LEDGER_INVALID');
+});
+
+test('échoue fermé sans supprimer un verrou de ledger persistant', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const store = createAtomicStore(root);
+  await store.writeText('runs/run-busy/cost-events.lock', 'processus interrompu');
+  const ledger = createCostLedger({ store, runId: 'run-busy', envelope: { hardLimit: 5 }, lockTimeoutMs: 10 });
+  await assert.rejects(() => ledger.ready, error => error.code === 'COST_LEDGER_BUSY');
+  assert.equal(await store.readText('runs/run-busy/cost-events.lock'), 'processus interrompu');
+});

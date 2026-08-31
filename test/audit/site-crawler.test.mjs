@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crawlSite } from '../../src/audit/site-crawler.mjs';
 
-function response(body, { url, status = 200, contentType = 'text/html; charset=utf-8', location = null, contentLength = null, stream = null } = {}) {
+function response(body, { url, status = 200, contentType = 'text/html; charset=utf-8', location = null, contentLength = undefined, stream = null } = {}) {
+  const length = contentLength === undefined && !stream ? Buffer.byteLength(body) : contentLength;
   return {
     ok: status >= 200 && status < 400,
     status,
     url,
-    headers: { get: name => ({ 'content-type': contentType, location, 'content-length': contentLength }[name.toLowerCase()] ?? null) },
+    headers: { get: name => ({ 'content-type': contentType, location, 'content-length': length }[name.toLowerCase()] ?? null) },
     body: stream,
     text: async () => body,
   };
@@ -104,6 +105,49 @@ test('interrompt la lecture bornée d’un corps sans Content-Length', async () 
   assert.equal(result.pages[0].crawlStatus, 'blocked');
   assert.equal(result.pages[0].html, '');
   assert.equal(result.pages[0].errorCode, 'PAYLOAD_TOO_LARGE');
+});
+
+test('borne un async iterable sans Content-Length et refuse text() sans borne', async () => {
+  const chunks = [Buffer.from('<html>1234'), Buffer.from('5678</html>')];
+  const asyncBody = {
+    async *[Symbol.asyncIterator]() { yield* chunks; },
+  };
+  const streamed = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    maxBytes: 10,
+    fetchImpl: async url => response('', { url, stream: asyncBody, contentLength: null }),
+  });
+  assert.equal(streamed.pages[0].errorCode, 'PAYLOAD_TOO_LARGE');
+
+  let textCalled = false;
+  const unbounded = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    fetchImpl: async url => ({ ...response('', { url, contentLength: null }), text: async () => { textCalled = true; return '<html>never read</html>'; } }),
+  });
+  assert.equal(unbounded.pages[0].errorCode, 'BODY_NOT_BOUNDED');
+  assert.equal(textCalled, false);
+});
+
+test('annule le corps d’une redirection et ne suit pas un 304', async () => {
+  let cancelled = false;
+  const redirected = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    fetchImpl: async url => url.endsWith('/menu')
+      ? response('<html>Menu</html>', { url })
+      : response('', { url, status: 302, location: '/menu', stream: { cancel: async () => { cancelled = true; } } }),
+  });
+  assert.equal(cancelled, true);
+  assert.equal(redirected.pages[0].crawlStatus, 'complete');
+
+  const notModified = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    fetchImpl: async url => response('', { url, status: 304, contentLength: null }),
+  });
+  assert.equal(notModified.pages[0].errorCode, 'HTTP_304');
 });
 
 test('applique un timeout global et transmet le signal d’annulation', async () => {
