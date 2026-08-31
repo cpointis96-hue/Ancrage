@@ -33,15 +33,36 @@ test('refuse toute shortlist sans catégorie observée', () => {
 
 test('déduplique les concurrents, exclut le domaine audité et les qualifie comme SEO nationaux', () => {
   const result = qualifyCompetitorResults({ tasks: [{ result: [{ items: [
-    { domain: 'www.example.com', visibility: 90 },
+    { domain: 'www.example.com', visibility: 90, keywords: ['restaurant Teyran'] },
     { domain: 'competitor.fr', visibility: 5, avg_position: 4, keywords: ['restaurant Teyran'] },
     { url: 'https://competitor.fr/page', visibility: 8, keywords_count: 3, keywords: ['restaurant Teyran'] },
   ] }] }] }, { targetDomain: 'https://example.com', selectedKeywords: ['restaurant Teyran'], locality: 'Teyran' });
-  assert.equal(result.length, 1);
-  assert.equal(result[0].domain, 'competitor.fr');
-  assert.equal(result[0].scope, 'national-seo');
-  assert.equal(result[0].visibility, 8);
-  assert.equal(result[0].locality, 'Teyran');
+  assert.equal(result.selected.length, 1);
+  assert.equal(result.selected[0].domain, 'competitor.fr');
+  assert.equal(result.selected[0].scope, 'national-seo');
+  assert.equal(result.selected[0].visibility, 8);
+  assert.equal(result.selected[0].locality, 'Teyran');
+  assert.equal(result.selected[0].type, 'business');
+  assert.equal(result.rejected[0].reason, 'AUDITED_DOMAIN_EXCLUDED');
+});
+
+test('conserve les candidats et rejette les annuaires, médias et plateformes sans compléter artificiellement', () => {
+  const items = [
+    { domain: 'tripadvisor.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'guide-local.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'instagram.com', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-a.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-b.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-c.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-d.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-e.fr', keywords: ['restaurant Teyran'] },
+    { domain: 'restaurant-f.fr', keywords: ['restaurant Teyran'] },
+  ];
+  const result = qualifyCompetitorResults({ tasks: [{ result: [{ items }] }] }, { selectedKeywords: ['restaurant Teyran'] });
+  assert.equal(result.candidates.length, 9);
+  assert.deepEqual(result.selected.map(item => item.domain), ['restaurant-a.fr', 'restaurant-b.fr', 'restaurant-c.fr', 'restaurant-d.fr', 'restaurant-e.fr']);
+  assert.deepEqual(result.rejected.filter(item => item.reason === 'NON_BUSINESS_COMPETITOR').map(item => item.type).sort(), ['directory', 'media', 'platform']);
+  assert.equal(result.rejected.some(item => item.reason === 'COMPETITOR_SHORTLIST_LIMIT'), true);
 });
 
 test('écarte les villes et enseignes remontées par une idée nationale', () => {

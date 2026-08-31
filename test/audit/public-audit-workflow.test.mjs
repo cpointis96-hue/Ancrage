@@ -56,6 +56,35 @@ test('bloque la découverte essentielle sans provider DataForSEO prêt, sans fal
   assert.equal(JSON.stringify(result).includes('example.com'), false);
 });
 
+test('continue les branches confirmées malgré une recherche établissement DataForSEO pauvre', async () => {
+  for (const [label, input] of [
+    ['site', { domain: 'https://example.com' }],
+    ['identité', { identity: { source: 'google-places', placeId: 'place-1', primaryType: 'restaurant', coordinates: { latitude: 43.6, longitude: 3.9 } } }],
+  ]) {
+    let crawls = 0;
+    const workflow = createPublicAuditWorkflow({
+      store: createAtomicStore(await mkdtemp(path.join(tmpdir(), `ancrage-public-audit-poor-${label}-`))),
+      providers: { async list() { return [{ id: 'dataforseo', kind: 'seo', configured: true, enabled: false, health: 'unhealthy' }]; } },
+      adapters: adapters([]),
+      secretStore: createMemorySecretStore(),
+      fetchImpl: async url => { crawls += 1; return { url, status: 200, headers: { get: () => 'text/html' }, text: async () => '<title>Site</title><h1>Site</h1>' }; },
+      lookup: async () => ['93.184.216.34'],
+    });
+    const result = await workflow.create({ name: 'Maison Sillage', city: { id: 'city-1', label: 'Pattaya', country: 'TH' }, ...input });
+    assert.equal(result.status, 'PARTIAL');
+    assert.equal(result.stages.find(item => item.id === 'establishment-search').status, 'PARTIAL');
+    assert.equal(result.stages.some(item => item.cause === 'ESTABLISHMENT_GATE_FAILED'), false);
+    assert.equal(result.stages.some(item => item.id === 'competitor-keywords'), true);
+    if (input.domain) {
+      assert.equal(crawls > 0, true);
+      assert.equal(result.modules.seo.execution, 'local-crawl');
+    } else {
+      assert.equal(result.modules.establishment.selected.placeId, 'place-1');
+      assert.equal(result.modules.seo.external.crawl, 'BLOCKED');
+    }
+  }
+});
+
 test('signale le provider non configuré avant la résolution des contrats', async () => {
   const calls = [];
   const configuredAdapters = adapters(calls);

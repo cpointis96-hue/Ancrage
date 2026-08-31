@@ -199,13 +199,42 @@ function competitorMetrics(item) {
   };
 }
 
-export function qualifyCompetitorResults(result, { targetDomain = null, selectedKeywords = [], locality = null } = {}) {
+const DIRECTORY_DOMAINS = ['tripadvisor.', 'yelp.', 'pagesjaunes.', 'google.', 'foursquare.', 'thefork.'];
+const MEDIA_TERMS = ['guide', 'magazine', 'journal', 'news', 'media', 'presse'];
+const PLATFORM_DOMAINS = ['facebook.', 'instagram.', 'tiktok.', 'booking.', 'deliveroo.', 'ubereats.', 'linkedin.', 'wikipedia.'];
+
+export function competitorType({ domain = null, title = null } = {}) {
+  const value = `${domain ?? ''} ${title ?? ''}`.toLocaleLowerCase('fr');
+  if (DIRECTORY_DOMAINS.some(term => value.includes(term))) return 'directory';
+  if (PLATFORM_DOMAINS.some(term => value.includes(term))) return 'platform';
+  if (MEDIA_TERMS.some(term => value.includes(term))) return 'media';
+  return 'business';
+}
+
+export function selectBusinessCompetitors(candidates, { targetDomain = null, targetName = null } = {}) {
   const target = domainOf(targetDomain);
+  const targetTitle = normalize(targetName);
+  const accepted = [];
+  const rejected = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = candidate.domain ?? normalize(candidate.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    if (candidate.domain && candidate.domain === target) { rejected.push({ ...candidate, reason: 'AUDITED_DOMAIN_EXCLUDED' }); continue; }
+    if (targetTitle && normalize(candidate.title) === targetTitle) { rejected.push({ ...candidate, reason: 'AUDITED_BUSINESS_EXCLUDED' }); continue; }
+    if (candidate.type !== 'business') { rejected.push({ ...candidate, reason: 'NON_BUSINESS_COMPETITOR' }); continue; }
+    accepted.push(candidate);
+  }
+  return { candidates, selected: accepted.slice(0, 5), rejected: [...rejected, ...accepted.slice(5).map(item => ({ ...item, reason: 'COMPETITOR_SHORTLIST_LIMIT' }))] };
+}
+
+export function qualifyCompetitorResults(result, { targetDomain = null, selectedKeywords = [], locality = null } = {}) {
   const wanted = new Set(selectedKeywords.map(value => normalize(typeof value === 'string' ? value : value?.keyword)).filter(Boolean));
   const byDomain = new Map();
   for (const item of flattenItems(result)) {
     const domain = domainOf(item?.domain ?? item?.url ?? item?.target);
-    if (!domain || domain === target) continue;
+    if (!domain) continue;
     const metrics = competitorMetrics(item);
     const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : [];
     const matchedKeywords = rawKeywords.map(value => String(value).trim()).filter(value => wanted.has(normalize(value)));
@@ -217,6 +246,7 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
       scope: 'national-seo',
       locality: locality ?? null,
       classification: 'SEO_COMPETITOR_CANDIDATE',
+      type: competitorType({ domain, title: item?.title ?? item?.name ?? null }),
       matchedKeywords,
       ...metrics,
       source: item?.source ?? 'dataforseo_labs_serp_competitors',
@@ -229,7 +259,9 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
       visibility: Math.max(existing.visibility ?? 0, row.visibility ?? 0) || null,
     });
   }
-  return [...byDomain.values()].sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || left.domain.localeCompare(right.domain));
+  const candidates = [...byDomain.values()].sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || left.domain.localeCompare(right.domain));
+  const selection = selectBusinessCompetitors(candidates, { targetDomain });
+  return Object.assign(selection.selected, { candidates: selection.candidates, selected: [...selection.selected], rejected: selection.rejected });
 }
 
 export { domainOf, normalize };
