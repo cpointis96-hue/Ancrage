@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { open, readFile, unlink } from 'node:fs/promises';
 import { ConflictError, NotFoundError, ValidationError, AppError } from '../core/errors.mjs';
 import { createId } from '../core/ids.mjs';
 import { validateJsonSchema } from '../core/json-schema.mjs';
@@ -110,6 +111,33 @@ function preparationDraft(request, preparation) {
 
 export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, demoPresenter = null } = {}) {
   const starts = new Map();
+  async function acquireStartLock(id) {
+    const lockPath = store.resolveSafe(`public-control-plane/preparations/${id}.start.lock`);
+    const token = idFactory('pipeline-lock');
+    let handle;
+    try {
+      handle = await open(lockPath, 'wx', 0o600);
+      await handle.writeFile(token, 'utf8');
+      return { handle, lockPath, token };
+    } catch (error) {
+      if (handle) {
+        await handle.close();
+        await unlink(lockPath).catch(() => {});
+      }
+      if (error.code === 'EEXIST') return null;
+      throw error;
+    }
+  }
+  async function releaseStartLock(lock) {
+    try {
+      const token = await readFile(lock.lockPath, 'utf8');
+      if (token === lock.token) await unlink(lock.lockPath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    } finally {
+      await lock.handle.close();
+    }
+  }
   async function validateContract(id, value, code) {
     if (!contracts?.getActiveVersion) throw new AppError('Le contrat requis n’est pas configuré.', { code, status: 503 });
     let contract;
@@ -246,7 +274,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     preparation.assets.push(asset);
     return savePreparation(preparation);
   }
-  async function startLocked(id) {
+  async function startReserved(id) {
     const currentText = await store.readText(preparationPath(id), null);
     if (currentText === null) throw new NotFoundError(`Demande de démo introuvable : ${id}`);
     const preparation = JSON.parse(currentText);
@@ -268,7 +296,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     try {
       await store.writeJson(preparationPath(id), preparation, { expectedHash: store.hashText(currentText) });
     } catch (error) {
-      if (error instanceof ConflictError) return startLocked(id);
+      if (error instanceof ConflictError) return startReserved(id);
       throw error;
     }
     let started;
@@ -300,6 +328,16 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     delete preparation.pipelineReservation;
     preparation.pipelineStatus = preparation.acceptanceReport.status === 'BLOCK' ? 'BLOCKED' : 'READY_FOR_OWNER_REVIEW';
     return savePreparation(preparation);
+  }
+  async function startLocked(id) {
+    const lock = await acquireStartLock(id);
+    if (!lock) {
+      const preparation = await readPreparation(id);
+      if (preparation.pipelineRunId) return projectPreparation(preparation);
+      throw new AppError('Le pipeline de démo est déjà en cours de démarrage.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
+    }
+    try { return await startReserved(id); }
+    finally { await releaseStartLock(lock); }
   }
   async function start(id) {
     const active = starts.get(id);
