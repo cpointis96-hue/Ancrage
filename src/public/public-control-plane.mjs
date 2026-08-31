@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { open, readFile, rename, unlink } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { link, open, readFile, rename, unlink } from 'node:fs/promises';
 import { ConflictError, NotFoundError, ValidationError, AppError } from '../core/errors.mjs';
 import { createId } from '../core/ids.mjs';
 import { validateJsonSchema } from '../core/json-schema.mjs';
@@ -121,6 +121,22 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     const acquiredAt = clock();
     return JSON.stringify({ token, pid: process.pid, acquiredAt: acquiredAt.toISOString(), expiresAt: new Date(acquiredAt.getTime() + startLockTimeoutMs).toISOString() });
   };
+  async function writeStartLock(filePath, token, { exclusive = false } = {}) {
+    const temporaryPath = `${filePath}.${randomBytes(12).toString('hex')}.tmp`;
+    const handle = await open(temporaryPath, 'wx', 0o600);
+    try {
+      await handle.writeFile(lockMetadata(token), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      if (exclusive) await link(temporaryPath, filePath);
+      else await rename(temporaryPath, filePath);
+    } finally {
+      await unlink(temporaryPath).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    }
+  }
   const readLockMetadata = async filePath => {
     try {
       const value = JSON.parse(await readFile(filePath, 'utf8'));
@@ -134,18 +150,12 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function acquireStartLock(id) {
     const filePath = lockPath(id);
     const token = idFactory('pipeline-lock');
-    let handle;
     try {
-      handle = await open(filePath, 'wx', 0o600);
-      await handle.writeFile(lockMetadata(token), 'utf8');
-      const heartbeat = setInterval(() => renewStartLock({ handle, lockPath: filePath, token }).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
+      await writeStartLock(filePath, token, { exclusive: true });
+      const heartbeat = setInterval(() => renewStartLock({ lockPath: filePath, token }).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
       heartbeat.unref?.();
-      return { handle, heartbeat, lockPath: filePath, token };
+      return { heartbeat, lockPath: filePath, token };
     } catch (error) {
-      if (handle) {
-        await handle.close();
-        await unlink(filePath).catch(() => {});
-      }
       if (error.code === 'EEXIST') return null;
       throw error;
     }
@@ -153,8 +163,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function renewStartLock(lock) {
     const metadata = await readLockMetadata(lock.lockPath);
     if (!metadata || metadata.token !== lock.token) return false;
-    await lock.handle.truncate(0);
-    await lock.handle.write(lockMetadata(lock.token), 0, 'utf8');
+    await writeStartLock(lock.lockPath, lock.token);
     return true;
   }
   async function releaseStartLock(lock) {
@@ -164,8 +173,6 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (metadata?.token === lock.token) await unlink(lock.lockPath);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-    } finally {
-      await lock.handle.close();
     }
   }
   async function startLockState(id) {
