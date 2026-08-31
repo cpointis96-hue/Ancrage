@@ -152,23 +152,32 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     const token = idFactory('pipeline-lock');
     try {
       await writeStartLock(filePath, token, { exclusive: true });
-      const heartbeat = setInterval(() => renewStartLock({ lockPath: filePath, token }).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
+      const lock = { lockPath: filePath, token, released: false, renewal: Promise.resolve() };
+      const heartbeat = setInterval(() => renewStartLock(lock).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
       heartbeat.unref?.();
-      return { heartbeat, lockPath: filePath, token };
+      lock.heartbeat = heartbeat;
+      return lock;
     } catch (error) {
       if (error.code === 'EEXIST') return null;
       throw error;
     }
   }
   async function renewStartLock(lock) {
-    const metadata = await readLockMetadata(lock.lockPath);
-    if (!metadata || metadata.token !== lock.token) return false;
-    await writeStartLock(lock.lockPath, lock.token);
-    return true;
+    const renewal = lock.renewal.then(async () => {
+      if (lock.released) return false;
+      const metadata = await readLockMetadata(lock.lockPath);
+      if (!metadata || metadata.token !== lock.token || lock.released) return false;
+      await writeStartLock(lock.lockPath, lock.token);
+      return !lock.released;
+    });
+    lock.renewal = renewal.catch(() => false);
+    return renewal;
   }
   async function releaseStartLock(lock) {
     try {
       clearInterval(lock.heartbeat);
+      lock.released = true;
+      await lock.renewal;
       const metadata = await readLockMetadata(lock.lockPath);
       if (metadata?.token === lock.token) await unlink(lock.lockPath);
     } catch (error) {
