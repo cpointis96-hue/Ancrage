@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
+import { createDefaultProviderAdapters } from '../../src/providers/http-adapters.mjs';
 import { createPublicAuditWorkflow } from '../../src/audit/public-audit-workflow.mjs';
+import { createSeoResearchPlanner } from '../../src/audit/seo-research-planner.mjs';
 
 function providerState() {
   return { async list() { return [{ id: 'dataforseo', kind: 'seo', configured: true, enabled: true, health: 'healthy' }]; } };
@@ -83,6 +85,28 @@ test('continue les branches confirmées malgré une recherche établissement Dat
       assert.equal(result.modules.seo.external.crawl, 'BLOCKED');
     }
   }
+});
+
+test('agrège l’exécution du planner sans transformer not-run en appel', async () => {
+  const input = { name: 'Maison Sillage', city: { id: 'city-1', label: 'Teyran', country: 'FR' }, identity: { source: 'google-places', placeId: 'place-1', primaryType: 'restaurant' } };
+  const unavailableProvider = { async list() { return [{ id: 'dataforseo', kind: 'seo', configured: true, enabled: false, health: 'unhealthy' }]; } };
+  const httpAdapters = createDefaultProviderAdapters({ fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: '{"category":"restaurant","queries":[{"query":"restaurant Teyran","intent":"discovery","basis":"observed-category"}]}' } }] }) }) });
+  const httpPlanner = createSeoResearchPlanner({
+    providers: { async executionContext() { return { secret: 'test-secret' }; } },
+    adapters: { openai: httpAdapters.openai },
+    prompts: { async get() { return { activeVersionId: 'prompt-v1' }; }, async resolveRevision() { return '---\nid: local-seo-research-planner\nname: Test\nownerStep: research-plan\noutputContract: seo-research-plan\n---\nRetourne JSON.'; } },
+    contracts: { async getActiveVersion() { return { versionId: 'contract-v1', schema: { type: 'object', required: ['category', 'queries'], additionalProperties: false, properties: { category: { type: 'string' }, queries: { type: 'array', items: { type: 'object', required: ['query', 'intent', 'basis'], additionalProperties: false, properties: { query: { type: 'string' }, intent: { type: 'string' }, basis: { type: 'string' } } } } } } }; } },
+    workflows: { async resolveActive() { return { versionId: 'workflow-v1', definition: { steps: [{ id: 'research-plan', provider: 'openai', model: 'gpt-test', promptRef: 'local-seo-research-planner', contractRef: 'seo-research-plan', budget: 0.05 }] } }; } },
+  });
+  const withPlanner = createPublicAuditWorkflow({ store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-planner-http-'))), providers: unavailableProvider, adapters: adapters([]), secretStore: createMemorySecretStore(), seoResearchPlanner: httpPlanner });
+  const plannerResult = await withPlanner.create(input);
+  assert.equal(plannerResult.modules.keywords.planner.execution, 'real-http-call');
+  assert.equal(plannerResult.stages.find(item => item.id === 'competitor-keywords').execution, 'real-http-call');
+
+  const withoutPlanner = createPublicAuditWorkflow({ store: createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-public-audit-planner-none-'))), providers: unavailableProvider, adapters: adapters([]), secretStore: createMemorySecretStore() });
+  const notRunResult = await withoutPlanner.create(input);
+  assert.equal(notRunResult.modules.keywords.planner.execution, 'not-run');
+  assert.equal(notRunResult.stages.find(item => item.id === 'competitor-keywords').execution, 'not-run');
 });
 
 test('signale le provider non configuré avant la résolution des contrats', async () => {

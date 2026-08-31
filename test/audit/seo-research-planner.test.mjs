@@ -33,9 +33,13 @@ function dependencies(output) {
   };
 }
 
-async function ledger() {
+async function ledger(failEventType = null) {
   const store = createAtomicStore(await mkdtemp(path.join(tmpdir(), 'ancrage-seo-planner-')));
-  return { store, ledger: createCostLedger({ store, runId: 'planner-run', envelope: { hardLimit: 0.5 } }) };
+  const journalStore = failEventType ? { ...store, appendJsonLine: async (relativePath, event) => {
+    if (event.type === failEventType) throw Object.assign(new Error('append interrompu'), { code: 'APPEND_FAILED' });
+    return store.appendJsonLine(relativePath, event);
+  } } : store;
+  return { store, ledger: createCostLedger({ store: journalStore, runId: 'planner-run', envelope: { hardLimit: 0.5 } }) };
 }
 
 test('exécute le plan IA configuré et borne sa sortie', async () => {
@@ -100,12 +104,12 @@ test('conserve la réservation si le coût réel manque après l’appel', async
 });
 
 test('conserve la réservation et la preuve si le règlement échoue', async () => {
-  const context = await ledger();
-  const failingLedger = { ...context.ledger, async settle() { throw Object.assign(new Error('ledger indisponible'), { code: 'COST_LEDGER_BUSY' }); } };
-  const result = await createSeoResearchPlanner(dependencies({ category: 'restaurant', queries: [] }))({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: failingLedger });
+  const context = await ledger('COST_SETTLED');
+  const result = await createSeoResearchPlanner(dependencies({ category: 'restaurant', queries: [] }))({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
   assert.equal(result.cause, 'AI_COST_SETTLE_FAILED');
   assert.equal(result.execution, 'adapter-call-no-network');
   assert.equal(result.source.actualCost, 0.005);
+  assert.equal(result.source.ledgerErrorCode, 'APPEND_FAILED');
   assert.equal(result.source.ledgerReconciliation, 'REQUIRED');
   assert.equal(context.ledger.snapshot().reserved, 0.05);
 });
@@ -114,12 +118,23 @@ test('garde l’erreur provider et demande une réconciliation si la release éc
   const failing = dependencies({ category: 'restaurant', queries: [] });
   failing.adapters.openai.executionType = 'http';
   failing.adapters.openai.generate = async () => { throw Object.assign(new Error('indisponible'), { code: 'AI_PROVIDER_FAILED' }); };
-  const context = await ledger();
-  const failingLedger = { ...context.ledger, async cancel() { throw Object.assign(new Error('ledger indisponible'), { code: 'COST_LEDGER_BUSY' }); } };
-  const result = await createSeoResearchPlanner(failing)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: failingLedger });
+  const context = await ledger('COST_RELEASED');
+  const result = await createSeoResearchPlanner(failing)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
   assert.equal(result.cause, 'AI_COST_RELEASE_FAILED');
   assert.equal(result.execution, 'real-http-call-failed');
   assert.equal(result.source.providerErrorCode, 'AI_PROVIDER_FAILED');
+  assert.equal(result.source.ledgerErrorCode, 'APPEND_FAILED');
   assert.equal(result.source.ledgerReconciliation, 'REQUIRED');
   assert.equal(context.ledger.snapshot().reserved, 0.05);
+});
+
+test('distingue un règlement durable d’une reprise de seuil à planifier', async () => {
+  const recovering = dependencies({ category: 'restaurant', queries: [{ query: 'restaurant Assas', intent: 'discovery', basis: 'observed-category' }] });
+  recovering.adapters.openai.generate = async () => ({ output: { category: 'restaurant', queries: [{ query: 'restaurant Assas', intent: 'discovery', basis: 'observed-category' }] }, cost: 0.5, usage: { total_tokens: 12 } });
+  const context = await ledger('BUDGET_THRESHOLD');
+  const result = await createSeoResearchPlanner(recovering)({ name: 'La Mameta', cityLabel: 'Assas', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
+  assert.equal(result.status, 'SUCCEEDED');
+  assert.equal(result.source.costEvent.type, 'COST_SETTLED');
+  assert.equal(result.source.thresholdRecoveryRequired, true);
+  assert.equal(context.ledger.snapshot().spent, 0.5);
 });

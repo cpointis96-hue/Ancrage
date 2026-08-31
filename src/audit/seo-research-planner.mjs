@@ -91,7 +91,7 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
     } catch (settleError) {
       return { status: 'PARTIAL', cause: 'AI_COST_SETTLE_FAILED', execution: executionFor(adapter), plan: fallback, source: source({ usage: generated?.usage ?? null, actualCost, ledgerErrorCode: errorCode(settleError, 'AI_COST_SETTLE_FAILED'), costEvent: { type: 'COST_AUTHORIZED' }, ledgerReconciliation: 'REQUIRED' }) };
     }
-    const settledSource = source({ usage: generated.usage ?? null, actualCost, costEvent: { type: 'COST_SETTLED', overLimit: settled.overLimit } });
+    const settledSource = source({ usage: generated.usage ?? null, actualCost, costEvent: { type: 'COST_SETTLED', overLimit: settled.overLimit }, ...(settled.thresholdRecoveryRequired ? { thresholdRecoveryRequired: true } : {}) });
     if (settled.overLimit) return { status: 'PARTIAL', cause: 'BUDGET_EXCEEDED_AFTER_CALL', execution: executionFor(adapter), plan: fallback, source: settledSource };
 
     let output;

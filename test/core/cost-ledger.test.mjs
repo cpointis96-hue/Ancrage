@@ -37,6 +37,36 @@ test('libère une réservation lorsque l’appel échoue', async () => {
   assert.equal(released.state.spent, 0);
 });
 
+test('conserve la réservation si la persistance du règlement échoue', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const atomicStore = createAtomicStore(root);
+  const store = { ...atomicStore, appendJsonLine: async (relativePath, event) => {
+    if (event.type === 'COST_SETTLED') throw Object.assign(new Error('append interrompu'), { code: 'APPEND_FAILED' });
+    return atomicStore.appendJsonLine(relativePath, event);
+  } };
+  const ledger = createCostLedger({ store, runId: 'run-settle-append', envelope: { hardLimit: 5 } });
+  const authorization = await ledger.authorize({ stepId: 'onpage', provider: 'dataforseo', unit: 'task', estimatedCost: 3 });
+  await assert.rejects(() => ledger.settle({ authorizationId: authorization.authorizationId, actualCost: 2 }), error => error.code === 'APPEND_FAILED');
+  assert.deepEqual(ledger.snapshot(), { hardLimit: 5, currency: 'USD', spent: 0, reserved: 3, available: 2, utilization: 0 });
+  const events = (await readFile(path.join(root, 'runs/run-settle-append/cost-events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.map(event => event.type), ['COST_AUTHORIZED']);
+});
+
+test('conserve la réservation si la persistance de la libération échoue', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const atomicStore = createAtomicStore(root);
+  const store = { ...atomicStore, appendJsonLine: async (relativePath, event) => {
+    if (event.type === 'COST_RELEASED') throw Object.assign(new Error('append interrompu'), { code: 'APPEND_FAILED' });
+    return atomicStore.appendJsonLine(relativePath, event);
+  } };
+  const ledger = createCostLedger({ store, runId: 'run-release-append', envelope: { hardLimit: 5 } });
+  const authorization = await ledger.authorize({ stepId: 'onpage', provider: 'dataforseo', unit: 'task', estimatedCost: 3 });
+  await assert.rejects(() => ledger.cancel({ authorizationId: authorization.authorizationId }), error => error.code === 'APPEND_FAILED');
+  assert.deepEqual(ledger.snapshot(), { hardLimit: 5, currency: 'USD', spent: 0, reserved: 3, available: 2, utilization: 0 });
+  const events = (await readFile(path.join(root, 'runs/run-release-append/cost-events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.map(event => event.type), ['COST_AUTHORIZED']);
+});
+
 test('hydrate le ledger sans rejouer les événements ou les seuils au redémarrage', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
   const store = createAtomicStore(root);
@@ -119,7 +149,9 @@ test('récupère les seuils absents après un append partiel', async () => {
   };
   const ledger = createCostLedger({ store: failingStore, runId: 'run-threshold-recovery', envelope: { hardLimit: 10 } });
   const authorization = await ledger.authorize({ stepId: 'serp', provider: 'dataforseo', unit: 'task', estimatedCost: 10 });
-  await assert.rejects(() => ledger.settle({ authorizationId: authorization.authorizationId, actualCost: 10 }));
+  const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost: 10 });
+  assert.equal(settled.thresholdRecoveryRequired, true);
+  assert.equal(settled.state.spent, 10);
 
   const resumed = createCostLedger({ store: atomicStore, runId: 'run-threshold-recovery', envelope: { hardLimit: 10 } });
   await resumed.ready;

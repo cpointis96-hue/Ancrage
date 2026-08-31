@@ -75,6 +75,7 @@ function candidates(query) {
 function adapter(test, search = null) {
   const fn = async context => test(context);
   fn.search = search;
+  fn.executionType = 'http';
   return fn;
 }
 

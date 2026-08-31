@@ -202,12 +202,13 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
     const eventId = uniqueId('cost-event', eventIds);
     const recorded = { eventId, occurredAt: clock().toISOString(), runId, currency, ...event };
     eventIds.set(eventId, stableJson(recorded));
-    return store.appendJsonLine(EVENTS_PATH(runId), recorded);
+    try { return await store.appendJsonLine(EVENTS_PATH(runId), recorded); }
+    catch (error) { eventIds.delete(eventId); throw error; }
   }
 
-  function state() {
-    const normalizedReserved = Math.max(0, reserved);
-    return { hardLimit, currency, spent, reserved: normalizedReserved, available: Math.max(0, hardLimit - spent - normalizedReserved), utilization: hardLimit === 0 ? (spent > 0 ? 1 : 0) : spent / hardLimit };
+  function state(nextSpent = spent, nextReserved = reserved) {
+    const normalizedReserved = Math.max(0, nextReserved);
+    return { hardLimit, currency, spent: nextSpent, reserved: normalizedReserved, available: Math.max(0, hardLimit - nextSpent - normalizedReserved), utilization: hardLimit === 0 ? (nextSpent > 0 ? 1 : 0) : nextSpent / hardLimit };
   }
 
   async function authorize({ stepId, provider, unit, quantity = 1, estimatedCost, essential = false } = {}) {
@@ -221,10 +222,12 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
       const estimate = estimatedCost ?? 0;
       if (spent + reserved + estimate > hardLimit) throw costError('Plafond budgétaire dépassé avant appel.', 'BUDGET_EXCEEDED', { ...state(), estimate });
       const authorizationId = uniqueId('cost-auth', authorizationIds);
+      const reservation = { authorizationId, ...fields, quantity, estimate, essential };
+      const targetReserved = reserved + estimate;
+      await append({ type: 'COST_AUTHORIZED', phase: 'before', authorizationId, ...fields, quantity, estimatedCost: estimatedCost ?? null, essential, state: state(spent, targetReserved) });
       authorizationIds.add(authorizationId);
-      reservations.set(authorizationId, { authorizationId, ...fields, quantity, estimate, essential });
-      reserved += estimate;
-      await append({ type: 'COST_AUTHORIZED', phase: 'before', authorizationId, ...fields, quantity, estimatedCost: estimatedCost ?? null, essential, state: state() });
+      reservations.set(authorizationId, reservation);
+      reserved = targetReserved;
       return { authorizationId, state: state() };
     });
   }
@@ -235,13 +238,16 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
       const reservation = reservations.get(authorizationId);
       if (!reservation) throw new ValidationError('Autorisation de coût introuvable.', { field: 'authorizationId' });
       amount(actualCost, 'actualCost');
-      reserved -= reservation.estimate;
-      spent += actualCost;
+      const targetReserved = reserved - reservation.estimate;
+      const targetSpent = spent + actualCost;
+      const overLimit = targetSpent > hardLimit;
+      await append({ type: 'COST_SETTLED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, actualCost, essential: reservation.essential, overLimit, state: state(targetSpent, targetReserved) });
+      reserved = targetReserved;
+      spent = targetSpent;
       reservations.delete(authorizationId);
-      const overLimit = spent > hardLimit;
-      await append({ type: 'COST_SETTLED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, actualCost, essential: reservation.essential, overLimit, state: state() });
-      await emitThresholds();
-      return { overLimit, state: state() };
+      let thresholdRecoveryRequired = false;
+      try { await emitThresholds(); } catch { thresholdRecoveryRequired = true; }
+      return { overLimit, state: state(), thresholdRecoveryRequired };
     });
   }
 
@@ -250,9 +256,10 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
     return withinLock(async () => {
       const reservation = reservations.get(authorizationId);
       if (!reservation) throw new ValidationError('Autorisation de coût introuvable.', { field: 'authorizationId' });
-      reserved -= reservation.estimate;
+      const targetReserved = reserved - reservation.estimate;
+      await append({ type: 'COST_RELEASED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, reason: requiredText(reason, 'reason'), state: state(spent, targetReserved) });
+      reserved = targetReserved;
       reservations.delete(authorizationId);
-      await append({ type: 'COST_RELEASED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, reason: requiredText(reason, 'reason'), state: state() });
       return { state: state() };
     });
   }
@@ -260,8 +267,8 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   async function emitThresholds() {
     for (const threshold of THRESHOLDS) {
       if (firedThresholds.has(threshold) || (hardLimit === 0 ? spent === 0 : spent / hardLimit < threshold)) continue;
-      firedThresholds.add(threshold);
       await append({ type: 'BUDGET_THRESHOLD', phase: 'after', threshold, state: state() });
+      firedThresholds.add(threshold);
     }
   }
 
