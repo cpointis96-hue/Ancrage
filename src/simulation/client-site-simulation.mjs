@@ -42,8 +42,9 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     },
     'simulation-content-plan': async ({ input }) => {
       const source = input['dossier-validation'];
-      const siteSpec = { schemaVersion: 'site-spec-v1', title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, sections: ['identity', 'story', 'menu', 'contact'], assetCount: source.assets.length };
-      return { dossierId: source.dossierId, reportId: input['seo-competition-report'].dossierId, siteSpec, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections: siteSpec.sections };
+      const siteSpec = input.siteSpec ?? { schemaVersion: 'site-spec-v1', title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, sections: ['identity', 'story', 'menu', 'contact'], assetCount: source.assets.length };
+      const sections = siteSpec.sections ?? siteSpec.pages?.[0]?.sections ?? ['identity', 'story', 'menu', 'contact'];
+      return { dossierId: source.dossierId, reportId: input['seo-competition-report'].dossierId, siteSpec, pages: ['Accueil', 'Menu', 'Histoire', 'Contact'], title: source.business.name, city: source.business.city, address: source.business.address, contact: source.business.contact, story: source.story, menu: source.menu, assets: source.assets, sections };
     },
     'simulation-gmb-audit-report': async ({ input, run, store: localStore }) => {
       const facts = input['dossier-validation'];
@@ -107,7 +108,7 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
 export function createClientSiteSimulation({ store, engine, dossiers = createDossierRegistry({ store }), clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), faults = new Set() }) {
   const defaultPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlGHgAAAABJRU5ErkJggg==';
   async function prepareDossier(profile = {}) { const dossier = await dossiers.create({ name: profile.name ?? 'Bistro Sillage', city: profile.city ?? 'Pattaya', country: profile.country ?? 'Thaïlande', contact: profile.contact ?? 'contact@example.test', story: profile.story ?? 'Une histoire synthétique fournie par le restaurateur pour tester le parcours.', menu: profile.menu ?? [{ name: 'Plat signature', price: 12 }], photo: profile.photo ?? { dataUrl: defaultPhoto, alt: 'Image synthétique du restaurant' } }, { source: 'synthetic-fixture', id: idFactory('dossier') }); return { id: dossier.id, dossier }; }
-  async function startDossier(dossierId, { fault = null } = {}) { faults.clear(); if (fault) faults.add(fault); await dossiers.get(dossierId); const current = await store.readText(`config/workflows/${workflowId}.json`, null); if (current === null) await store.writeJson(`config/workflows/${workflowId}.json`, clientSiteWorkflow, { expectedHash: null }); return engine.start(workflowId, { dossierId }); }
+  async function startDossier(dossierId, { fault = null, siteSpec = null } = {}) { faults.clear(); if (fault) faults.add(fault); await dossiers.get(dossierId); const current = await store.readText(`config/workflows/${workflowId}.json`, null); if (current === null) await store.writeJson(`config/workflows/${workflowId}.json`, clientSiteWorkflow, { expectedHash: null }); return engine.start(workflowId, { dossierId, ...(siteSpec ? { siteSpec } : {}) }); }
   async function start(profile = {}, { fault = null } = {}) { const dossier = await prepareDossier(profile); return startDossier(dossier.id, { fault }); }
   async function resume(runId, { fault = null } = {}) { faults.clear(); if (fault) faults.add(fault); return engine.resume(runId); }
   return { prepareDossier, resume, start, startDossier, workflowId };

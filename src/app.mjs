@@ -138,6 +138,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
+    contracts,
     auditStarter: async ({ request, decision }) => {
       const audit = await publicAudits.create({
         name: request.input.name,
@@ -159,12 +160,24 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       }
       return reports;
     },
-    pipelineStarter: async ({ request, preparation }) => {
+    pipelineStarter: async ({ request, preparation, preparationDraft }) => {
       const intake = preparation.intake ?? {};
       const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
       if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
       const photoFiles = await Promise.all(preparation.assets.map(async asset => ({ asset, value: await store.readBuffer(asset.assetPath, null) })));
       if (photoFiles.some(item => !item.value)) throw Object.assign(new Error('Un fichier photo est introuvable dans la préparation.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
+      const template = await templates.getActiveVersion('site-preview');
+      const confirmedAt = new Date().toISOString();
+      const siteSpec = {
+        schemaVersion: 'site-spec-v1',
+        title: request.input.name,
+        locale: preparation.locale,
+        provenance: { auditPacketRef: preparationDraft.auditPacketRef, preparationDraftRef: preparationDraft.id },
+        confirmation: { status: 'CONFIRMED', confirmedAt },
+        template: { id: template.id, versionId: template.versionId, hash: template.hash.replace(/^sha256:/, '') },
+        pages: [{ path: '/', title: request.input.name, sections: ['identity', 'story', 'menu', 'contact'], provenanceRefs: [preparationDraft.auditPacketRef, preparationDraft.id], confirmation: 'CONFIRMED' }],
+        assets: preparation.assets.map(asset => ({ id: asset.assetId, artifactRef: asset.assetPath, rightsStatus: asset.rightsStatus, provenanceRefs: [asset.hash], confirmation: 'CONFIRMED' })),
+      };
       const dossier = await dossiers.create({
         name: request.input.name,
         city: request.input.city.label,
@@ -175,10 +188,24 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         menu: Array.isArray(intake.menu) ? intake.menu : [],
         photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name, category: asset.category, rightsStatus: asset.rightsStatus })),
       }, { source: 'public-demo-intake' });
-      const run = await simulation.startDossier(dossier.id);
+      const run = await simulation.startDossier(dossier.id, { siteSpec });
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
       const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
-      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, embeddedAssets: preparation.assets.map(asset => asset.category), note: 'Les cinq photos fournies sont intégrées à l’aperçu local.' } };
+      const artifactRefs = [
+        `runs/${run.id}/artifacts/site/index.html`,
+        `runs/${run.id}/artifacts/gmb-audit-report/report.html`,
+        `runs/${run.id}/artifacts/seo-competition-report/report.html`,
+      ];
+      const gates = (quality?.output?.checks ?? []).map(id => ({ id, status: quality.output.status, ruleVersion: 'simulation-quality-rules-v1', checkVersion: 'simulation-quality-check-v1', evidenceRefs: artifactRefs }));
+      return {
+        runId: run.id,
+        siteSpec,
+        acceptanceReport: {
+          schemaVersion: 'acceptance-report-v1', revision: 1, status: quality?.output?.status ?? 'BLOCK',
+          ruleVersions: ['simulation-quality-rules-v1'], gates, artifactRefs, evidenceRefs: artifactRefs,
+          limitations: [], operatorDecision: 'PENDING',
+        },
+      };
     },
     demoPresenter: async ({ runId, decision }) => {
       await runs.decide(runId, decision);
@@ -191,6 +218,10 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedContract(store, contracts, 'audit-report');
     await seedContract(store, contracts, 'copy-draft');
     await seedContract(store, contracts, 'seo-research-plan');
+    await seedContract(store, contracts, 'preparation-draft');
+    await seedContract(store, contracts, 'demo-readiness');
+    await seedContract(store, contracts, 'site-spec');
+    await seedContract(store, contracts, 'acceptance-report');
     await seedPrompt(store, prompts, 'audit-analyst');
     await seedPrompt(store, prompts, 'copywriter');
     await seedPrompt(store, prompts, 'local-seo-research-planner');
