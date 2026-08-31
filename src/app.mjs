@@ -136,6 +136,20 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const seoResearchPlanner = createSeoResearchPlanner({ providers, adapters: providerAdapters, prompts, workflows, contracts });
   const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, seoResearchPlanner });
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
+  const acceptanceReportFromRun = async run => {
+    const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
+    const artifactRefs = [
+      `runs/${run.id}/artifacts/site/index.html`,
+      `runs/${run.id}/artifacts/gmb-audit-report/report.html`,
+      `runs/${run.id}/artifacts/seo-competition-report/report.html`,
+    ];
+    const gates = (quality?.output?.checks ?? []).map(id => ({ id, status: quality.output.status, ruleVersion: 'simulation-quality-rules-v1', checkVersion: 'simulation-quality-check-v1', evidenceRefs: artifactRefs }));
+    return {
+      schemaVersion: 'acceptance-report-v1', revision: 1, status: quality?.output?.status ?? 'BLOCK',
+      ruleVersions: ['simulation-quality-rules-v1'], gates, artifactRefs, evidenceRefs: artifactRefs,
+      limitations: [], operatorDecision: 'PENDING',
+    };
+  };
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
     contracts,
@@ -174,7 +188,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         assets: preparation.assets.map(asset => ({ id: asset.assetId, artifactRef: asset.assetPath, rightsStatus: asset.rightsStatus, provenanceRefs: [asset.hash], confirmation: 'CONFIRMED' })),
       };
     },
-    pipelineStarter: async ({ request, preparation, siteSpec }) => {
+    pipelineStarter: async ({ request, preparation, siteSpec, pipelineReservation }) => {
       const intake = preparation.intake ?? {};
       const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
       if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
@@ -190,24 +204,18 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         menu: Array.isArray(intake.menu) ? intake.menu : [],
         photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name, category: asset.category, rightsStatus: asset.rightsStatus })),
       }, { source: 'public-demo-intake' });
-      const run = await simulation.startDossier(dossier.id, { siteSpec });
+      const run = await simulation.startDossier(dossier.id, { siteSpec, pipelineReservation });
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
-      const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
-      const artifactRefs = [
-        `runs/${run.id}/artifacts/site/index.html`,
-        `runs/${run.id}/artifacts/gmb-audit-report/report.html`,
-        `runs/${run.id}/artifacts/seo-competition-report/report.html`,
-      ];
-      const gates = (quality?.output?.checks ?? []).map(id => ({ id, status: quality.output.status, ruleVersion: 'simulation-quality-rules-v1', checkVersion: 'simulation-quality-check-v1', evidenceRefs: artifactRefs }));
       return {
         runId: run.id,
         siteSpec,
-        acceptanceReport: {
-          schemaVersion: 'acceptance-report-v1', revision: 1, status: quality?.output?.status ?? 'BLOCK',
-          ruleVersions: ['simulation-quality-rules-v1'], gates, artifactRefs, evidenceRefs: artifactRefs,
-          limitations: [], operatorDecision: 'PENDING',
-        },
+        acceptanceReport: await acceptanceReportFromRun(run),
       };
+    },
+    pipelineReconciler: async ({ pipelineReservation }) => {
+      const run = (await runs.list()).find(item => item.input?.pipelineReservation === pipelineReservation);
+      if (!run) return null;
+      return run.status === 'SUCCEEDED' ? { runId: run.id, siteSpec: run.input.siteSpec, acceptanceReport: await acceptanceReportFromRun(run) } : { runId: run.id };
     },
     demoPresenter: async ({ runId, decision }) => {
       await runs.decide(runId, decision);

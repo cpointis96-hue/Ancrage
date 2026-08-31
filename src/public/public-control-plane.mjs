@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { open, readFile, unlink } from 'node:fs/promises';
+import { open, readFile, rename, unlink } from 'node:fs/promises';
 import { ConflictError, NotFoundError, ValidationError, AppError } from '../core/errors.mjs';
 import { createId } from '../core/ids.mjs';
 import { validateJsonSchema } from '../core/json-schema.mjs';
@@ -21,6 +21,10 @@ const text = (value, field, max = 200) => {
 const fingerprint = value => JSON.stringify(value);
 const emailHash = value => createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
 const response = value => JSON.parse(JSON.stringify(value));
+const isProcessAlive = pid => {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code !== 'ESRCH'; }
+};
 function publicDomain(value) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || value.length > 2048) throw new ValidationError('domain est invalide.', { field: 'domain' });
@@ -109,34 +113,88 @@ function preparationDraft(request, preparation) {
   };
 }
 
-export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, demoPresenter = null } = {}) {
+export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, pipelineReconciler = null, demoPresenter = null, startLockTimeoutMs = 60_000 } = {}) {
   const starts = new Map();
+  if (!Number.isInteger(startLockTimeoutMs) || startLockTimeoutMs < 1 || startLockTimeoutMs > 300_000) throw new ValidationError('startLockTimeoutMs est invalide.', { field: 'startLockTimeoutMs' });
+  const lockPath = id => store.resolveSafe(`public-control-plane/preparations/${id}.start.lock`);
+  const lockMetadata = token => {
+    const acquiredAt = clock();
+    return JSON.stringify({ token, pid: process.pid, acquiredAt: acquiredAt.toISOString(), expiresAt: new Date(acquiredAt.getTime() + startLockTimeoutMs).toISOString() });
+  };
+  const readLockMetadata = async filePath => {
+    try {
+      const value = JSON.parse(await readFile(filePath, 'utf8'));
+      if (!value || typeof value.token !== 'string' || !value.token || !Number.isInteger(value.pid) || value.pid < 1 || !Number.isFinite(Date.parse(value.expiresAt))) return null;
+      return value;
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      return null;
+    }
+  };
   async function acquireStartLock(id) {
-    const lockPath = store.resolveSafe(`public-control-plane/preparations/${id}.start.lock`);
+    const filePath = lockPath(id);
     const token = idFactory('pipeline-lock');
     let handle;
     try {
-      handle = await open(lockPath, 'wx', 0o600);
-      await handle.writeFile(token, 'utf8');
-      return { handle, lockPath, token };
+      handle = await open(filePath, 'wx', 0o600);
+      await handle.writeFile(lockMetadata(token), 'utf8');
+      const heartbeat = setInterval(() => renewStartLock({ handle, lockPath: filePath, token }).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
+      heartbeat.unref?.();
+      return { handle, heartbeat, lockPath: filePath, token };
     } catch (error) {
       if (handle) {
         await handle.close();
-        await unlink(lockPath).catch(() => {});
+        await unlink(filePath).catch(() => {});
       }
       if (error.code === 'EEXIST') return null;
       throw error;
     }
   }
+  async function renewStartLock(lock) {
+    const metadata = await readLockMetadata(lock.lockPath);
+    if (!metadata || metadata.token !== lock.token) return false;
+    await lock.handle.truncate(0);
+    await lock.handle.write(lockMetadata(lock.token), 0, 'utf8');
+    return true;
+  }
   async function releaseStartLock(lock) {
     try {
-      const token = await readFile(lock.lockPath, 'utf8');
-      if (token === lock.token) await unlink(lock.lockPath);
+      clearInterval(lock.heartbeat);
+      const metadata = await readLockMetadata(lock.lockPath);
+      if (metadata?.token === lock.token) await unlink(lock.lockPath);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     } finally {
       await lock.handle.close();
     }
+  }
+  async function startLockState(id) {
+    const filePath = lockPath(id);
+    const metadata = await readLockMetadata(filePath);
+    if (!metadata) {
+      const exists = await readFile(filePath, 'utf8').then(() => true).catch(error => {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      });
+      return { state: exists ? 'ACTIVE' : 'MISSING' };
+    }
+    if (new Date(metadata.expiresAt).getTime() > clock().getTime() || isProcessAlive(metadata.pid)) return { state: 'ACTIVE', metadata };
+    return { state: 'EXPIRED', metadata };
+  }
+  async function recoverExpiredStartLock(id, expectedToken) {
+    const filePath = lockPath(id);
+    const metadata = await readLockMetadata(filePath);
+    if (!metadata || metadata.token !== expectedToken || new Date(metadata.expiresAt).getTime() > clock().getTime() || isProcessAlive(metadata.pid)) return 'ACTIVE';
+    const recoveryPath = `${filePath}.${createHash('sha256').update(metadata.token).digest('hex')}.recovery`;
+    try { await rename(filePath, recoveryPath); }
+    catch (error) { if (error.code === 'ENOENT') return 'MISSING'; throw error; }
+    const moved = await readLockMetadata(recoveryPath);
+    if (!moved || moved.token !== metadata.token || new Date(moved.expiresAt).getTime() > clock().getTime() || isProcessAlive(moved.pid)) {
+      await rename(recoveryPath, filePath).catch(() => {});
+      return 'ACTIVE';
+    }
+    await unlink(recoveryPath);
+    return 'RECOVERED';
   }
   async function validateContract(id, value, code) {
     if (!contracts?.getActiveVersion) throw new AppError('Le contrat requis n’est pas configuré.', { code, status: 503 });
@@ -246,7 +304,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function readPreparation(id) { const value = await store.readJson(preparationPath(id), null); if (!value) throw new NotFoundError(`Demande de démo introuvable : ${id}`); return value; }
   function projectPreparation(value) { const result = response(value); delete result.emailHash; for (const asset of result.assets ?? []) { delete asset.assetPath; delete asset.mimeType; } return result; }
   function requireEditable(preparation) { if (preparation.pipelineRunId) throw new ConflictError('La préparation est gelée pendant et après le pipeline.'); }
-  async function savePreparation(value) { value.checklist = checklist(value); value.status = value.pipelineRunId ? (value.pipelineStatus ?? 'WEBSITE_FACTORY_RUNNING') : 'INCOMPLETE'; value.updatedAt = clock().toISOString(); await store.writeJson(preparationPath(value.id), value); return projectPreparation(value); }
+  async function savePreparation(value) { value.checklist = checklist(value); value.status = value.pipelineStatus ?? (value.pipelineRunId ? 'WEBSITE_FACTORY_RUNNING' : 'INCOMPLETE'); value.updatedAt = clock().toISOString(); await store.writeJson(preparationPath(value.id), value); return projectPreparation(value); }
   async function updateIntake(id, input = {}) { const preparation = await readPreparation(id); requireEditable(preparation); if (input.criticalComplete !== undefined && typeof input.criticalComplete !== 'boolean') throw new ValidationError('criticalComplete est invalide.', { field: 'criticalComplete' }); if (input.ownerConfirmed !== undefined) { if (typeof input.ownerConfirmed !== 'boolean') throw new ValidationError('ownerConfirmed est invalide.', { field: 'ownerConfirmed' }); preparation.ownerConfirmed = input.ownerConfirmed; } if (input.locale !== undefined) preparation.locale = text(input.locale, 'locale', 20); for (const field of ['address', 'contact', 'story']) if (input[field] !== undefined) preparation.intake = { ...(preparation.intake ?? {}), [field]: optionalText(input[field], field, field === 'story' ? 12000 : field === 'address' ? 500 : 320) }; if (input.hours !== undefined) preparation.intake = { ...(preparation.intake ?? {}), hours: normalizeHours(input.hours) }; if (input.menu !== undefined) preparation.intake = { ...(preparation.intake ?? {}), menu: normalizeMenu(input.menu) }; return savePreparation(preparation); }
   async function addAsset(id, input = {}) {
     const preparation = await readPreparation(id);
@@ -274,7 +332,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     preparation.assets.push(asset);
     return savePreparation(preparation);
   }
-  async function startReserved(id) {
+  async function startReserved(id, lock) {
     const currentText = await store.readText(preparationPath(id), null);
     if (currentText === null) throw new NotFoundError(`Demande de démo introuvable : ${id}`);
     const preparation = JSON.parse(currentText);
@@ -296,22 +354,21 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     try {
       await store.writeJson(preparationPath(id), preparation, { expectedHash: store.hashText(currentText) });
     } catch (error) {
-      if (error instanceof ConflictError) return startReserved(id);
+      if (error instanceof ConflictError) return startReserved(id, lock);
       throw error;
     }
     let started;
+    if (!await renewStartLock(lock)) throw new AppError('Le verrou de démarrage n’est plus détenu.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
     try {
-      started = await pipelineStarter({ request: response(request), preparation: response(preparation), preparationDraft: response(draft), siteSpec: response(siteSpec) });
+      started = await pipelineStarter({ request: response(request), preparation: response(preparation), preparationDraft: response(draft), siteSpec: response(siteSpec), pipelineReservation: preparation.pipelineReservation });
     } catch (error) {
       preparation.pipelineStatus = 'PIPELINE_START_FAILED';
-      preparation.updatedAt = clock().toISOString();
-      await store.writeJson(preparationPath(id), preparation);
+      await savePreparation(preparation);
       throw error;
     }
     if (!started?.runId) {
       preparation.pipelineStatus = 'PIPELINE_START_FAILED';
-      preparation.updatedAt = clock().toISOString();
-      await store.writeJson(preparationPath(id), preparation);
+      await savePreparation(preparation);
       throw new AppError('Le pipeline de démo n’a pas fourni de run vérifiable.', { code: 'PIPELINE_START_FAILED', status: 503 });
     }
     const runId = text(started.runId, 'pipelineRunId', 120);
@@ -336,8 +393,39 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (preparation.pipelineRunId) return projectPreparation(preparation);
       throw new AppError('Le pipeline de démo est déjà en cours de démarrage.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
     }
-    try { return await startReserved(id); }
+    try { return await startReserved(id, lock); }
     finally { await releaseStartLock(lock); }
+  }
+  async function reconcileStart(id, input = {}) {
+    if (input.action !== 'CONFIRM_NO_RUN') throw new ValidationError('Action de réconciliation invalide.', { field: 'action' });
+    const preparation = await readPreparation(id);
+    if (preparation.pipelineRunId) return projectPreparation(preparation);
+    if (!['WEBSITE_FACTORY_STARTING', 'PIPELINE_START_FAILED'].includes(preparation.pipelineStatus)) throw new AppError('Aucun démarrage à réconcilier.', { code: 'PIPELINE_RECOVERY_NOT_REQUIRED', status: 409 });
+    const lock = await startLockState(id);
+    if (lock.state === 'ACTIVE') throw new AppError('Le pipeline de démo est encore actif.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
+    if (typeof pipelineReconciler !== 'function') throw new AppError('Le rapprochement des runs n’est pas configuré.', { code: 'PIPELINE_RECONCILER_NOT_CONFIGURED', status: 503 });
+    const reconciled = await pipelineReconciler({ preparation: response(preparation), pipelineReservation: preparation.pipelineReservation });
+    if (lock.state === 'EXPIRED' && await recoverExpiredStartLock(id, lock.metadata.token) === 'ACTIVE') throw new AppError('Le pipeline de démo est encore actif.', { code: 'PIPELINE_START_IN_PROGRESS', status: 409, details: { retryable: true, nextAction: 'WAIT' } });
+    if (reconciled?.runId) {
+      preparation.pipelineRunId = text(reconciled.runId, 'pipelineRunId', 120);
+      try {
+        preparation.siteSpec = await validateContract('site-spec', reconciled.siteSpec ?? preparation.siteSpec, 'SITE_SPEC_INVALID');
+        preparation.acceptanceReport = await validateContract('acceptance-report', reconciled.acceptanceReport, 'ACCEPTANCE_REPORT_INVALID');
+      } catch (error) {
+        preparation.pipelineStatus = error.code;
+        preparation.acceptanceReport = null;
+        await savePreparation(preparation);
+        throw error;
+      }
+      delete preparation.pipelineReservation;
+      preparation.pipelineStatus = preparation.acceptanceReport.status === 'BLOCK' ? 'BLOCKED' : 'READY_FOR_OWNER_REVIEW';
+      return savePreparation(preparation);
+    }
+    delete preparation.pipelineReservation;
+    delete preparation.preparationDraft;
+    delete preparation.siteSpec;
+    delete preparation.pipelineStatus;
+    return savePreparation(preparation);
   }
   async function start(id) {
     const active = starts.get(id);
@@ -347,5 +435,5 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     return pending;
   }
   async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.'); if (preparation.status !== 'READY_FOR_OWNER_REVIEW') throw new AppError('La démo n’est pas prête pour la validation opérateur.', { code: 'DEMO_NOT_READY_FOR_REVIEW', status: 409 }); if (decision === 'APPROVED' && preparation.acceptanceReport?.status === 'BLOCK') throw new AppError('Une démo bloquée ne peut pas être présentée.', { code: 'ACCEPTANCE_BLOCKED', status: 409 }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); if (decision === 'APPROVED' && (!presented || typeof presented.href !== 'string' || !presented.href.startsWith('/demo/'))) throw new AppError('La présentation de démo n’a pas fourni de lien vérifiable.', { code: 'DEMO_PRESENTATION_INVALID', status: 503 }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
-  return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, seedSyntheticReport, start, updateIntake, validateDemo };
+  return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, reconcileStart, seedSyntheticReport, start, updateIntake, validateDemo };
 }

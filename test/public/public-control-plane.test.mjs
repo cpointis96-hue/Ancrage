@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
@@ -26,6 +26,20 @@ const acceptanceReport = status => ({ schemaVersion: 'acceptance-report-v1', rev
 async function completePreparation(controlPlane, preparation, { hours = [{ day: 'MONDAY', opens: '12:00', closes: '22:00' }], ownerConfirmed = true, menu = [{ name: 'Plat', price: 14 }], rightsStatus = 'AUTHORIZED', assetCategories = categories } = {}) {
   await controlPlane.updateIntake(preparation.id, { locale: 'fr-FR', address: '1 rue du Port', contact: 'contact@example.test', menu, hours, ownerConfirmed });
   for (const category of assetCategories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus, hash: `hash-${category}`, size: 10 });
+}
+async function readyPreparation(controlPlane, key) {
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: `req-${key}` });
+  await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: `prep-${key}` });
+  await completePreparation(controlPlane, preparation);
+  return preparation;
+}
+async function markRecoveryRequired(store, preparation, pipelineStatus, pipelineReservation) {
+  const relativePath = `public-control-plane/preparations/${preparation.id}.json`;
+  const persisted = await store.readJson(relativePath, null);
+  persisted.pipelineStatus = pipelineStatus;
+  persisted.pipelineReservation = pipelineReservation;
+  await store.writeJson(relativePath, persisted);
 }
 
 test('valide la ville structurée et rend la création idempotente', async () => {
@@ -181,6 +195,72 @@ test('réserve atomiquement le démarrage et refuse les rapports incohérents', 
   const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-concurrent' }); await controlPlane.seedSyntheticReport(request.id, { kind: 'final', html: '<h1>Final</h1>' }); const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-concurrent' }); await completePreparation(controlPlane, preparation);
   const first = controlPlane.start(preparation.id); await entered; await assert.rejects(() => secondControlPlane.start(preparation.id), error => error.code === 'PIPELINE_START_IN_PROGRESS'); assert.equal(calls, 1); release(); const started = await first; const replay = await secondControlPlane.start(preparation.id); assert.equal(started.pipelineRunId, 'run-once'); assert.equal(replay.pipelineRunId, 'run-once');
   const { controlPlane: inconsistent } = await fixture({ pipelineStarter: async () => ({ runId: 'run-inconsistent', acceptanceReport: { ...acceptanceReport('PASS'), gates: [{ ...acceptanceReport('PASS').gates[0], status: 'BLOCK' }] } }) }); const inconsistentRequest = await inconsistent.createRequest({ name: 'Maison Sillage', city, idempotencyKey: 'req-inconsistent' }); await inconsistent.seedSyntheticReport(inconsistentRequest.id, { kind: 'final', html: '<h1>Final</h1>' }); const inconsistentPreparation = await inconsistent.createPreparation(inconsistentRequest.id, { email: 'owner@example.test', idempotencyKey: 'prep-inconsistent' }); await completePreparation(inconsistent, inconsistentPreparation); await assert.rejects(() => inconsistent.start(inconsistentPreparation.id), error => error.code === 'ACCEPTANCE_REPORT_INVALID'); await assert.rejects(() => inconsistent.validateDemo(inconsistentPreparation.id, 'APPROVED'), error => error.code === 'DEMO_NOT_READY_FOR_REVIEW');
+});
+
+test('réconcilie un verrou expiré seulement après avoir recherché le run réservé', async () => {
+  let reconciledReservation = null; let starterCalls = 0;
+  const { controlPlane, store } = await fixture({
+    startLockTimeoutMs: 1_000,
+    pipelineStarter: async () => { starterCalls += 1; return { runId: 'run-after-recovery', acceptanceReport: acceptanceReport('PASS') }; },
+    pipelineReconciler: async ({ pipelineReservation }) => { reconciledReservation = pipelineReservation; return null; },
+  });
+  const preparation = await readyPreparation(controlPlane, 'stale-lock');
+  await markRecoveryRequired(store, preparation, 'WEBSITE_FACTORY_STARTING', 'reservation-stale');
+  const lockFile = store.resolveSafe(`public-control-plane/preparations/${preparation.id}.start.lock`);
+  const exitedPid = 999_999_999;
+  assert.throws(() => process.kill(exitedPid, 0), error => error.code === 'ESRCH');
+  await writeFile(lockFile, JSON.stringify({ token: 'stale-owner', pid: exitedPid, acquiredAt: '2026-08-30T10:00:00.000Z', expiresAt: '2026-08-30T10:01:00.000Z' }), { mode: 0o600 });
+  const recovered = await controlPlane.reconcileStart(preparation.id, { action: 'CONFIRM_NO_RUN' });
+  assert.equal(reconciledReservation, 'reservation-stale');
+  assert.equal(recovered.status, 'INCOMPLETE');
+  await assert.rejects(() => readFile(lockFile, 'utf8'), error => error.code === 'ENOENT');
+  assert.equal((await controlPlane.start(preparation.id)).pipelineRunId, 'run-after-recovery');
+  assert.equal(starterCalls, 1);
+});
+
+test('ne vole pas un verrou actif et débloque un starter échoué après rapprochement', async () => {
+  const active = await fixture({ startLockTimeoutMs: 1_000, pipelineReconciler: async () => null });
+  const activePreparation = await readyPreparation(active.controlPlane, 'active-lock');
+  await markRecoveryRequired(active.store, activePreparation, 'WEBSITE_FACTORY_STARTING', 'reservation-active');
+  const activeLockFile = active.store.resolveSafe(`public-control-plane/preparations/${activePreparation.id}.start.lock`);
+  assert.doesNotThrow(() => process.kill(process.pid, 0));
+  const activeMetadata = { token: 'active-owner', pid: process.pid, acquiredAt: '2026-08-30T10:00:00.000Z', expiresAt: '2026-08-30T10:01:00.000Z' };
+  await writeFile(activeLockFile, JSON.stringify(activeMetadata), { mode: 0o600 });
+  await assert.rejects(() => active.controlPlane.reconcileStart(activePreparation.id, { action: 'CONFIRM_NO_RUN' }), error => error.code === 'PIPELINE_START_IN_PROGRESS');
+  assert.deepEqual(JSON.parse(await readFile(activeLockFile, 'utf8')), activeMetadata);
+
+  let starterCalls = 0;
+  const failed = await fixture({
+    pipelineStarter: async () => {
+      starterCalls += 1;
+      if (starterCalls === 1) throw new Error('starter failed');
+      return { runId: 'run-after-failure', acceptanceReport: acceptanceReport('PASS') };
+    },
+    pipelineReconciler: async () => null,
+  });
+  const failedPreparation = await readyPreparation(failed.controlPlane, 'starter-failure');
+  await assert.rejects(() => failed.controlPlane.start(failedPreparation.id), /starter failed/);
+  assert.equal((await failed.controlPlane.getDemoRequest(failedPreparation.id)).status, 'PIPELINE_START_FAILED');
+  assert.equal((await failed.controlPlane.reconcileStart(failedPreparation.id, { action: 'CONFIRM_NO_RUN' })).status, 'INCOMPLETE');
+  assert.equal((await failed.controlPlane.start(failedPreparation.id)).pipelineRunId, 'run-after-failure');
+  assert.equal(starterCalls, 2);
+});
+
+test('gèle le run déjà créé pendant la réconciliation au lieu de relancer le starter', async () => {
+  let starterCalls = 0; let reservation = null;
+  const { controlPlane } = await fixture({
+    pipelineStarter: async ({ pipelineReservation }) => { starterCalls += 1; reservation = pipelineReservation; throw new Error('process interrupted after run creation'); },
+    pipelineReconciler: async ({ pipelineReservation }) => pipelineReservation === reservation ? { runId: 'run-existing-after-crash', siteSpec: validSiteSpec(), acceptanceReport: acceptanceReport('PASS') } : null,
+    demoPresenter: async () => ({ href: '/demo/recovered' }),
+  });
+  const preparation = await readyPreparation(controlPlane, 'existing-run');
+  await assert.rejects(() => controlPlane.start(preparation.id), /process interrupted/);
+  const reconciled = await controlPlane.reconcileStart(preparation.id, { action: 'CONFIRM_NO_RUN' });
+  assert.equal(reconciled.pipelineRunId, 'run-existing-after-crash');
+  assert.equal(reconciled.status, 'READY_FOR_OWNER_REVIEW');
+  assert.equal((await controlPlane.validateDemo(preparation.id, 'APPROVED')).status, 'READY_FOR_PROSPECT');
+  assert.equal((await controlPlane.start(preparation.id)).pipelineRunId, 'run-existing-after-crash');
+  assert.equal(starterCalls, 1);
 });
 
 test('ne fabrique pas un identifiant de pipeline et délègue le run réel au starter configuré', async () => {
