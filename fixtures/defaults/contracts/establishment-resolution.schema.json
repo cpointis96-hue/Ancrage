@@ -2,26 +2,40 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "establishment-resolution",
   "type": "object",
-  "required": ["candidates", "decision", "ambiguities", "evidenceRefs"],
+  "required": ["candidates", "siteCandidates", "decision", "ambiguities", "evidenceRefs"],
   "properties": {
-    "candidates": {
-      "type": "array",
-      "maxItems": 3,
-      "items": {
-        "type": "object",
-        "required": ["id", "name", "score", "evidenceRefs"],
-        "properties": {
-          "id": { "type": "string", "minLength": 1, "maxLength": 120 },
-          "name": { "type": "string", "minLength": 1, "maxLength": 160 },
-          "score": { "type": "number", "minimum": 0, "maximum": 1 },
-          "evidenceRefs": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
-        },
-        "additionalProperties": false
-      }
-    },
+    "candidates": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/establishmentCandidate" } },
+    "siteCandidates": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/siteCandidate" } },
     "decision": { "type": "string", "enum": ["AUTO_CONTINUE", "ASK_CONFIRMATION", "ASK_MORE_DATA", "LOCAL_PREVIEW_WITHOUT_GMB"] },
     "ambiguities": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 500 } },
     "evidenceRefs": { "type": "array", "maxItems": 50, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
+  },
+  "if": { "type": "object", "properties": { "decision": { "enum": ["AUTO_CONTINUE"] } } },
+  "then": { "type": "object", "properties": { "candidates": { "type": "array", "minItems": 1 } } },
+  "$defs": {
+    "establishmentCandidate": {
+      "type": "object",
+      "required": ["id", "name", "score", "signals", "evidenceRefs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "signals": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "evidenceRefs": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
+      },
+      "additionalProperties": false
+    },
+    "siteCandidate": {
+      "type": "object",
+      "required": ["url", "score", "signals", "evidenceRefs"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https://" },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "signals": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "evidenceRefs": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 300 } }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }
