@@ -97,17 +97,26 @@ function normalizeHours(value) {
 
 function preparationDraft(request, preparation) {
   const intake = preparation.intake ?? {};
+  const packet = request.audit?.packet ?? null;
+  const packetDraft = packet?.preparationDraft ?? {};
+  const packetValue = field => packetDraft[field] ?? { value: null, source: 'NONE', confirmation: 'REQUIRED' };
+  const value = (field, current) => current !== undefined && current !== null && current !== ''
+    ? preparation.packetPrefill?.[field] && JSON.stringify(current) === JSON.stringify(preparation.packetPrefill[field].value)
+      ? { field, value: current, source: preparation.packetPrefill[field].source, confirmation: preparation.ownerConfirmed ? 'CONFIRMED' : preparation.packetPrefill[field].confirmation }
+      : { field, value: current, source: 'PROSPECT_INPUT', confirmation: preparation.ownerConfirmed ? 'CONFIRMED' : 'REQUIRED' }
+    : { field, ...packetValue(field) };
   return {
     id: `draft-${preparation.id}`,
     auditPacketRef: request.audit?.auditPacket?.packetId ?? request.audit?.id ?? request.id,
     revision: 1,
+    ...(request.audit?.auditPacket ? { auditPacket: request.audit.auditPacket } : {}),
     locale: preparation.locale,
     values: [
-      { field: 'name', value: request.input.name, source: 'PROSPECT_INPUT', confirmation: 'CONFIRMED' },
-      { field: 'address', value: intake.address, source: 'PROSPECT_INPUT', confirmation: 'CONFIRMED' },
-      { field: 'contact', value: intake.contact, source: 'PROSPECT_INPUT', confirmation: 'CONFIRMED' },
-      { field: 'hours', value: intake.hours, source: 'PROSPECT_INPUT', confirmation: 'CONFIRMED' },
-      { field: 'menu', value: intake.menu, source: 'PROSPECT_INPUT', confirmation: 'CONFIRMED' },
+      value('name', request.input.name),
+      value('address', intake.address),
+      value('contact', intake.contact),
+      value('hours', intake.hours),
+      value('menu', intake.menu),
       ...preparation.assets.map(asset => ({ field: `photo:${asset.category}`, value: asset.assetId, source: 'OWNER_AUTHORIZED_ASSET', confirmation: 'CONFIRMED' })),
     ],
   };
@@ -316,11 +325,21 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       await store.writeJson(idempotencyPath('preparation', key), { fingerprint: fp, preparationId: existing.id }, { immutable: true });
       return projectPreparation(existing);
     }
-    const id = idFactory('demo-request'); const now = clock().toISOString(); const preparation = { id, requestId, emailHash: emailHash(email), status: 'INCOMPLETE', checklist: { criticalComplete: false, locale: false, hours: false, ownerConfirmation: false, photos: false, rights: false }, assets: [], pipelineRunId: null, createdAt: now, updatedAt: now };
+    const packetDraft = request.audit?.packet?.preparationDraft ?? null;
+    const packetPrefill = packetDraft ? Object.fromEntries([
+      ['address', packetDraft.address], ['contact', packetDraft.contact], ['hours', packetDraft.hours], ['menu', packetDraft.menu],
+    ].filter(([, item]) => item && item.value !== null && item.value !== undefined && (Array.isArray(item.value) ? item.value.length : true))) : {};
+    const intake = {
+      ...(packetPrefill.address ? { address: packetPrefill.address.value } : {}),
+      ...(packetPrefill.contact ? { contact: packetPrefill.contact.value } : {}),
+      ...(packetPrefill.hours ? { hours: packetPrefill.hours.value } : {}),
+      ...(packetPrefill.menu ? { menu: packetPrefill.menu.value } : {}),
+    };
+    const id = idFactory('demo-request'); const now = clock().toISOString(); const preparation = { id, requestId, emailHash: emailHash(email), status: 'INCOMPLETE', checklist: { criticalComplete: false, locale: false, hours: false, ownerConfirmation: false, photos: false, rights: false }, ...(Object.keys(intake).length ? { intake } : {}), ...(Object.keys(packetPrefill).length ? { packetPrefill } : {}), assets: [], pipelineRunId: null, createdAt: now, updatedAt: now };
     await store.writeJson(preparationPath(id), preparation); await store.writeJson(idempotencyPath('preparation', key), { fingerprint: fp, preparationId: id }, { immutable: true }); request.demoRequestId = id; request.preparationStatus = 'INCOMPLETE'; await saveRequest(request); return projectPreparation(preparation);
   }
   async function readPreparation(id) { const value = await store.readJson(preparationPath(id), null); if (!value) throw new NotFoundError(`Demande de démo introuvable : ${id}`); return value; }
-  function projectPreparation(value) { const result = response(value); delete result.emailHash; for (const asset of result.assets ?? []) { delete asset.assetPath; delete asset.mimeType; } return result; }
+  function projectPreparation(value) { const result = response(value); delete result.emailHash; delete result.packetPrefill; for (const asset of result.assets ?? []) { delete asset.assetPath; delete asset.mimeType; } return result; }
   function requireEditable(preparation) { if (preparation.pipelineRunId) throw new ConflictError('La préparation est gelée pendant et après le pipeline.'); }
   async function savePreparation(value) { value.checklist = checklist(value); value.status = value.pipelineStatus ?? (value.pipelineRunId ? 'WEBSITE_FACTORY_RUNNING' : 'INCOMPLETE'); value.updatedAt = clock().toISOString(); await store.writeJson(preparationPath(value.id), value); return projectPreparation(value); }
   async function updateIntake(id, input = {}) { const preparation = await readPreparation(id); requireEditable(preparation); if (input.criticalComplete !== undefined && typeof input.criticalComplete !== 'boolean') throw new ValidationError('criticalComplete est invalide.', { field: 'criticalComplete' }); if (input.ownerConfirmed !== undefined) { if (typeof input.ownerConfirmed !== 'boolean') throw new ValidationError('ownerConfirmed est invalide.', { field: 'ownerConfirmed' }); preparation.ownerConfirmed = input.ownerConfirmed; } if (input.locale !== undefined) preparation.locale = text(input.locale, 'locale', 20); for (const field of ['address', 'contact', 'story']) if (input[field] !== undefined) preparation.intake = { ...(preparation.intake ?? {}), [field]: optionalText(input[field], field, field === 'story' ? 12000 : field === 'address' ? 500 : 320) }; if (input.hours !== undefined) preparation.intake = { ...(preparation.intake ?? {}), hours: normalizeHours(input.hours) }; if (input.menu !== undefined) preparation.intake = { ...(preparation.intake ?? {}), menu: normalizeMenu(input.menu) }; return savePreparation(preparation); }

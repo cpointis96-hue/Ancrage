@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
 import { createDefaultProviderAdapters } from '../../src/providers/http-adapters.mjs';
-import { createPublicAuditWorkflow } from '../../src/audit/public-audit-workflow.mjs';
+import { createPublicAuditWorkflow as createWorkflow } from '../../src/audit/public-audit-workflow.mjs';
 import { createSeoResearchPlanner } from '../../src/audit/seo-research-planner.mjs';
+
+const auditPacketSchema = JSON.parse(await readFile(new URL('../../fixtures/defaults/contracts/audit-packet.schema.json', import.meta.url), 'utf8'));
+function createPublicAuditWorkflow(options = {}) {
+  return createWorkflow({ contracts: { async getActiveVersion(id) { assert.equal(id, 'audit-packet'); return { versionId: 'audit-packet-contract-test-v1', schema: auditPacketSchema }; } }, ...options });
+}
 
 function providerState() {
   return { async list() { return [{ id: 'dataforseo', kind: 'seo', configured: true, enabled: true, health: 'healthy' }]; } };

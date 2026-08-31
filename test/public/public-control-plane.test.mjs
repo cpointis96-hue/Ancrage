@@ -313,3 +313,35 @@ test('relie l’identité publique, l’audit et la demande de démo listable pa
   assert.equal(listed[0].request.audit.id, 'audit-link-1');
   assert.equal(listed[0].preparation.id, preparation.id);
 });
+
+test('préremplit le PreparationDraft depuis le snapshot AuditPacket et conserve sa provenance', async () => {
+  let receivedDraft = null;
+  const auditPacket = {
+    packetId: 'audit-packet-1', revision: 2, snapshotRef: 'audit-runs/audit-1/packets/2.json', hash: `sha256:${'a'.repeat(64)}`,
+  };
+  const packet = {
+    preparationDraft: {
+      name: { value: 'Maison Sillage', source: 'PROSPECT_INPUT', confirmation: 'REQUIRED' },
+      address: { value: '1 rue du Port', source: 'GOOGLE_PLACES', confirmation: 'REQUIRED' },
+      contact: { value: 'contact@example.test', source: 'GOOGLE_BUSINESS_PROFILE', confirmation: 'REQUIRED' },
+      hours: { value: [{ day: 'MONDAY', opens: '12:00', closes: '22:00' }], source: 'GOOGLE_BUSINESS_PROFILE', confirmation: 'REQUIRED' },
+      menu: { items: [], source: 'NONE', confirmation: 'REQUIRED' }, photos: [],
+    },
+  };
+  const { controlPlane } = await fixture({
+    auditStarter: async () => ({ audit: { id: 'audit-1', status: 'PARTIAL', auditPacket, packet }, final: { html: '<h1>Final</h1>' } }),
+    pipelineStarter: async ({ preparationDraft }) => { receivedDraft = preparationDraft; return { runId: 'run-packet-1', siteSpec: validSiteSpec(), acceptanceReport: acceptanceReport('PASS') }; },
+  });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'manual', address: '1 rue du Port' }, idempotencyKey: 'req-packet-prefill' });
+  await controlPlane.decideMatch(request.id, { decision: 'LOCAL_PREVIEW_WITHOUT_GMB' });
+  const preparation = await controlPlane.createPreparation(request.id, { email: 'owner@example.test', idempotencyKey: 'prep-packet-prefill' });
+  assert.equal(preparation.intake.address, '1 rue du Port');
+  assert.equal(preparation.intake.contact, 'contact@example.test');
+  await controlPlane.updateIntake(preparation.id, { locale: 'fr-FR', menu: [{ name: 'Plat', price: 14 }], ownerConfirmed: true });
+  for (const category of categories) await controlPlane.addAsset(preparation.id, { assetId: category, category, rightsStatus: 'AUTHORIZED', hash: `hash-${category}`, size: 10 });
+  await controlPlane.start(preparation.id);
+  assert.equal(receivedDraft.auditPacketRef, 'audit-packet-1');
+  assert.deepEqual(receivedDraft.auditPacket, auditPacket);
+  assert.deepEqual(receivedDraft.values.find(item => item.field === 'address'), { field: 'address', value: '1 rue du Port', source: 'GOOGLE_PLACES', confirmation: 'CONFIRMED' });
+  assert.deepEqual(receivedDraft.values.find(item => item.field === 'contact'), { field: 'contact', value: 'contact@example.test', source: 'GOOGLE_BUSINESS_PROFILE', confirmation: 'CONFIRMED' });
+});

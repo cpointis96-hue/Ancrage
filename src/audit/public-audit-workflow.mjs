@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
 import { createId } from '../core/ids.mjs';
 import { createCostLedger } from '../runs/cost-ledger.mjs';
 import { createEvidenceSnapshot } from './evidence.mjs';
@@ -8,6 +8,7 @@ import { resolveAuditBudget, resolveAuditProfile } from './audit-profile.mjs';
 import { buildSeoResearchPlan, domainOf, mergeKeywordMetrics, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from './seo-qualification.mjs';
 import { renderPublicAuditReport } from './public-audit-report.mjs';
 import { assembleAuditPacket, projectAuditPacket } from './audit-packet.mjs';
+import { validateJsonSchema } from '../core/json-schema.mjs';
 
 const INDEX_PATH = 'audit-runs/index.json';
 const IDEMPOTENCY_PATH = key => `audit-runs/idempotency/${createHash('sha256').update(key).digest('hex')}.json`;
@@ -34,17 +35,23 @@ function stage(id, status, extra = {}) { return { id, status, ...extra }; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
 function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
 export function renderPublicAuditPdf(result, auditPacket = null) {
-  const projection = auditPacket ? projectAuditPacket(auditPacket) : null;
+  const projection = projectAuditPacket(auditPacket ?? assembleAuditPacket({ auditRun: result }).packet);
   const lines = [
     'Rapport final SEO et concurrence',
-    result.input.name,
-    `${result.input.city.label} - observation ${result.startedAt}`,
+    projection.subject.name,
+    `${projection.subject.city} - observation ${(auditPacket ?? assembleAuditPacket({ auditRun: result }).packet).createdAt}`,
     '',
-    `Statut : ${projection?.status ?? result.status}`,
-    `Etablissements retournes : ${projection?.metrics.gmbCandidates ?? result.modules.gmb?.candidates?.length ?? 0}`,
-    `Pistes de mots-cles : ${projection?.metrics.keywordOpportunities ?? result.modules.keywords?.ideas?.length ?? 0}`,
-    `Concurrents : ${projection?.metrics.competitors ?? result.modules.keywords?.competitors?.length ?? 0}`,
-    `Preuves provider : ${projection?.metrics.evidence ?? result.evidence.length}`,
+    `Statut : ${projection.status}`,
+    `Etablissements retournes : ${projection.metrics.gmbCandidates}`,
+    `Pistes de mots-cles : ${projection.metrics.keywordOpportunities}`,
+    `Concurrents : ${projection.metrics.competitors}`,
+    `Preuves provider : ${projection.metrics.evidence}`,
+    `Couverture GMB : ${projection.coverage.localPresence.status}/${projection.coverage.localPresence.coverage}`,
+    `Couverture site : ${projection.coverage.siteAudit.status}/${projection.coverage.siteAudit.coverage}`,
+    `Couts USD : depense ${projection.cost.spent}, reserve ${projection.cost.reserved}, plafond ${projection.cost.hardLimit}`,
+    `Reference couts : ${projection.cost.costEventsRef}`,
+    `References preuves : ${projection.evidenceRefs.join(', ') || 'aucune'}`,
+    `Limites : ${projection.report.limitations.join(', ') || 'aucune'}`,
     '',
     'Les branches absentes, partielles ou non confirmees restent signalees.',
   ];
@@ -62,7 +69,7 @@ export function renderPublicAuditPdf(result, auditPacket = null) {
   return pdf;
 }
 
-export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, seoResearchPlanner = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
+export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, contracts = null, seoResearchPlanner = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
   async function get(id) {
     const run = await store.readJson(pathFor(id), null);
     if (!run) throw new NotFoundError(`Run d’audit introuvable : ${id}`);
@@ -81,8 +88,14 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     };
   }
   async function publishPacket(result, artifacts = {}) {
+    if (!contracts?.getActiveVersion) throw new AppError('Le contrat AuditPacket actif est requis.', { code: 'AUDIT_PACKET_CONTRACT_UNAVAILABLE', status: 503 });
+    let activeContract;
+    try { activeContract = await contracts.getActiveVersion('audit-packet'); }
+    catch { throw new AppError('Le contrat AuditPacket actif est indisponible.', { code: 'AUDIT_PACKET_CONTRACT_UNAVAILABLE', status: 503 }); }
     const revision = (result.auditPacket?.revision ?? 0) + 1;
-    const assembled = assembleAuditPacket({ auditRun: result, revision, artifacts: packetArtifacts(result, artifacts) });
+    const assembled = assembleAuditPacket({ auditRun: result, revision, artifacts: packetArtifacts(result, artifacts), packetContractVersion: activeContract.versionId });
+    try { validateJsonSchema(activeContract.schema, assembled.packet); }
+    catch { throw new AppError('La projection AuditPacket ne respecte pas son contrat actif.', { code: 'AUDIT_PACKET_INVALID', status: 503 }); }
     const snapshotRef = packetPath(result.id, revision);
     await store.writeJson(snapshotRef, assembled.packet, { immutable: true });
     result.auditPacket = { packetId: assembled.packet.packetId, revision, hash: assembled.hash, snapshotRef };

@@ -7,6 +7,7 @@
     "id": { "type": "string", "minLength": 1, "maxLength": 120 },
     "auditPacketRef": { "type": "string", "minLength": 1, "maxLength": 300 },
     "revision": { "type": "integer", "minimum": 1 },
+    "auditPacket": { "type": "object", "required": ["packetId", "revision", "snapshotRef", "hash"], "properties": { "packetId": { "type": "string", "minLength": 1, "maxLength": 120 }, "revision": { "type": "integer", "minimum": 1 }, "snapshotRef": { "type": "string", "minLength": 1, "maxLength": 300 }, "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }, "additionalProperties": false },
     "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
     "values": {
       "type": "array",

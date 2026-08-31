@@ -38,21 +38,35 @@ test('HTML, PDF et cockpit partagent le statut et les chiffres de la projection'
   assert.equal(cockpit.metrics.keywordOpportunities, 1);
   assert.equal(cockpit.metrics.competitors, 1);
   assert.equal(cockpit.metrics.gmbCandidates, 2);
+  assert.equal(cockpit.cost.costEventsRef, 'runs/audit-complete-1/cost-events.jsonl');
+  assert.equal(cockpit.report.evidence.length, 2);
+  assert.equal(cockpit.report.limitations.length, 0);
+  assert.deepEqual(packet.aiContributions[0].provenanceRefs, ['workflow:workflow-v7', 'prompt:prompt-v9', 'contract:contract-v3', 'provider:openai', 'model:gpt-test']);
+  assert.deepEqual(packet.aiContributions[0].costEventRefs, ['runs/audit-complete-1/cost-events.jsonl']);
+  assert.deepEqual(packet.lineage.promptVersions, ['prompt-v9']);
   assert.match(html, /SUCCEEDED/);
   assert.match(html, /Mots-clés retenus<\/span><strong>1<\/strong>/);
   assert.match(html, /Pistes concurrentielles<\/span><strong>1<\/strong>/);
+  assert.match(html, /GMB : SUCCEEDED \/ FULL/);
+  assert.match(html, /0,18 USD dépensé/);
+  assert.match(html, /evidence-gmb/);
   assert.match(pdf, /Statut : SUCCEEDED/);
   assert.match(pdf, /Etablissements retournes : 2/);
   assert.match(pdf, /Pistes de mots-cles : 1/);
   assert.match(pdf, /Concurrents : 1/);
+  assert.match(pdf, /Couverture GMB : SUCCEEDED\/FULL/);
+  assert.match(pdf, /Couts USD : depense 0.18, reserve 0, plafond 0.5/);
+  assert.match(pdf, /References preuves : evidence-gmb, evidence-seo/);
 });
 
 test('publie un snapshot hashé lisible par le cockpit sans appeler de provider ou de crawl', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-audit-packet-'));
   try {
+    const schema = JSON.parse(await readFile(contractUrl, 'utf8'));
     const workflow = createPublicAuditWorkflow({
       store: createAtomicStore(root),
       providers: { list: async () => [] }, adapters: {}, secretStore: { get: async () => null },
+      contracts: { async getActiveVersion() { return { versionId: 'audit-packet-contract-test-v1', schema }; } },
       idFactory: prefix => `${prefix}-fixed`,
     });
     const run = await workflow.create({ name: 'Maison Sillage', city: { id: 'fr-nantes', label: 'Nantes', country: 'FR' } });
@@ -62,6 +76,21 @@ test('publie un snapshot hashé lisible par le cockpit sans appeler de provider 
     assert.equal(stored.snapshot.packetId, run.auditPacket.packetId);
     assert.equal(projectAuditPacket(stored.packet).status, run.status);
     assert.equal(projectAuditPacket(stored.packet).metrics.spent, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('refuse de publier un snapshot incompatible avec le contrat actif', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-audit-packet-contract-'));
+  try {
+    const workflow = createPublicAuditWorkflow({
+      store: createAtomicStore(root), providers: { list: async () => [] }, adapters: {}, secretStore: { get: async () => null },
+      contracts: { async getActiveVersion() { return { versionId: 'audit-packet-contract-invalid', schema: { type: 'object', required: ['missing'], properties: {}, additionalProperties: false } }; } },
+      idFactory: prefix => `${prefix}-fixed`,
+    });
+    await assert.rejects(() => workflow.create({ name: 'Maison Sillage', city: { id: 'fr-nantes', label: 'Nantes', country: 'FR' } }), error => error.code === 'AUDIT_PACKET_INVALID');
+    assert.equal(await createAtomicStore(root).readJson('audit-runs/audit-run-fixed/packets/1.json', null), null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

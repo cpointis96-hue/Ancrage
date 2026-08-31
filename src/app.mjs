@@ -134,7 +134,7 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demos = createDemoRegistry({ store, artifacts, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const seoResearchPlanner = createSeoResearchPlanner({ providers, adapters: providerAdapters, prompts, workflows, contracts });
-  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, seoResearchPlanner });
+  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, contracts, seoResearchPlanner });
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
   const acceptanceReportFromRun = async run => {
     const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
@@ -163,14 +163,15 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         identity: request.input.identity ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
       }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined });
-      const reports = { audit: { id: audit.id, status: audit.status, stages: audit.stages, provider: audit.provider, auditPacket: audit.auditPacket, auditProjection: audit.auditProjection } };
+      const summary = async value => ({ id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet: (await publicAudits.readPacket(value.id)).packet });
+      const reports = { audit: await summary(audit) };
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
         if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
         if (kind === 'final' && report) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
       }
       if (!reports.final && audit.completion) {
-        reports.completion = audit.completion.then(async completed => ({ audit: { id: completed.id, status: completed.status, stages: completed.stages, provider: completed.provider, auditPacket: completed.auditPacket, auditProjection: completed.auditProjection }, html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
+        reports.completion = audit.completion.then(async completed => ({ audit: await summary(completed), html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
       }
       return reports;
     },

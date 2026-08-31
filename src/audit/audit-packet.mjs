@@ -41,7 +41,7 @@ function safeKeyword(value) {
   };
 }
 
-export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } = {}) {
+export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, packetContractVersion = AUDIT_PACKET_VERSION } = {}) {
   if (!auditRun || typeof auditRun !== 'object' || typeof auditRun.id !== 'string' || !auditRun.id) throw new TypeError('auditRun est requis.');
   if (!Number.isInteger(revision) || revision < 1) throw new TypeError('revision est invalide.');
   const observedAt = auditRun.updatedAt ?? auditRun.startedAt ?? new Date(0).toISOString();
@@ -60,6 +60,7 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } =
   const competitorCandidates = auditRun.modules?.keywords?.competitorCandidates ?? selectedCompetitors;
   const strategy = auditRun.modules?.strategy ?? {};
   const planner = auditRun.modules?.keywords?.planner ?? {};
+  const plannerSource = planner.source ?? {};
   const budget = auditRun.budget ?? {};
   const countryCode = String(input.city?.country ?? '').toUpperCase();
   const languageCode = String(auditRun.modules?.keywords?.location?.language_code ?? (countryCode === 'FR' ? 'fr' : 'en')).toLowerCase();
@@ -68,6 +69,14 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } =
     ...(auditRun.evidence ?? []).map(item => item?.ruleVersion),
     'seo-rules-v1',
   ]);
+  const plannerProvenanceRefs = unique([
+    plannerSource.workflowVersionId && `workflow:${plannerSource.workflowVersionId}`,
+    plannerSource.promptVersionId && `prompt:${plannerSource.promptVersionId}`,
+    plannerSource.contractVersionId && `contract:${plannerSource.contractVersionId}`,
+    plannerSource.provider && `provider:${plannerSource.provider}`,
+    plannerSource.model && `model:${plannerSource.model}`,
+  ]);
+  const costEventsRef = plannerSource.costEventsRef ?? `runs/${auditRun.id}/cost-events.jsonl`;
   const packet = {
     schemaVersion: AUDIT_PACKET_VERSION,
     packetId: `${auditRun.id}-packet-r${revision}`,
@@ -97,8 +106,10 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } =
     },
     evidenceRefs,
     findings: [
-      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, evidenceRefs },
+      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null })), evidenceRefs },
       { ref: 'finding:SEO_PAGES_ANALYZED', code: 'SEO_PAGES_ANALYZED', count: auditRun.modules?.seo?.summary?.pagesAnalyzed ?? 0, evidenceRefs },
+      { ref: 'finding:STAGES', code: 'STAGES', items: (auditRun.stages ?? []).map(item => ({ id: item.id, status: item.status, cause: item.cause ?? null })), evidenceRefs: [] },
+      { ref: 'finding:EVIDENCE', code: 'EVIDENCE', items: (auditRun.evidence ?? []).map(item => ({ ref: item.id, provider: item.provider ?? null, canonicalUrl: item.canonicalUrl ?? null })), evidenceRefs },
       ...seoFindings,
     ],
     market: {
@@ -113,17 +124,19 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } =
       status: planner.execution === 'not-run' ? 'NOT_RUN' : ['SUCCEEDED', 'PARTIAL', 'BLOCKED', 'FAILED'].includes(planner.status) ? planner.status : 'NOT_RUN',
       cause: planner.cause ?? null,
       executionRef: planner.execution && planner.execution !== 'not-run' ? `execution:${planner.execution}` : null,
+      provenanceRefs: plannerProvenanceRefs,
+      costEventRefs: plannerSource.costEventsRef ? [plannerSource.costEventsRef] : [],
       recommendations: [],
     }],
     limitations: unique((auditRun.stages ?? []).filter(item => item.cause).map(item => item.cause)),
     cost: {
       currency: budget.currency ?? 'USD', hardLimit: budget.hardLimit ?? 0.5,
       spent: budget.spent ?? 0, reserved: budget.reserved ?? 0,
-      costEventsRef: `runs/${auditRun.id}/cost-events.jsonl`,
+      costEventsRef,
     },
     lineage: {
-      workflowVersion: auditRun.workflowVersion ?? 'public-audit-v1', packetContractVersion: AUDIT_PACKET_VERSION,
-      promptVersions: [], ruleVersions,
+      workflowVersion: auditRun.workflowVersion ?? 'public-audit-v1', packetContractVersion,
+      promptVersions: unique([plannerSource.promptVersionId]), ruleVersions,
     },
     artifacts: {
       gmbReport: artifact(artifacts.gmbReport, 'html'),
@@ -145,11 +158,16 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {} } =
 export function projectAuditPacket(packet) {
   if (!packet || packet.schemaVersion !== AUDIT_PACKET_VERSION) throw new TypeError('AuditPacket invalide.');
   const count = code => packet.findings.find(item => item.code === code)?.count ?? 0;
+  const items = code => packet.findings.find(item => item.code === code)?.items ?? [];
   return {
     packetId: packet.packetId,
     revision: packet.revision,
     status: packet.status,
-    subject: { name: packet.subject.request.name, city: packet.subject.request.city.label },
+    subject: { name: packet.subject.request.name, city: packet.subject.request.city.label, resolution: packet.subject.resolution },
+    values: packet.values,
+    market: packet.market,
+    evidenceRefs: packet.evidenceRefs,
+    lineage: packet.lineage,
     metrics: {
       gmbCandidates: count('GMB_CANDIDATES_OBSERVED'), sitePages: count('SEO_PAGES_ANALYZED'),
       keywordOpportunities: packet.market.keywordOpportunities.length, competitors: packet.market.selectedCompetitors.length,
@@ -158,5 +176,14 @@ export function projectAuditPacket(packet) {
     coverage: packet.coverage,
     cost: packet.cost,
     artifacts: packet.artifacts,
+    report: {
+      gmbCandidates: items('GMB_CANDIDATES_OBSERVED'),
+      stages: items('STAGES'),
+      evidence: items('EVIDENCE'),
+      recommendations: packet.deterministicRecommendations,
+      limitations: packet.limitations,
+      aiContributions: packet.aiContributions,
+    },
+    preparationDraft: packet.preparationDraft,
   };
 }

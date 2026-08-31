@@ -37,7 +37,7 @@
       "ideas": [{ "keyword": "restaurant nantes", "intent": "local", "scope": "local-query", "searchVolume": 720, "cpc": 1.2 }],
       "competitors": [{ "title": "Le Passage", "domain": "le-passage.example", "scope": "local-serp", "type": "business" }],
       "competitorCandidates": [{ "title": "Le Passage", "domain": "le-passage.example", "scope": "local-serp", "type": "business" }],
-      "planner": { "status": "SUCCEEDED", "execution": "adapter-call-no-network", "cause": null }
+      "planner": { "status": "SUCCEEDED", "execution": "adapter-call-no-network", "cause": null, "source": { "workflowVersionId": "workflow-v7", "promptVersionId": "prompt-v9", "contractVersionId": "contract-v3", "provider": "openai", "model": "gpt-test", "costEventsRef": "runs/audit-complete-1/cost-events.jsonl" } }
     },
     "strategy": { "recommendations": ["Compléter les meta descriptions prioritaires."] }
   }
