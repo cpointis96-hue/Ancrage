@@ -94,7 +94,24 @@ test('refuse une somme qui dépasse la borne déclarée', () => {
     properties: { limit: { type: 'number' }, used: { type: 'number' }, reserved: { type: 'number' } },
     sumMaximum: { properties: ['used', 'reserved'], maximumProperty: 'limit' },
   };
-  const valid = { limit: 1, used: 0.4, reserved: 0.6 };
+  const valid = { limit: 0.3, used: 0.1, reserved: 0.2 };
   assert.equal(validateJsonSchema(schema, valid), valid);
-  assert.throws(() => validateJsonSchema(schema, { limit: 1, used: 0.6, reserved: 0.5 }), ValidationError);
+  assert.throws(() => validateJsonSchema(schema, { limit: 0.3, used: 0.1, reserved: 0.200001 }), ValidationError);
+});
+
+test('résout les références locales encodées et refuse celles qui sont invalides', () => {
+  const encodedPointer = {
+    type: 'object',
+    required: ['first', 'second'],
+    properties: { first: { $ref: '#/$defs/a~1b~0c' }, second: { $ref: '#/$defs/a~1b~0c' } },
+    $defs: { 'a/b~c': { type: 'string', pattern: '^[A-Z]+$' } },
+  };
+  assert.equal(validateJsonSchema(encodedPointer, { first: 'OK', second: 'YES' }).first, 'OK');
+  assert.throws(() => validateJsonSchema(encodedPointer, { first: 'ok', second: 'YES' }), ValidationError);
+  for (const schema of [
+    { $ref: 'https://example.test/schema.json' },
+    { $ref: '#/$defs/missing', $defs: {} },
+    { $ref: '#/$defs/not-a-schema', $defs: { 'not-a-schema': 'text' } },
+    { $ref: '#/$defs/a', $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } } },
+  ]) assert.throws(() => validateJsonSchema(schema, { anything: true }), ValidationError);
 });
