@@ -202,6 +202,8 @@ test('attend un heartbeat engagé avant de libérer le bail de démarrage', asyn
   const renewalGate = new Promise(resolve => { unblockRenewal = resolve; }); const renewalObserved = new Promise(resolve => { renewalBlocked = resolve; });
   const starterGate = new Promise(resolve => { releaseStarter = resolve; }); const starterObserved = new Promise(resolve => { starterEntered = resolve; });
   const previousHooks = globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__;
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'test';
   globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__ = { afterRead: async () => { if (pipelineStarted && !heartbeatBlocked) { heartbeatBlocked = true; renewalBlocked(); await renewalGate; } } };
   const first = await fixture({
     startLockTimeoutMs: 10,
@@ -222,6 +224,8 @@ test('attend un heartbeat engagé avant de libérer le bail de démarrage', asyn
   } finally {
     if (previousHooks === undefined) delete globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__;
     else globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__ = previousHooks;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
 

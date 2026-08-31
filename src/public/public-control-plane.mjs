@@ -167,7 +167,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (lock.released) return false;
       const metadata = await readLockMetadata(lock.lockPath);
       if (!metadata || metadata.token !== lock.token || lock.released) return false;
-      await globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__?.afterRead?.({ token: lock.token });
+      if (process.env.NODE_ENV === 'test') await globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__?.afterRead?.({ token: lock.token });
       if (lock.released) return false;
       await writeStartLock(lock.lockPath, lock.token);
       return !lock.released;
