@@ -27,9 +27,66 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   let reserved = 0;
   const reservations = new Map();
   const firedThresholds = new Set();
+  const eventIds = new Set();
+  const eventIdValues = new Set();
+  const authorizationIds = new Set();
+  let eventSequence = 0;
+
+  function eventIdentity(event) {
+    return `${event.eventId}:${event.type}:${event.authorizationId ?? event.threshold ?? ''}`;
+  }
+
+  function uniqueId(prefix, used) {
+    const base = idFactory(prefix);
+    let value = base;
+    while (used.has(value)) value = `${base}-${++eventSequence}`;
+    return value;
+  }
+
+  async function hydrate() {
+    const journal = await store.readText(EVENTS_PATH(runId), null);
+    if (journal === null) return;
+    for (const line of journal.split('\n')) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { throw costError('Journal de coûts invalide.', 'COST_LEDGER_INVALID'); }
+      if (!event || typeof event !== 'object' || event.runId !== runId || typeof event.eventId !== 'string' || !event.eventId || typeof event.type !== 'string') throw costError('Journal de coûts invalide.', 'COST_LEDGER_INVALID');
+      const identity = eventIdentity(event);
+      if (eventIds.has(identity)) continue;
+      eventIds.add(identity);
+      eventIdValues.add(event.eventId);
+      if (event.type === 'COST_AUTHORIZED') {
+        if (!event.authorizationId || authorizationIds.has(event.authorizationId)) continue;
+        const estimate = amount(event.estimatedCost ?? 0, 'estimatedCost');
+        authorizationIds.add(event.authorizationId);
+        reservations.set(event.authorizationId, { authorizationId: event.authorizationId, stepId: event.stepId, provider: event.provider, unit: event.unit, quantity: event.quantity, estimate, essential: event.essential === true });
+        reserved += estimate;
+      } else if (event.type === 'COST_SETTLED') {
+        const reservation = reservations.get(event.authorizationId);
+        if (!reservation) continue;
+        const actualCost = amount(event.actualCost, 'actualCost');
+        reserved -= reservation.estimate;
+        spent += actualCost;
+        reservations.delete(event.authorizationId);
+      } else if (event.type === 'COST_RELEASED') {
+        const reservation = reservations.get(event.authorizationId);
+        if (!reservation) continue;
+        reserved -= reservation.estimate;
+        reservations.delete(event.authorizationId);
+      } else if (event.type === 'BUDGET_THRESHOLD' && THRESHOLDS.includes(event.threshold)) {
+        firedThresholds.add(event.threshold);
+      }
+    }
+  }
+
+  const ready = hydrate();
 
   async function append(event) {
-    return store.appendJsonLine(EVENTS_PATH(runId), { eventId: idFactory('cost-event'), occurredAt: clock().toISOString(), runId, currency, ...event });
+    const eventId = uniqueId('cost-event', eventIdValues);
+    const recorded = { eventId, occurredAt: clock().toISOString(), runId, currency, ...event };
+    eventIds.add(eventIdentity(recorded));
+    eventIdValues.add(eventId);
+    return store.appendJsonLine(EVENTS_PATH(runId), recorded);
   }
 
   function state() {
@@ -38,6 +95,7 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   async function authorize({ stepId, provider, unit, quantity = 1, estimatedCost, essential = false } = {}) {
+    await ready;
     const fields = { stepId: requiredText(stepId, 'stepId'), provider: requiredText(provider, 'provider'), unit: requiredText(unit, 'unit') };
     amount(quantity, 'quantity');
     if (estimatedCost === null || estimatedCost === undefined) {
@@ -45,7 +103,8 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
     } else amount(estimatedCost, 'estimatedCost');
     const estimate = estimatedCost ?? 0;
     if (spent + reserved + estimate > hardLimit) throw costError('Plafond budgétaire dépassé avant appel.', 'BUDGET_EXCEEDED', { ...state(), estimate });
-    const authorizationId = idFactory('cost-auth');
+    const authorizationId = uniqueId('cost-auth', authorizationIds);
+    authorizationIds.add(authorizationId);
     reservations.set(authorizationId, { authorizationId, ...fields, quantity, estimate, essential });
     reserved += estimate;
     await append({ type: 'COST_AUTHORIZED', phase: 'before', authorizationId, ...fields, quantity, estimatedCost: estimatedCost ?? null, essential, state: state() });
@@ -53,6 +112,7 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   async function settle({ authorizationId, actualCost } = {}) {
+    await ready;
     const reservation = reservations.get(authorizationId);
     if (!reservation) throw new ValidationError('Autorisation de coût introuvable.', { field: 'authorizationId' });
     amount(actualCost, 'actualCost');
@@ -66,6 +126,7 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   async function cancel({ authorizationId, reason = 'CALL_FAILED' } = {}) {
+    await ready;
     const reservation = reservations.get(authorizationId);
     if (!reservation) throw new ValidationError('Autorisation de coût introuvable.', { field: 'authorizationId' });
     reserved -= reservation.estimate;
@@ -82,5 +143,5 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
     }
   }
 
-  return { authorize, cancel, settle, snapshot: state };
+  return { authorize, cancel, ready, settle, snapshot: state };
 }

@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crawlSite } from '../../src/audit/site-crawler.mjs';
 
-function response(body, { url, status = 200, contentType = 'text/html; charset=utf-8' } = {}) {
+function response(body, { url, status = 200, contentType = 'text/html; charset=utf-8', location = null, contentLength = null, stream = null } = {}) {
   return {
     ok: status >= 200 && status < 400,
     status,
     url,
-    headers: { get: name => name.toLowerCase() === 'content-type' ? contentType : null },
+    headers: { get: name => ({ 'content-type': contentType, location, 'content-length': contentLength }[name.toLowerCase()] ?? null) },
+    body: stream,
     text: async () => body,
   };
 }
@@ -48,7 +49,7 @@ test('bloque une redirection privée et un payload trop volumineux sans conserve
   const redirected = await crawlSite({
     target: 'https://fixture.example.test/',
     lookup: lookupPublic,
-    fetchImpl: async url => response('<html>private</html>', { url: 'http://127.0.0.1/private' }),
+    fetchImpl: async url => response('', { url, status: 302, location: 'http://127.0.0.1/private' }),
   });
   assert.equal(redirected.pages[0].crawlStatus, 'blocked');
   assert.equal(redirected.pages[0].html, '');
@@ -63,6 +64,74 @@ test('bloque une redirection privée et un payload trop volumineux sans conserve
   assert.equal(oversized.pages[0].crawlStatus, 'blocked');
   assert.equal(oversized.pages[0].html, '');
   assert.equal(oversized.pages[0].errorCode, 'PAYLOAD_TOO_LARGE');
+});
+
+test('valide chaque redirection avant la requête suivante', async () => {
+  const calls = [];
+  const result = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    fetchImpl: async url => {
+      calls.push(url);
+      return url.endsWith('/redirect')
+        ? response('', { url, status: 302, location: 'http://127.0.0.1/private' })
+        : response('', { url, status: 302, location: '/redirect' });
+    },
+  });
+
+  assert.deepEqual(calls, ['https://fixture.example.test/', 'https://fixture.example.test/redirect']);
+  assert.equal(result.pages[0].crawlStatus, 'blocked');
+  assert.equal(result.pages[0].html, '');
+  assert.equal(result.pages[0].errorCode, 'TARGET_NOT_PUBLIC');
+});
+
+test('interrompt la lecture bornée d’un corps sans Content-Length', async () => {
+  const chunks = [Buffer.from('<html>1234'), Buffer.from('5678</html>')];
+  const stream = new ReadableStream({
+    pull(controller) {
+      const chunk = chunks.shift();
+      if (chunk) controller.enqueue(chunk);
+      else controller.close();
+    },
+  });
+  const result = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    maxBytes: 10,
+    fetchImpl: async url => response('', { url, stream }),
+  });
+
+  assert.equal(result.pages[0].crawlStatus, 'blocked');
+  assert.equal(result.pages[0].html, '');
+  assert.equal(result.pages[0].errorCode, 'PAYLOAD_TOO_LARGE');
+});
+
+test('applique un timeout global et transmet le signal d’annulation', async () => {
+  let aborted = false;
+  const calls = [];
+  const startedAt = Date.now();
+  const result = await crawlSite({
+    target: 'https://fixture.example.test/',
+    lookup: lookupPublic,
+    maxPages: 2,
+    timeoutMs: 100,
+    fetchImpl: async (url, { signal }) => {
+      calls.push(url);
+      if (url.endsWith('/')) {
+        await new Promise(resolve => setTimeout(resolve, 70));
+        return response('<a href="/menu">Menu</a>', { url });
+      }
+      return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => { aborted = true; reject(signal.reason); }, { once: true });
+      });
+    },
+  });
+
+  assert.equal(aborted, true);
+  assert.deepEqual(calls, ['https://fixture.example.test/', 'https://fixture.example.test/menu']);
+  assert.equal(result.pages[1].crawlStatus, 'blocked');
+  assert.equal(result.pages[1].errorCode, 'CRAWL_TIMEOUT');
+  assert.ok(Date.now() - startedAt < 150);
 });
 
 test('borne le profil octets et durée même si la requête demande davantage', async () => {

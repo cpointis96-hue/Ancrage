@@ -36,3 +36,26 @@ test('libère une réservation lorsque l’appel échoue', async () => {
   assert.equal(released.state.reserved, 0);
   assert.equal(released.state.spent, 0);
 });
+
+test('hydrate le ledger sans rejouer les événements ou les seuils au redémarrage', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-cost-'));
+  const store = createAtomicStore(root);
+  let firstSequence = 0;
+  const first = createCostLedger({ store, runId: 'run-restart', envelope: { hardLimit: 10 }, idFactory: prefix => `${prefix}-${++firstSequence}` });
+  await first.ready;
+  const settled = await first.authorize({ stepId: 'serp', provider: 'dataforseo', unit: 'task', estimatedCost: 6 });
+  await first.settle({ authorizationId: settled.authorizationId, actualCost: 6 });
+  const pending = await first.authorize({ stepId: 'maps', provider: 'dataforseo', unit: 'task', estimatedCost: 2 });
+  const journalPath = 'runs/run-restart/cost-events.jsonl';
+  const events = (await readFile(path.join(root, journalPath), 'utf8')).trim().split('\n').map(JSON.parse);
+  await store.appendJsonLine(journalPath, events.find(event => event.type === 'COST_SETTLED'));
+
+  let restartedSequence = 0;
+  const restarted = createCostLedger({ store, runId: 'run-restart', envelope: { hardLimit: 10 }, idFactory: prefix => `${prefix}-${++restartedSequence}` });
+  await restarted.ready;
+  assert.deepEqual(restarted.snapshot(), { hardLimit: 10, currency: 'USD', spent: 6, reserved: 2, available: 2, utilization: 0.6 });
+  await restarted.settle({ authorizationId: pending.authorizationId, actualCost: 2 });
+
+  const resumedEvents = (await readFile(path.join(root, journalPath), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(resumedEvents.filter(event => event.type === 'BUDGET_THRESHOLD').map(event => event.threshold), [0.5, 0.8]);
+});
