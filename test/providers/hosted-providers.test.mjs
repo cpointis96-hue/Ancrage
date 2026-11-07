@@ -14,4 +14,7 @@ test('active uniquement un fournisseur serveur neuf et testé avec succès', asy
   definitions.forEach(item => { item.lastCheckedAt = '2026-11-07T00:00:00Z'; });
   await configureHostedProviders(registry, { OPENAI_API_KEY: 'test-only' });
   assert.equal(tested.length, 2);
+  definitions[0].health = 'unhealthy';
+  await configureHostedProviders(registry, { OPENAI_API_KEY: 'replacement-test-only' });
+  assert.equal(tested.length, 3);
 });

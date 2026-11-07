@@ -213,6 +213,7 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
         let response;
         for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
           await assertPublic(current, lookup, signal);
+          if (root.protocol === 'http:' && current.protocol === 'https:' && current.hostname === root.hostname && !current.port) root.protocol = 'https:';
           if (current.origin !== root.origin) throw crawlerError('Redirection hors origin.', 'REDIRECT_OUT_OF_ORIGIN');
           response = await awaitWithSignal(fetchImpl(current.href, { redirect: 'manual', signal }), signal);
           const status = Number(response.status ?? 200);
