@@ -39,6 +39,7 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
   const pdf = (await app.publicAudits.readReport(result.id, 'final', 'pdf')).value;
   assert.match(pdf, /Faciliter le contact/); assert.match(pdf, /Pour vos clients/); assert.match(pdf, /voisin.example/);
   assert.equal((await app.publicAudits.create(input)).id, result.id);
+  assert.equal((await app.publicAudits.resume(result.id)).id, result.id);
   assert.equal(calls(), 1);
   assert.equal((await app.publicAudits.readPacket(result.id)).packet.aiContributions[0].purpose, 'PUBLIC_OBSERVATION_ANALYSIS');
   assert.deepEqual((await app.publicAudits.readPacket(result.id)).packet.aiContributions[0].costEventRefs, [`runs/${result.id}/cost-events.jsonl`]);

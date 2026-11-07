@@ -11,5 +11,9 @@
     "test": "node --test",
     "check": "node scripts/check.mjs",
     "preview:audits": "node scripts/preview-audits.mjs"
+  },
+  "dependencies": {
+    "@vercel/functions": "3.11.0",
+    "pg": "8.23.1"
   }
 }

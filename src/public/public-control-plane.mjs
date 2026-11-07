@@ -157,6 +157,15 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     }
   };
   async function acquireStartLock(id) {
+    if (store.acquireLease) {
+      const key = `public-control-plane/preparations/${id}.start.lock`;
+      const token = idFactory('pipeline-lock');
+      if (!await store.acquireLease(key, token, startLockTimeoutMs)) return null;
+      const lock = { key, token, released: false, renewal: Promise.resolve() };
+      lock.heartbeat = setInterval(() => renewStartLock(lock).catch(() => {}), Math.max(1, Math.floor(startLockTimeoutMs / 3)));
+      lock.heartbeat.unref?.();
+      return lock;
+    }
     const filePath = lockPath(id);
     const token = idFactory('pipeline-lock');
     try {
@@ -174,6 +183,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function renewStartLock(lock) {
     const renewal = lock.renewal.then(async () => {
       if (lock.released) return false;
+      if (store.renewLease) return store.renewLease(lock.key, lock.token, startLockTimeoutMs);
       const metadata = await readLockMetadata(lock.lockPath);
       if (!metadata || metadata.token !== lock.token || lock.released) return false;
       if (process.env.NODE_ENV === 'test') await globalThis.__ANCRAGE_TEST_START_LEASE_HOOKS__?.afterRead?.({ token: lock.token });
@@ -189,6 +199,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       clearInterval(lock.heartbeat);
       lock.released = true;
       await lock.renewal;
+      if (store.releaseLease) return store.releaseLease(lock.key, lock.token);
       const metadata = await readLockMetadata(lock.lockPath);
       if (metadata?.token === lock.token) await unlink(lock.lockPath);
     } catch (error) {
@@ -196,6 +207,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     }
   }
   async function startLockState(id) {
+    if (store.leaseState) return store.leaseState(`public-control-plane/preparations/${id}.start.lock`);
     const filePath = lockPath(id);
     const metadata = await readLockMetadata(filePath);
     if (!metadata) {
@@ -209,6 +221,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     return { state: 'EXPIRED', metadata };
   }
   async function recoverExpiredStartLock(id, expectedToken) {
+    if (store.recoverExpiredLease) return store.recoverExpiredLease(`public-control-plane/preparations/${id}.start.lock`, expectedToken);
     const filePath = lockPath(id);
     const metadata = await readLockMetadata(filePath);
     if (!metadata || metadata.token !== expectedToken || new Date(metadata.expiresAt).getTime() > clock().getTime() || isProcessAlive(metadata.pid)) return 'ACTIVE';
@@ -273,6 +286,10 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     return { ...preparation.checklist, criticalComplete: hasCriticalIntake(preparation), locale: Boolean(preparation.locale), hours: Array.isArray(preparation.intake?.hours) && preparation.intake.hours.length > 0, ownerConfirmation: preparation.ownerConfirmed === true, photos, rights };
   }
   async function createRequest(input = {}) {
+    if (store.withLock) return store.withLock('public-control-plane/requests/registry.lock', () => createRequestUnlocked(input));
+    return createRequestUnlocked(input);
+  }
+  async function createRequestUnlocked(input = {}) {
     const name = text(input.name, 'name'); const city = input.city;
     if (!city || typeof city !== 'object') throw new ValidationError('city est invalide.', { field: 'city' });
     const normalized = { name, city: { id: text(city.id, 'city.id', 120), label: text(city.label, 'city.label'), countryCode: text(city.countryCode, 'city.countryCode', 3).toUpperCase() }, domain: publicDomain(input.domain), identity: publicIdentity(input.identity) };
@@ -283,8 +300,16 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     return projectRequest(request);
   }
   async function decideMatch(requestId, input = {}) {
+    if (store.withLock) return store.withLock(`public-control-plane/requests/${requestId}.lock`, () => decideMatchUnlocked(requestId, input));
+    return decideMatchUnlocked(requestId, input);
+  }
+  async function decideMatchUnlocked(requestId, input = {}) {
     const request = await readRequest(requestId); const decision = text(input.decision, 'decision', 40);
     if (!['CONFIRM', 'LOCAL_PREVIEW_WITHOUT_GMB'].includes(decision)) throw new ValidationError('decision est invalide.', { field: 'decision' });
+    if (store.withLock && request.matchDecision) {
+      if (request.matchDecision !== decision) throw new ConflictError('La décision a déjà été enregistrée.');
+      return projectRequest(request);
+    }
     if (decision === 'CONFIRM' && typeof auditStarter === 'function' && !request.input.identity) throw new AppError('Une identité confirmée est nécessaire pour lancer cet audit.', { code: 'MATCH_IDENTITY_REQUIRED', status: 409 });
     request.matchDecision = decision; request.state = decision === 'CONFIRM' ? 'AUDIT_IN_PROGRESS' : 'LOCAL_PREVIEW_WITHOUT_GMB'; request.checkpoints = [...(request.checkpoints ?? []).filter(item => item.key !== 'match'), checkpoint('match', 'SUCCEEDED', { progressLabel: decision === 'CONFIRM' ? 'Établissement confirmé.' : 'Aperçu local autorisé.' })]; if (decision === 'LOCAL_PREVIEW_WITHOUT_GMB') request.checkpoints.push(checkpoint('gmb-report', 'PARTIAL', { blockedReason: 'LOCAL_PREVIEW_WITHOUT_GMB', progressLabel: 'Audit GMB non exécuté.' })); request.nextAction = nextAction('WAIT', 'AUDIT_IN_PROGRESS'); await saveRequest(request);
     if (typeof auditStarter === 'function') {
@@ -293,9 +318,21 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html });
       if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
       if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.audit) request.audit = response(finalReport.audit); if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
-      if (!reports?.gmb?.html && !reports?.final?.html && !(reports?.completion instanceof Promise)) { request.status = reports?.audit?.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'; request.errors.push({ code: reports?.audit?.status === 'BLOCKED' ? 'AUDIT_BLOCKED' : 'AUDIT_REPORT_NOT_AVAILABLE' }); }
+      if (!reports?.deferred && !reports?.gmb?.html && !reports?.final?.html && !(reports?.completion instanceof Promise)) { request.status = reports?.audit?.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'; request.errors.push({ code: reports?.audit?.status === 'BLOCKED' ? 'AUDIT_BLOCKED' : 'AUDIT_REPORT_NOT_AVAILABLE' }); }
     }
     return saveRequest(request);
+  }
+  async function refreshAudit(requestId) {
+    const refresh = async () => {
+      const request = await readRequest(requestId);
+      if (!request.matchDecision || request.reports.some(item => item.kind === 'final') || typeof auditStarter !== 'function') return projectRequest(request);
+      const reports = await auditStarter({ request: response(request), decision: request.matchDecision });
+      if (reports?.audit) request.audit = response(reports.audit);
+      for (const kind of ['gmb', 'final']) if (reports?.[kind]?.html && !request.reports.some(item => item.kind === kind)) await publishReport(request, { kind, html: reports[kind].html, pdf: reports[kind].pdf });
+      if (reports?.audit?.status === 'BLOCKED') { request.status = 'BLOCKED'; request.errors.push({ code: 'AUDIT_BLOCKED' }); }
+      return saveRequest(request);
+    };
+    return store.withLock ? store.withLock(`public-control-plane/requests/${requestId}.lock`, refresh) : refresh();
   }
   async function seedSyntheticReport(requestId, { kind, html, pdf = null } = {}) {
     return publishReport(await readRequest(requestId), { kind, html, pdf });
@@ -472,5 +509,5 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     return pending;
   }
   async function validateDemo(id, decision) { const preparation = await readPreparation(id); if (!preparation.pipelineRunId) throw new AppError('Aucun pipeline à valider.', { code: 'PIPELINE_NOT_READY', status: 409 }); if (!['APPROVED', 'CHANGES_REQUESTED'].includes(decision)) throw new ValidationError('Décision opérateur invalide.'); if (preparation.status !== 'READY_FOR_OWNER_REVIEW') throw new AppError('La démo n’est pas prête pour la validation opérateur.', { code: 'DEMO_NOT_READY_FOR_REVIEW', status: 409 }); if (decision === 'APPROVED' && preparation.acceptanceReport?.status === 'BLOCK') throw new AppError('Une démo bloquée ne peut pas être présentée.', { code: 'ACCEPTANCE_BLOCKED', status: 409 }); if (typeof demoPresenter !== 'function') throw new AppError('La présentation de démo n’est pas configurée.', { code: 'DEMO_PRESENTATION_NOT_CONFIGURED', status: 503 }); const presented = await demoPresenter({ runId: preparation.pipelineRunId, decision }); if (decision === 'APPROVED' && (!presented || typeof presented.href !== 'string' || !presented.href.startsWith('/demo/'))) throw new AppError('La présentation de démo n’a pas fourni de lien vérifiable.', { code: 'DEMO_PRESENTATION_INVALID', status: 503 }); preparation.pipelineStatus = decision === 'APPROVED' ? 'READY_FOR_PROSPECT' : 'NEEDS_CORRECTION'; preparation.presentation = presented ?? null; return savePreparation(preparation); }
-  return { addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, reconcileStart, seedSyntheticReport, start, updateIntake, validateDemo };
+  return { refreshAudit, addAsset, createPreparation, createRequest, decideMatch, getDemoRequest, getRequest: async id => projectRequest(await readRequest(id)), listDemoRequests, listReports, listRequests, readReport, reconcileStart, seedSyntheticReport, start, updateIntake, validateDemo };
 }

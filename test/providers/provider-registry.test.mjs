@@ -33,6 +33,21 @@ test('health check borné puis activation conditionnelle', async () => {
   assert.equal((await registry.testConnection('openai')).enabled, true);
 });
 
+test('utilise la clé OpenAI serveur pour tester et exécuter le provider', async () => {
+  const previous = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'environment-test-key';
+  try {
+    const { registry, store } = await setup({ openai: async ({ secret }) => { assert.equal(secret, 'environment-test-key'); } });
+    assert.equal((await registry.testConnection('openai')).health, 'healthy');
+    await registry.setEnabled('openai', true);
+    assert.equal((await registry.executionContext('openai')).secret, 'environment-test-key');
+    assert.equal(JSON.stringify(await store.readJson('state/provider-status.json')).includes('environment-test-key'), false);
+  } finally {
+    if (previous === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previous;
+  }
+});
+
 test('échec du provider reste expurgé et désactivé', async () => {
   const { registry } = await setup({ openai: async () => { throw new Error('secret should not persist'); } });
   await registry.saveSecret('openai', 'secret');

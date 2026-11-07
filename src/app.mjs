@@ -129,8 +129,8 @@ async function ensureClientAuditTemplates(workflows) {
   await workflows.activate(current.id, version.id);
 }
 
-export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined, publicControlPlane: providedPublicControlPlane = null, demoWorkbench: providedDemoWorkbench = null } = {}) {
-  const store = createAtomicStore(dataDir);
+export function createApp({ store: providedStore = null, dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resolve('.ancrage'), secretStore = process.platform === 'darwin' ? createKeychainSecretStore() : createMemorySecretStore(), adapters = {}, opener = createLocalOpener(), auditRunner = runSeoAudit, auditFetchImpl = globalThis.fetch, auditLookup = undefined, publicControlPlane: providedPublicControlPlane = null, demoWorkbench: providedDemoWorkbench = null } = {}) {
+  const store = providedStore ?? createAtomicStore(dataDir);
   const contracts = createContractRegistry({ store });
   const cliProfiles = createCliProfileRegistry({ store });
   const prompts = createPromptRegistry({ store, contractRegistry: contracts });
@@ -177,9 +177,9 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         address: request.input.identity?.address ?? undefined,
         identity: request.input.identity ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
-      }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined });
-      const summary = async value => ({ id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet: (await publicAudits.readPacket(value.id)).packet });
-      const reports = { audit: await summary(audit) };
+      }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined, defer: Boolean(store.withLease) });
+      const summary = async value => ({ id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet: value.auditPacket ? (await publicAudits.readPacket(value.id)).packet : null });
+      const reports = { audit: await summary(audit), deferred: Boolean(store.withLease) && audit.status === 'RUNNING' };
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
         if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
@@ -238,6 +238,13 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
       return decision === 'APPROVED' ? demos.create(runId) : { decision };
     },
   });
+  const workPublicAudits = async () => {
+    const requests = await publicControlPlane.listRequests();
+    for (const request of requests) if (request.matchDecision && request.status === 'RUNNING') await publicControlPlane.refreshAudit(request.id);
+    const completed = await publicAudits.workPending();
+    for (const request of requests) if (request.matchDecision && request.status === 'RUNNING') await publicControlPlane.refreshAudit(request.id);
+    return completed;
+  };
   const internet = createDomainResearchService({ store, runs });
   const ready = (async () => {
     await seedContract(store, contracts, 'domain-candidates');
@@ -266,5 +273,5 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedTemplate(store, templates, 'audit-seo');
     await ensureClientAuditTemplates(workflows);
   })();
-  return { artifacts, audits, cliProfiles, contracts, demoWorkbench, demos, dossiers, googlePlacesAutocomplete, internet, providers, prompts, publicAudits, publicControlPlane, ready, runs, simulation, templates, workflows };
+  return { workPublicAudits, artifacts, audits, cliProfiles, contracts, demoWorkbench, demos, dossiers, googlePlacesAutocomplete, internet, providers, prompts, publicAudits, publicControlPlane, ready, runs, simulation, templates, workflows };
 }

@@ -73,6 +73,13 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     return assembled.packet;
   }
   async function publishReport(result, kind) {
+    if (store.withLock) return store.withLock(`audit-runs/${result.id}/publication.lock`, async () => {
+      await writeReport(result, kind);
+      await store.writeJson(pathFor(result.id), result);
+    });
+    return writeReport(result, kind);
+  }
+  async function writeReport(result, kind) {
     const path = reportPath(result.id, kind);
     const pdfPath = kind === 'final' ? reportPath(result.id, 'final').replace(/\.html$/, '.pdf') : null;
     const packet = await publishPacket(result, kind === 'gmb' ? { gmbReport: path } : { finalReport: path, pdf: pdfPath });
@@ -234,9 +241,24 @@ function findLabsPair(result, country, preferred = 'en') {
     const id = idFactory('audit-run');
     let ledgerSequence = 0;
     const actualLedger = createCostLedger({ store, runId: id, envelope: { hardLimit, currency: budget.currency ?? 'USD' }, clock, idFactory: prefix => `${idFactory(prefix)}-${ledgerSequence++}` });
+    await actualLedger.ready;
     if (options.enrichment !== 'dataforseo') {
       const observedAt = clock().toISOString();
       const result = { id, workflowVersion: 'observation-audit-v1', status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
+      if (store.withLease) {
+        const created = await store.withLock('audit-runs/registry.lock', async () => {
+          const previous = key ? await store.readJson(IDEMPOTENCY_PATH(key.trim()), null) : null;
+          if (previous) {
+            if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre requête.');
+            return get(previous.runId);
+          }
+          await store.writeJson(pathFor(id), result, { immutable: true });
+          await addIndex(id);
+          if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
+          return result;
+        });
+        return options.defer ? created : resume(created.id);
+      }
       await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
       return runObservationAudit({ result, ledger: actualLedger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: options.waitFor === 'gmb' });
@@ -404,5 +426,32 @@ function findLabsPair(result, country, preferred = 'en') {
     if (options.waitFor === 'gmb') return { ...result, completion: continueAfterGmb() };
     return continueAfterGmb();
   }
-  return { create, get, list, readPacket, readReport };
+  async function resume(id) {
+    if (store.withLease) return store.withLease(`audit-runs/${id}/worker.lease`, () => resumeRun(id));
+    return resumeRun(id);
+  }
+  async function resumeRun(id) {
+    const result = await get(id);
+    if (result.reports?.some(report => report.kind === 'final') || result.status === 'BLOCKED') return result;
+    if (result.workflowVersion !== 'observation-audit-v1') throw new ConflictError('La reprise de cette version d’audit n’est pas disponible.');
+    const ledger = createCostLedger({ store, runId: id, envelope: { hardLimit: result.input.budget.hardLimit, currency: result.input.budget.currency ?? 'USD' }, clock });
+    await ledger.ready;
+    return runObservationAudit({ result, ledger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: false });
+  }
+  async function workPending({ limit = 1 } = {}) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new ValidationError('Limite de traitement invalide.');
+    const pending = (await list()).filter(run => run.status === 'RUNNING' && run.workflowVersion === 'observation-audit-v1');
+    const results = [];
+    for (const run of pending) {
+      if (results.length >= limit) break;
+      try {
+        const completed = await resume(run.id);
+        results.push({ id: completed.id, status: completed.status });
+      } catch (error) {
+        if (error.code !== 'CONFLICT') throw error;
+      }
+    }
+    return results;
+  }
+  return { create, get, list, readPacket, readReport, resume, workPending };
 }

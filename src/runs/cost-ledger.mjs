@@ -185,6 +185,12 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   async function withinLock(action) {
+    if (store.withLock) return store.withLock(LOCK_PATH(runId), async () => {
+      reset();
+      await hydrate();
+      await recoverThresholds();
+      return action();
+    });
     const release = await acquireLock();
     try {
       reset();
