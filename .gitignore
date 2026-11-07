@@ -1,28 +1,21 @@
-.DS_Store
-
 # Secrets
 .env
 .env.*
 !.env.example
-# Secret local explicite : conserver hors Git même si les règles .env évoluent.
-.env.local
 
-# JavaScript / TypeScript
+# Données de travail et sorties générées
+.ancrage/
+outputs/
+.playwright-cli/
+playwright-report/
+test-results/
+
+# Dépendances et compilation
 node_modules/
 dist/
 build/
 coverage/
-.ancrage/
-.ancrage-verification/
-.playwright-cli/
-.worktrees/
 
-# Tests
-playwright-report/
-test-results/
-
-# Logs
+# Métadonnées et logs
+.DS_Store
 *.log
-
-# ShipStudio metadata
-.shipstudio/

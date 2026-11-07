@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
-  access,
   mkdir,
   open,
   readFile,
@@ -16,16 +15,6 @@ const SHA256_PREFIX = 'sha256:';
 
 function isInside(root, candidate) {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
-}
-
-async function exists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
 }
 
 export function createAtomicStore(rootDir) {
@@ -111,16 +100,12 @@ export function createAtomicStore(rootDir) {
     return { current, hash: hashText(nextValue) };
   }
 
-  async function writeText(relativePath, value, options = {}) {
-    const text = String(value);
-    const filePath = resolveSafe(relativePath);
-    await ensureSafeParent(filePath);
-    const precondition = await checkWritePrecondition(relativePath, text, options);
+  async function commitFile(filePath, value, encoding) {
     const tempPath = `${filePath}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
     const handle = await open(tempPath, 'wx', 0o600);
 
     try {
-      await handle.writeFile(text, 'utf8');
+      await handle.writeFile(value, encoding);
       await handle.sync();
     } finally {
       await handle.close();
@@ -133,6 +118,14 @@ export function createAtomicStore(rootDir) {
     } finally {
       await directoryHandle.close();
     }
+  }
+
+  async function writeText(relativePath, value, options = {}) {
+    const text = String(value);
+    const filePath = resolveSafe(relativePath);
+    await ensureSafeParent(filePath);
+    const precondition = await checkWritePrecondition(relativePath, text, options);
+    await commitFile(filePath, text, 'utf8');
 
     return {
       hash: precondition.hash,
@@ -151,21 +144,7 @@ export function createAtomicStore(rootDir) {
     if (options.immutable && current !== null) throw new ConflictError('Cette version immuable existe déjà.');
     if (options.expectedHash === null && current !== null) throw new ConflictError('La ressource existe déjà.', { currentHash });
     if (typeof options.expectedHash === 'string' && currentHash !== options.expectedHash) throw new ConflictError(undefined, { currentHash });
-    const tempPath = `${filePath}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`;
-    const handle = await open(tempPath, 'wx', 0o600);
-    try {
-      await handle.writeFile(value);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(tempPath, filePath);
-    const directoryHandle = await open(path.dirname(filePath), 'r');
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
+    await commitFile(filePath, value);
     return { hash, previousHash: currentHash, path: relativePath };
   }
 

@@ -22,12 +22,15 @@ import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
 import { createSeoResearchPlanner } from './audit/seo-research-planner.mjs';
+import { createObservationAnalyst } from './audit/observation-analyst.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
 import { createPublicControlPlane } from './public/public-control-plane.mjs';
 import { createDemoWorkbench } from './demo/demo-workbench.mjs';
 import { createGooglePlacesAutocomplete } from './geography/google-places-autocomplete.mjs';
 
 const defaultsRoot = new URL('../fixtures/defaults/', import.meta.url);
+const auditLegacyHashes = JSON.parse(await readFile(new URL('audit-legacy-hashes.json', defaultsRoot), 'utf8'));
+const bundledAuditDefault = (key, hash) => [auditLegacyHashes[key]].flat().includes(hash);
 const implementationFiles = {
   'collect-query': fileURLToPath(new URL('./workflows/implementations.mjs', import.meta.url)),
   'domain-candidates': fileURLToPath(new URL('./internet/domain-research-service.mjs', import.meta.url)),
@@ -60,6 +63,11 @@ async function seedPrompt(store, prompts, id) {
   } else {
     const current = await store.readText(`config/prompts/${id}/draft.md`);
     let normalized = current.replace(/^modelProfile:.*\n/m, '');
+    if (bundledAuditDefault(`prompts/${id}.md`, store.hashText(current))) {
+      const existing = await prompts.get(id);
+      const active = existing.activeVersionId ? await prompts.resolveRevision(id, existing.activeVersionId) : current;
+      if (store.hashText(active) === store.hashText(current)) normalized = await readFile(new URL(`prompts/${id}.md`, defaultsRoot), 'utf8');
+    }
     if (id === 'audit-analyst') normalized = normalized.replace(/^outputContract: local-report$/m, 'outputContract: audit-report');
     if (id === 'local-seo-research-planner' && normalized === legacyLocalSeoResearchPlanner) normalized = await readFile(new URL(`prompts/${id}.md`, defaultsRoot), 'utf8');
     if (normalized !== current) {
@@ -75,18 +83,24 @@ async function seedPrompt(store, prompts, id) {
 }
 
 async function seedContract(store, contracts, id) {
-  if (await store.readText(`config/contracts/${id}.schema.json`, null) === null) {
+  const current = await store.readText(`config/contracts/${id}.schema.json`, null);
+  if (current === null || bundledAuditDefault(`contracts/${id}.schema.json`, store.hashText(current))) {
     const schema = JSON.parse(await readFile(new URL(`contracts/${id}.schema.json`, defaultsRoot), 'utf8'));
-    await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: null });
+    await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: current === null ? null : store.hashText(current) });
   }
   await contracts.ensure(id, id);
 }
 
 async function seedTemplate(store, templates, id) {
-  if (await store.readText(`config/templates/${id}/draft.html`, null) !== null) return;
+  const current = await store.readText(`config/templates/${id}/draft.html`, null);
+  if (current !== null) {
+    if (!bundledAuditDefault(`templates/${id}.html`, store.hashText(current))) return;
+    const active = await templates.getActiveVersion(id);
+    if (active.hash !== store.hashText(current)) return;
+  }
   const content = await readFile(new URL(`templates/${id}.html`, defaultsRoot), 'utf8');
   const names = { 'site-preview': 'Site preview', 'audit-initial': 'Premier audit', 'audit-gmb': 'Audit GMB', 'audit-seo': 'Audit SEO et concurrence' };
-  const saved = await templates.save(id, { name: names[id] ?? id, content }, { expectedHash: null });
+  const saved = await templates.save(id, { name: names[id] ?? id, content }, { expectedHash: current === null ? null : store.hashText(current) });
   const version = await templates.createVersion(id, { expectedDraftHash: saved.draftHash });
   await templates.activate(id, version.id);
 }
@@ -134,10 +148,26 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
   const demos = createDemoRegistry({ store, artifacts, runs });
   const audits = createSeoAuditRegistry({ store, runner: auditRunner });
   const seoResearchPlanner = createSeoResearchPlanner({ providers, adapters: providerAdapters, prompts, workflows, contracts });
-  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, seoResearchPlanner });
+  const observationAnalyst = createObservationAnalyst({ providers, adapters: providerAdapters, prompts, workflows, contracts });
+  const publicAudits = createPublicAuditWorkflow({ store, providers, adapters: providerAdapters, secretStore, fetchImpl: auditFetchImpl, lookup: auditLookup, contracts, seoResearchPlanner, observationAnalyst });
   const demoWorkbench = providedDemoWorkbench ?? createDemoWorkbench({ store, auditRunner, fetchImpl: auditFetchImpl, lookup: auditLookup });
+  const acceptanceReportFromRun = async run => {
+    const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
+    const artifactRefs = [
+      `runs/${run.id}/artifacts/site/index.html`,
+      `runs/${run.id}/artifacts/gmb-audit-report/report.html`,
+      `runs/${run.id}/artifacts/seo-competition-report/report.html`,
+    ];
+    const gates = (quality?.output?.checks ?? []).map(id => ({ id, status: quality.output.status, ruleVersion: 'simulation-quality-rules-v1', checkVersion: 'simulation-quality-check-v1', evidenceRefs: artifactRefs }));
+    return {
+      schemaVersion: 'acceptance-report-v1', revision: 1, status: quality?.output?.status ?? 'BLOCK',
+      ruleVersions: ['simulation-quality-rules-v1'], gates, artifactRefs, evidenceRefs: artifactRefs,
+      limitations: [], operatorDecision: 'PENDING',
+    };
+  };
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
+    contracts,
     auditStarter: async ({ request, decision }) => {
       const audit = await publicAudits.create({
         name: request.input.name,
@@ -148,18 +178,33 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         identity: request.input.identity ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
       }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined });
-      const reports = { audit: { id: audit.id, status: audit.status, stages: audit.stages, provider: audit.provider } };
+      const summary = async value => ({ id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet: (await publicAudits.readPacket(value.id)).packet });
+      const reports = { audit: await summary(audit) };
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
         if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
         if (kind === 'final' && report) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
       }
       if (!reports.final && audit.completion) {
-        reports.completion = audit.completion.then(async completed => ({ audit: { id: completed.id, status: completed.status, stages: completed.stages, provider: completed.provider }, html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
+        reports.completion = audit.completion.then(async completed => ({ audit: await summary(completed), html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
       }
       return reports;
     },
-    pipelineStarter: async ({ request, preparation }) => {
+    siteSpecComposer: async ({ request, preparation, preparationDraft }) => {
+      const template = await templates.getActiveVersion('site-preview');
+      const confirmedAt = new Date().toISOString();
+      return {
+        schemaVersion: 'site-spec-v1',
+        title: request.input.name,
+        locale: preparation.locale,
+        provenance: { auditPacketRef: preparationDraft.auditPacketRef, preparationDraftRef: preparationDraft.id },
+        confirmation: { status: 'CONFIRMED', confirmedAt },
+        template: { id: template.id, versionId: template.versionId, hash: template.hash.replace(/^sha256:/, '') },
+        pages: [{ path: '/', title: request.input.name, sections: ['identity', 'story', 'menu', 'contact'], provenanceRefs: [preparationDraft.auditPacketRef, preparationDraft.id], confirmation: 'CONFIRMED' }],
+        assets: preparation.assets.map(asset => ({ id: asset.assetId, artifactRef: asset.assetPath, rightsStatus: asset.rightsStatus, provenanceRefs: [asset.hash], confirmation: 'CONFIRMED' })),
+      };
+    },
+    pipelineStarter: async ({ request, preparation, siteSpec, pipelineReservation }) => {
       const intake = preparation.intake ?? {};
       const firstPhoto = preparation.assets.find(asset => asset.assetPath && asset.mimeType);
       if (!firstPhoto) throw Object.assign(new Error('Les fichiers photo ne sont pas disponibles pour la démo.'), { code: 'PHOTO_BYTES_NOT_AVAILABLE', status: 409 });
@@ -175,10 +220,18 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
         menu: Array.isArray(intake.menu) ? intake.menu : [],
         photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name, category: asset.category, rightsStatus: asset.rightsStatus })),
       }, { source: 'public-demo-intake' });
-      const run = await simulation.startDossier(dossier.id);
+      const run = await simulation.startDossier(dossier.id, { siteSpec, pipelineReservation });
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
-      const quality = await store.readJson(`runs/${run.id}/steps/quality-gate/step-run.json`, null);
-      return { runId: run.id, status: 'READY_FOR_OWNER_REVIEW', acceptanceReport: { status: quality?.output?.status ?? 'UNKNOWN', checks: quality?.output?.checks ?? [], photoAssets: preparation.assets.length, embeddedAssets: preparation.assets.map(asset => asset.category), note: 'Les cinq photos fournies sont intégrées à l’aperçu local.' } };
+      return {
+        runId: run.id,
+        siteSpec,
+        acceptanceReport: await acceptanceReportFromRun(run),
+      };
+    },
+    pipelineReconciler: async ({ pipelineReservation }) => {
+      const run = (await runs.list()).find(item => item.input?.pipelineReservation === pipelineReservation);
+      if (!run) return null;
+      return run.status === 'SUCCEEDED' ? { runId: run.id, siteSpec: run.input.siteSpec, acceptanceReport: await acceptanceReportFromRun(run) } : { runId: run.id };
     },
     demoPresenter: async ({ runId, decision }) => {
       await runs.decide(runId, decision);
@@ -191,13 +244,21 @@ export function createApp({ dataDir = process.env.ANCRAGE_DATA_DIR ?? path.resol
     await seedContract(store, contracts, 'audit-report');
     await seedContract(store, contracts, 'copy-draft');
     await seedContract(store, contracts, 'seo-research-plan');
+    await seedContract(store, contracts, 'audit-packet');
+    await seedContract(store, contracts, 'public-observation-analysis');
+    await seedContract(store, contracts, 'preparation-draft');
+    await seedContract(store, contracts, 'demo-readiness');
+    await seedContract(store, contracts, 'site-spec');
+    await seedContract(store, contracts, 'acceptance-report');
     await seedPrompt(store, prompts, 'audit-analyst');
     await seedPrompt(store, prompts, 'copywriter');
     await seedPrompt(store, prompts, 'local-seo-research-planner');
+    await seedPrompt(store, prompts, 'public-observation-analyst');
     const domainResearch = JSON.parse(await readFile(new URL('workflows/domain-research.json', defaultsRoot), 'utf8'));
     const localSeoResearch = JSON.parse(await readFile(new URL('workflows/local-seo-research.json', defaultsRoot), 'utf8'));
     await workflows.ensure(domainResearch);
     await workflows.ensure(localSeoResearch);
+    await workflows.ensure(JSON.parse(await readFile(new URL('workflows/public-observation-audit.json', defaultsRoot), 'utf8')));
     await workflows.ensure(clientSiteWorkflow);
     await seedTemplate(store, templates, 'site-preview');
     await seedTemplate(store, templates, 'audit-initial');

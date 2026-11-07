@@ -184,10 +184,10 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.deepEqual(JSON.parse(await artifacts.text()).map(item => item.kind).sort(), ['gmb-report', 'seo-report', 'site']);
     const gmbReport = await request(`${base}/api/runs/${run.id}/artifacts/gmb-report`, { headers: { origin: base } });
     assert.equal(gmbReport.status, 200);
-    assert.match(await gmbReport.text(), /AUDIT GMB/);
+    assert.match(await gmbReport.text(), /Présence locale/);
     const seoReport = await request(`${base}/api/runs/${run.id}/artifacts/seo-report`, { headers: { origin: base } });
     assert.equal(seoReport.status, 200);
-    assert.match(await seoReport.text(), /AUDIT SEO ET CONCURRENCE/);
+    assert.match(await seoReport.text(), /Audit de visibilité/);
     const site = await request(`${base}/api/runs/${run.id}/artifacts/site`, { headers: { origin: base } });
     assert.equal(site.status, 200);
     assert.match(await site.text(), /Le Rivage/);
@@ -214,11 +214,12 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
 
 test('expose un audit SEO local, son rapport, puis le recharge', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-http-audit-'));
+  const auditHtml = '<!doctype html><html lang="fr"><head><title>Maison Sillage</title><meta name="description" content="Restaurant"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://example.com/"><script type="application/ld+json">{}</script></head><body><h1>Maison Sillage</h1></body></html>';
   const fetchImpl = async url => ({
     url,
     status: 200,
-    headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : null },
-    text: async () => '<!doctype html><html lang="fr"><head><title>Maison Sillage</title><meta name="description" content="Restaurant"><meta name="viewport" content="width=device-width"><link rel="canonical" href="https://example.com/"><script type="application/ld+json">{}</script></head><body><h1>Maison Sillage</h1></body></html>',
+    headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html; charset=utf-8' : name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(auditHtml)) : null },
+    body: new ReadableStream({ start(controller) { controller.enqueue(Buffer.from(auditHtml)); controller.close(); } }),
   });
   const auditRunner = input => runSeoAudit({ ...input, fetchImpl, lookup: async () => ['93.184.216.34'] });
   const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), auditRunner });

@@ -14,6 +14,11 @@ const healthyPage = `<!doctype html><html lang="fr"><head>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"Restaurant"}</script>
 </head><body><h1>Restaurant Exemple</h1><img src="dish.jpg" alt="Plat signature"></body></html>`;
 
+test('remonte les erreurs HTTP et noindex sans signaler les images décoratives', () => {
+  const audit = analyzeSeoAudit({ target, observedAt, pages: [{ url: target, status: 404, html: healthyPage.replace('</head>', '<meta name="robots" content="noindex,follow"></head>').replace('alt="Plat signature"', 'alt=""') }] });
+  assert.deepEqual(audit.findings.map(item => item.code), ['HTTP_ERROR', 'NOINDEX_OBSERVED']);
+});
+
 test('analyse une page saine avec une preuve datée', () => {
   const audit = analyzeSeoAudit({ target, pages: [{ url: target, status: 200, html: healthyPage }], observedAt });
 
@@ -82,10 +87,10 @@ test('rend un rapport échappé avec ses preuves sans script', () => {
   });
   const report = renderSeoAuditReport(audit);
 
-  assert.match(report, /Rapport d’audit SEO/);
-  assert.match(report, /MISSING_TITLE/);
-  assert.match(report, /2026-08-27T10:00:00\.000Z/);
-  assert.match(report, /seo-rules-v1/);
+  assert.match(report, /Audit du site/);
+  assert.match(report, /Titre de page absent/);
+  assert.match(report, /27 août 2026/);
+  assert.doesNotMatch(report, /seo-rules-v1|MISSING_TITLE/);
   assert.match(report, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(report, /<script/);
   assert.doesNotMatch(report, /promesse de classement/);

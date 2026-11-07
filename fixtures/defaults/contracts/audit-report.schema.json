@@ -1,12 +1,108 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "audit-report",
   "type": "object",
-  "required": ["findings", "limits", "recommendations"],
+  "required": [
+    "findings",
+    "limits",
+    "recommendations"
+  ],
   "properties": {
-    "findings": { "type": "array", "items": { "type": "object" } },
-    "limits": { "type": "array", "items": { "type": "string" } },
-    "recommendations": { "type": "array", "items": { "type": "object" } }
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "detail",
+          "evidence"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "evidence": {
+            "type": "object",
+            "required": [
+              "url",
+              "observedAt"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "observedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "findingRefs",
+          "consequence",
+          "correction"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "findingRefs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "consequence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "correction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "additionalProperties": false
+      }
+    }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit-report"
 }

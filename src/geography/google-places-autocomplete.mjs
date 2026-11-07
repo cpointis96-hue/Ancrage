@@ -7,7 +7,7 @@ export function createGooglePlacesAutocomplete({ providers, adapters, secretStor
   };
   const autocomplete = async function autocomplete({ input, countryCode, mode = 'city' }) {
     const query = String(input ?? '').trim(); const country = String(countryCode ?? '').trim().toUpperCase();
-    if (query.length < 2 || (mode !== 'establishment' && !/^[A-Z]{2}$/.test(country))) throw new ValidationError('Recherche géographique invalide.');
+    if (query.length < 2 || (country && !/^[A-Z]{2}$/.test(country))) throw new ValidationError('Recherche géographique invalide.');
     if (!await ready() || !adapters.googlePlaces.autocomplete) return { status: 'PARTIAL', cause: 'GOOGLE_PLACES_NOT_CONFIGURED', suggestions: [] };
     const secret = await secretStore.get('provider:google-places');
     const body = await adapters.googlePlaces.autocomplete({ secret, input: query, countryCode: country, mode });

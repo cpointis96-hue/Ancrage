@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "audit-qualification-fixture-v1",
+  "name": "Maison Sillage",
+  "city": { "id": "fr-nantes", "label": "Nantes", "country": "FR", "locale": "fr-FR" },
+  "domain": "https://maison-sillage.fixture.invalid",
+  "idempotencyKey": "qualification-local-no-network-v1",
+  "provider": {
+    "id": "dataforseo",
+    "fixtureSecretLabel": "generated-in-memory-only",
+    "expectedStates": {
+      "beforeConfiguration": { "configured": false, "healthy": "unknown", "enabled": false },
+      "afterConfiguration": { "configured": true, "healthy": "unknown", "enabled": false },
+      "afterHealthCheck": { "configured": true, "healthy": "healthy", "enabled": false },
+      "afterEnablement": { "configured": true, "healthy": "healthy", "enabled": true }
+    },
+    "execution": "adapter-call-no-network"
+  },
+  "locationLanguage": { "locationCode": 2250, "languageCode": "fr" },
+  "budget": { "currency": "USD", "hardLimit": 0.5, "settledCostPerCall": 0.01 },
+  "liveEvidence": {
+    "authorized": false,
+    "deliveryStatus": "PARTIAL",
+    "reason": "DATAFORSEO_LIVE_EVIDENCE_NOT_AUTHORIZED"
+  },
+  "viewport390": "NON_OBSERVABLE_WITHOUT_LOCAL_BROWSER_TOOLING"
+}

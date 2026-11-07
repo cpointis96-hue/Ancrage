@@ -1,0 +1,33 @@
+{
+  "id": "audit-poor-1",
+  "workflowVersion": "public-audit-v1",
+  "status": "PARTIAL",
+  "startedAt": "2026-08-31T10:00:00.000Z",
+  "updatedAt": "2026-08-31T10:01:00.000Z",
+  "input": {
+    "name": "Maison Sillage",
+    "city": { "id": "fr-nantes", "label": "Nantes", "country": "FR" },
+    "address": "1 rue du Port",
+    "domain": null,
+    "mode": "LOCAL_PREVIEW_WITHOUT_GMB",
+    "identity": {}
+  },
+  "stages": [
+    { "id": "establishment-search", "status": "PARTIAL", "cause": "LOCAL_PREVIEW_WITHOUT_GMB" },
+    { "id": "site-discovery", "status": "PARTIAL", "cause": "SITE_NOT_CONFIRMED" },
+    { "id": "gmb-audit", "status": "PARTIAL", "cause": "LOCAL_PREVIEW_WITHOUT_GMB" },
+    { "id": "seo-audit", "status": "BLOCKED", "cause": "SITE_NOT_CONFIRMED" },
+    { "id": "competitor-keywords", "status": "PARTIAL", "cause": "IDENTITY_CATEGORY_NOT_OBSERVED" },
+    { "id": "strategy", "status": "SUCCEEDED" }
+  ],
+  "evidence": [],
+  "budget": { "currency": "USD", "hardLimit": 0.5, "spent": 0, "reserved": 0 },
+  "reports": [],
+  "modules": {
+    "site": { "confirmation": { "status": "NOT_CONFIRMED" } },
+    "gmb": { "candidates": [] },
+    "seo": { "summary": { "pagesAnalyzed": 0 }, "findings": [] },
+    "keywords": { "ideas": [], "competitors": [], "competitorCandidates": [], "planner": { "status": "PARTIAL", "execution": "not-run", "cause": "IDENTITY_CATEGORY_NOT_OBSERVED" } },
+    "strategy": { "recommendations": ["Confirmer le site officiel avant toute conclusion SEO technique."] }
+  }
+}

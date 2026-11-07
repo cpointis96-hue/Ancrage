@@ -29,6 +29,12 @@ export const api = {
   internetSearch: query => call('/internet/search', { method: 'POST', body: JSON.stringify({ query }) }),
   openWorkflowResource: (workflowId, payload) => call(`/workflows/${workflowId}/resources/open`, { method: 'POST', body: JSON.stringify(payload) }),
   openDossier: id => call(`/dossiers/${id}/open`, { method: 'POST' }),
+  placesAutocomplete: ({ input, country = '', mode = 'city', signal } = {}) => {
+    const params = new URLSearchParams({ input, mode });
+    if (country) params.set('country', country);
+    return call(`/places/autocomplete?${params}`, { signal });
+  },
+  placeDetails: (placeId, { signal } = {}) => call(`/places/details?placeId=${encodeURIComponent(placeId)}`, { signal }),
   prompts: () => call('/prompts'),
   contracts: () => call('/contracts'),
   cliProfiles: () => call('/cli-profiles'),

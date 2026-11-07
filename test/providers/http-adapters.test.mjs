@@ -62,6 +62,7 @@ test('génère du JSON avec les adapters IA autorisés', async () => {
   } });
   const outputs = [];
   for (const [id, adapter] of [['openai', adapters.openai], ['anthropic', adapters.anthropic], ['google-gemini', adapters['google-gemini']], ['openrouter', adapters.openrouter]]) {
+    assert.equal(adapter.executionType, 'http');
     const result = await adapter.generate({ secret: `${id}-key`, model: 'model-test', system: 'Retourne JSON.', input: { value: 1 } });
     assert.deepEqual(result.output, { sections: [] });
     outputs.push(result);

@@ -667,6 +667,11 @@ async function renderInternet() {
     if (result.ok) { state.internetResult = result.value; await render(); }
   };
   $('[data-internet-form]')?.addEventListener('submit', submitInternet);
+  const searchInput = $('[data-internet-form] input[name="query"]');
+  const focusSearchInput = event => { event.stopPropagation(); searchInput.focus({ preventScroll: true }); };
+  searchInput?.addEventListener('pointerdown', focusSearchInput);
+  searchInput?.addEventListener('click', focusSearchInput);
+  searchInput?.addEventListener('input', () => { state.internetQuery = searchInput.value; });
   $('[data-toggle-internet-config]')?.addEventListener('click', () => { state.internetConfigOpen = !state.internetConfigOpen; render(); });
 }
 

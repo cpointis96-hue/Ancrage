@@ -1,5 +1,6 @@
 import { ValidationError } from '../core/errors.mjs';
 import { createEvidenceSnapshot } from './evidence.mjs';
+import { decodeHtmlText } from './html-text.mjs';
 
 export const SEO_RULE_VERSION = 'seo-rules-v1';
 const DEFAULT_MAX_PAGES = 50;
@@ -14,7 +15,7 @@ function requiredUrl(value, field) {
 
 function textFromTag(html, tag) {
   const match = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(html);
-  return match?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? '';
+  return decodeHtmlText(match?.[1]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? '');
 }
 
 function attributes(tag) {
@@ -55,9 +56,12 @@ function analyzePage(page, observedAt) {
   const h1Count = [...html.matchAll(/<h1\b[^>]*>/gi)].length;
   const missingImageAlt = [...html.matchAll(/<img\b[^>]*>/gi)].filter(match => {
     const alt = attributes(match[0]).alt;
-    return alt === undefined || !alt;
+    return alt === undefined;
   }).length;
   const findings = [];
+  if ((page.status ?? 200) >= 400) findings.push(finding('HTTP_ERROR', 'ERROR', url, observedAt, `Le serveur renvoie HTTP ${page.status}.`, html));
+  const robots = [...html.matchAll(/<meta\b[^>]*>/gi)].map(match => attributes(match[0])).filter(item => ['robots', 'googlebot'].includes(item.name?.toLowerCase())).map(item => item.content ?? '').join(',');
+  if (/\b(noindex|none)\b/i.test(robots)) findings.push(finding('NOINDEX_OBSERVED', 'WARN', url, observedAt, 'Une directive HTML demande de ne pas indexer cette page.', html));
   if (!title) findings.push(finding('MISSING_TITLE', 'WARN', url, observedAt, 'La page ne contient pas de title exploitable.', html));
   if (!hasMeta(html, 'description')) findings.push(finding('MISSING_META_DESCRIPTION', 'WARN', url, observedAt, 'La page ne contient pas de meta description.', html));
   if (!hasMeta(html, 'viewport')) findings.push(finding('MISSING_VIEWPORT', 'WARN', url, observedAt, 'La page ne contient pas de viewport.', html));
@@ -66,7 +70,10 @@ function analyzePage(page, observedAt) {
   if (!/<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["']/i.test(html)) findings.push(finding('MISSING_STRUCTURED_DATA', 'WARN', url, observedAt, 'Aucune donnée structurée JSON-LD observée.', html));
   if (h1Count > 1) findings.push(finding('MULTIPLE_H1', 'WARN', url, observedAt, `${h1Count} balises h1 observées.`, html));
   if (missingImageAlt > 0) findings.push(finding('MISSING_IMAGE_ALT', 'WARN', url, observedAt, `${missingImageAlt} image(s) sans attribut alt exploitable.`, html));
-  return { page: { url, status: page.status ?? 200, crawlStatus: 'complete', findingsCount: findings.length }, findings };
+  const description = [...html.matchAll(/<meta\b[^>]*>/gi)].map(match => attributes(match[0])).find(item => item.name?.toLowerCase() === 'description')?.content ?? '';
+  const text = decodeHtmlText(html.replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 1200);
+  const contactLinks = [...html.matchAll(/<a\b[^>]*>/gi)].map(match => attributes(match[0]).href).filter(value => value && /^(tel:|mailto:)|contact|reserv|booking/i.test(value)).slice(0, 12);
+  return { page: { url, title, description, heading: textFromTag(html, 'h1'), text, contactLinks, viewport: hasMeta(html, 'viewport'), status: page.status ?? 200, crawlStatus: 'complete', findingsCount: findings.length }, findings };
 }
 
 export function analyzeSeoAudit({ target, pages, observedAt, maxPages = DEFAULT_MAX_PAGES, limitReached = false } = {}) {

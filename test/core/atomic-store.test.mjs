@@ -42,6 +42,24 @@ test('écrit et relit un fichier binaire atomiquement', async () => {
   await assert.rejects(() => store.writeBuffer('dossiers/dossier-test/assets/photo.bin', value, { expectedHash: null }), ConflictError);
 });
 
+for (const [kind, initial, next] of [
+  ['Text', 'été 1', 'été 2'],
+  ['Buffer', Buffer.from([0, 255, 1]), Buffer.from([255, 0, 2])],
+]) {
+  test(`préserve hashes et préconditions lors du remplacement ${kind}`, async () => {
+    const file = 'state/value';
+    const write = store[`write${kind}`];
+    const read = store[`read${kind}`];
+    const first = await write(file, initial, { expectedHash: null });
+    const second = await write(file, next, { expectedHash: first.hash });
+    assert.equal(second.previousHash, first.hash);
+    assert.notEqual(second.hash, first.hash);
+    await assert.rejects(write(file, initial, { expectedHash: first.hash }), ConflictError);
+    await assert.rejects(write(file, initial, { immutable: true }), ConflictError);
+    assert.deepEqual(await read(file), next);
+  });
+}
+
 test('détecte une écriture concurrente avec expectedHash', async () => {
   await store.writeText('config/prompts/a.md', 'version 1');
 

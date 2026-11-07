@@ -76,9 +76,10 @@ function hasNamedNoise(keyword, plan) {
   const normalized = normalize(keyword);
   if (OFF_TOPIC_TERMS.some(term => normalized.includes(normalize(term)))) return true;
   if (String(keyword).includes("'") || String(keyword).includes('’')) return true;
+  if (GENERIC_CATEGORY_QUERIES.has(normalized)) return true;
   if (plan.locality && includesPhraseOrWords(keyword, plan.locality)) return false;
   if (plan.name && keywordMatchesName(keyword, plan.name)) return false;
-  return !GENERIC_CATEGORY_QUERIES.has(normalized);
+  return Boolean(plan.locality);
 }
 
 function domainOf(value) {
@@ -99,8 +100,7 @@ export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, 
     : primaryAnchor && locality
     ? unique([
       `${primaryAnchor} ${locality}`,
-      `${primaryAnchor} ${locality} menu`,
-      name ? `${name} ${locality}` : `${primaryAnchor} ${locality} reservation`,
+      name ? `${name} ${locality}` : null,
     ])
     : [];
   return {
@@ -110,6 +110,7 @@ export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, 
     anchors,
     category: planned?.category ?? primaryAnchor,
     seeds,
+    queries: plannedQueries.filter(item => seeds.includes(item.query)),
     scope: primaryAnchor ? 'local-business-category' : 'local-business-category-unknown',
     planner: plannedQueries.length ? 'configured-ai' : 'deterministic-fallback',
     reasons: primaryAnchor ? ['OBSERVED_PRIMARY_CATEGORY'] : ['IDENTITY_CATEGORY_NOT_OBSERVED'],
@@ -124,6 +125,7 @@ function normalizedKeywordRow(item, plan) {
   const businessMatch = plan.anchors.some(anchor => includesPhraseOrWords(keyword, anchor));
   const nameMatch = keywordMatchesName(keyword, plan.name);
   const intent = keywordIntent(item, keyword);
+  const targetPage = plan.queries?.find(item => normalize(item.query) === normalize(keyword))?.targetPage ?? (intent === 'menu' ? 'page-menu' : intent === 'reservation' ? 'page-reservation' : intent === 'delivery' ? 'page-services' : intent === 'contact' ? 'page-contact' : 'page-accueil');
   const searchVolume = info.search_volume ?? null;
   const competition = info.competition ?? null;
   const cpc = info.cpc ?? null;
@@ -137,6 +139,7 @@ function normalizedKeywordRow(item, plan) {
     cpc,
     keywordDifficulty,
     intent,
+    targetPage,
     source: item?.source ?? item?.keyword_data?.source ?? null,
     sourceSeed: item?.seed ?? item?.source_seed ?? item?.keyword_data?.seed ?? null,
     localityMatch,
@@ -199,15 +202,105 @@ function competitorMetrics(item) {
   };
 }
 
-export function qualifyCompetitorResults(result, { targetDomain = null, selectedKeywords = [], locality = null } = {}) {
+const DIRECTORY_HOSTS = ['tripadvisor', 'yelp', 'pagesjaunes', 'google', 'foursquare', 'thefork'];
+const PLATFORM_HOSTS = ['facebook', 'instagram', 'tiktok', 'booking', 'deliveroo', 'ubereats', 'linkedin', 'wikipedia'];
+const MEDIA_LABELS = new Set(['guide', 'magazine', 'journal', 'news', 'media', 'presse']);
+
+function hostnameMatches(domain, names) {
+  return names.some(name => domain === name || domain.startsWith(`${name}.`) || domain.endsWith(`.${name}`) || domain.includes(`.${name}.`));
+}
+function hasMediaLabel(domain) { return domain.split('.').some(label => MEDIA_LABELS.has(label)); }
+function sourceValues(candidate) { return unique([...(candidate.sources ?? []), candidate.source]); }
+function scopeValues(candidate) { return unique([...(candidate.scopes ?? []), candidate.scope]); }
+function matchedKeywordValues(candidate) { return unique(candidate.matchedKeywords ?? []); }
+function businessConfirmed(candidate) {
+  return candidate.businessConfirmed === true
+    || sourceValues(candidate).includes('dataforseo_local_finder')
+    || candidate.providerBusinessType === 'business';
+}
+
+export function competitorType(candidate = {}) {
+  const domain = domainOf(candidate.domain) ?? domainOf(candidate.url) ?? '';
+  if (hostnameMatches(domain, DIRECTORY_HOSTS)) return 'directory';
+  if (hostnameMatches(domain, PLATFORM_HOSTS)) return 'platform';
+  if (hasMediaLabel(domain)) return 'media';
+  return businessConfirmed(candidate) ? 'business' : 'unknown';
+}
+
+function candidateKey(candidate) { return candidate.domain ?? (candidate.title ? `title:${normalize(candidate.title)}` : null); }
+function mergeMetrics(left, right) {
+  const avgPosition = Math.min(left.avgPosition ?? Infinity, right.avgPosition ?? Infinity);
+  const medianPosition = Math.min(left.medianPosition ?? Infinity, right.medianPosition ?? Infinity);
+  return {
+    keywordsCount: Math.max(left.keywordsCount ?? 0, right.keywordsCount ?? 0) || null,
+    visibility: Math.max(left.visibility ?? 0, right.visibility ?? 0) || null,
+    avgPosition: Number.isFinite(avgPosition) ? avgPosition : null,
+    medianPosition: Number.isFinite(medianPosition) ? medianPosition : null,
+    trafficEstimate: Math.max(left.trafficEstimate ?? 0, right.trafficEstimate ?? 0) || null,
+  };
+}
+
+export function mergeCompetitorCandidates(candidates) {
+  const byKey = new Map();
+  for (const candidate of candidates) {
+    const domain = domainOf(candidate?.domain) ?? domainOf(candidate?.url);
+    const normalized = {
+      ...candidate,
+      domain,
+      scopes: scopeValues(candidate),
+      sources: sourceValues(candidate),
+      matchedKeywords: matchedKeywordValues(candidate),
+      provenances: unique([...(candidate.provenances ?? []), `${candidate.scope ?? 'unknown'}:${candidate.source ?? 'unknown'}`]),
+      businessConfirmed: businessConfirmed(candidate),
+      mergedCandidateCount: candidate.mergedCandidateCount ?? 1,
+    };
+    const key = candidateKey(normalized);
+    if (!key) continue;
+    const previous = byKey.get(key);
+    if (!previous) { byKey.set(key, normalized); continue; }
+    const merged = {
+      ...previous,
+      title: previous.title ?? normalized.title ?? null,
+      scopes: unique([...previous.scopes, ...normalized.scopes]),
+      sources: unique([...previous.sources, ...normalized.sources]),
+      matchedKeywords: unique([...previous.matchedKeywords, ...normalized.matchedKeywords]),
+      keywordPositions: { ...(previous.keywordPositions ?? {}), ...(normalized.keywordPositions ?? {}) },
+      provenances: unique([...previous.provenances, ...normalized.provenances]),
+      businessConfirmed: previous.businessConfirmed || normalized.businessConfirmed,
+      mergedCandidateCount: (previous.mergedCandidateCount ?? 1) + 1,
+      mergeReason: 'CANONICAL_DOMAIN_COLLISION',
+      ...mergeMetrics(previous, normalized),
+    };
+    byKey.set(key, merged);
+  }
+  return [...byKey.values()].map(candidate => ({ ...candidate, type: competitorType(candidate) }))
+    .sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || String(left.domain ?? left.title).localeCompare(String(right.domain ?? right.title)));
+}
+
+export function selectBusinessCompetitors(candidates, { targetDomain = null, targetName = null } = {}) {
   const target = domainOf(targetDomain);
+  const targetTitle = normalize(targetName);
+  const merged = mergeCompetitorCandidates(candidates);
+  const accepted = [];
+  const rejected = [];
+  for (const candidate of merged) {
+    if (candidate.domain && candidate.domain === target) { rejected.push({ ...candidate, reason: 'AUDITED_DOMAIN_EXCLUDED' }); continue; }
+    if (targetTitle && normalize(candidate.title) === targetTitle) { rejected.push({ ...candidate, reason: 'AUDITED_BUSINESS_EXCLUDED' }); continue; }
+    if (candidate.type === 'unknown') { rejected.push({ ...candidate, reason: 'BUSINESS_IDENTITY_NOT_CONFIRMED' }); continue; }
+    if (candidate.type !== 'business') { rejected.push({ ...candidate, reason: 'NON_BUSINESS_COMPETITOR' }); continue; }
+    accepted.push(candidate);
+  }
+  return { candidates: merged, selected: accepted.slice(0, 5), rejected: [...rejected, ...accepted.slice(5).map(item => ({ ...item, reason: 'COMPETITOR_SHORTLIST_LIMIT' }))] };
+}
+
+export function qualifyCompetitorResults(result, { targetDomain = null, selectedKeywords = [], locality = null } = {}) {
   const wanted = new Set(selectedKeywords.map(value => normalize(typeof value === 'string' ? value : value?.keyword)).filter(Boolean));
   const byDomain = new Map();
   for (const item of flattenItems(result)) {
-    const domain = domainOf(item?.domain ?? item?.url ?? item?.target);
-    if (!domain || domain === target) continue;
+    const domain = domainOf(item?.domain) ?? domainOf(item?.url) ?? domainOf(item?.target);
+    if (!domain) continue;
     const metrics = competitorMetrics(item);
-    const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : [];
+    const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : Object.keys(item?.keywords_positions ?? {});
     const matchedKeywords = rawKeywords.map(value => String(value).trim()).filter(value => wanted.has(normalize(value)));
     if (!matchedKeywords.length) continue;
     const existing = byDomain.get(domain);
@@ -218,6 +311,9 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
       locality: locality ?? null,
       classification: 'SEO_COMPETITOR_CANDIDATE',
       matchedKeywords,
+      keywordPositions: Object.fromEntries(matchedKeywords.filter(keyword => Array.isArray(item.keywords_positions?.[keyword])).map(keyword => [keyword, item.keywords_positions[keyword].filter(value => Number.isInteger(value) && value > 0)])),
+      businessConfirmed: item?.is_business === true || item?.business === true,
+      providerBusinessType: item?.business_type ?? item?.entity_type ?? item?.type ?? null,
       ...metrics,
       source: item?.source ?? 'dataforseo_labs_serp_competitors',
     };
@@ -225,11 +321,13 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
     else byDomain.set(domain, {
       ...existing,
       matchedKeywords: unique([...existing.matchedKeywords, ...matchedKeywords]),
-      keywordsCount: Math.max(existing.keywordsCount ?? 0, row.keywordsCount ?? 0) || null,
-      visibility: Math.max(existing.visibility ?? 0, row.visibility ?? 0) || null,
+      businessConfirmed: existing.businessConfirmed || row.businessConfirmed,
+      ...mergeMetrics(existing, row),
     });
   }
-  return [...byDomain.values()].sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || left.domain.localeCompare(right.domain));
+  const candidates = [...byDomain.values()].sort((left, right) => (right.visibility ?? -1) - (left.visibility ?? -1) || (left.avgPosition ?? Infinity) - (right.avgPosition ?? Infinity) || left.domain.localeCompare(right.domain));
+  const selection = selectBusinessCompetitors(candidates, { targetDomain });
+  return Object.assign(selection.selected, { candidates: selection.candidates, selected: [...selection.selected], rejected: selection.rejected });
 }
 
 export { domainOf, normalize };

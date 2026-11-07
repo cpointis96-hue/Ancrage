@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "preparation-draft",
+  "type": "object",
+  "required": ["id", "auditPacketRef", "revision", "locale", "values"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "auditPacketRef": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "auditPacket": { "type": "object", "required": ["packetId", "revision", "snapshotRef", "hash"], "properties": { "packetId": { "type": "string", "minLength": 1, "maxLength": 120 }, "revision": { "type": "integer", "minimum": 1 }, "snapshotRef": { "type": "string", "minLength": 1, "maxLength": 300 }, "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } }, "additionalProperties": false },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
+    "values": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["field", "value", "source", "confirmation"],
+        "properties": {
+          "field": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "value": {},
+          "source": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "confirmation": { "type": "string", "enum": ["REQUIRED", "CONFIRMED", "REJECTED"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

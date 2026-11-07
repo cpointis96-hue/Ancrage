@@ -17,6 +17,16 @@
       "contractRef": "seo-research-plan",
       "timeoutMs": 15000,
       "budget": 0.05,
+      "pricing": {
+        "provider": "openai",
+        "model": "gpt-5.4-mini",
+        "currency": "USD",
+        "inputPerMillion": 0.75,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 4.5,
+        "checkedAt": "2026-10-24",
+        "source": "https://developers.openai.com/api/docs/models/gpt-5.4-mini"
+      },
       "maxOutputTokens": 700,
       "approval": "none"
     }

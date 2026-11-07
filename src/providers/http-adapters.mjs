@@ -10,8 +10,8 @@ async function requestJson(fetchImpl, url, options = {}, timeoutMs = DEFAULT_TIM
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = null; }
   if (!response.ok) {
-    const providerCode = body?.error?.status ?? body?.error?.details?.find?.(item => item['@type']?.includes('ErrorInfo'))?.reason ?? null;
-    throw Object.assign(new Error(`Provider returned ${response.status}`), { code: `HTTP_${response.status}`, providerCode });
+    const providerCode = body?.status_code ?? body?.error?.status ?? body?.error?.details?.find?.(item => item['@type']?.includes('ErrorInfo'))?.reason ?? null;
+    throw Object.assign(new Error(`Provider returned ${response.status}`), { code: `HTTP_${response.status}`, providerCode, providerError: body?.error ? { type: body.error.type ?? null, code: body.error.code ?? null, param: body.error.param ?? null } : null });
   }
   return body;
 }
@@ -75,6 +75,7 @@ function candidates(query) {
 function adapter(test, search = null) {
   const fn = async context => test(context);
   fn.search = search;
+  fn.executionType = 'http';
   return fn;
 }
 
@@ -91,7 +92,20 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   if (typeof fetchImpl !== 'function') throw new Error('fetch is required');
   const openai = adapter(({ secret }) => bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openai.models = async ({ secret }) => normalizeModels(await bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
-  openai.generate = ({ secret, model, system, input, maxOutputTokens = 700 }) => chatAdapter({ fetchImpl, provider: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, max_completion_tokens: maxOutputTokens } });
+  openai.generate = ({ secret, model, system, input, maxOutputTokens = 700 }) => chatAdapter({ fetchImpl, provider: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, service_tier: 'default', messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, max_completion_tokens: maxOutputTokens } });
+  openai.research = async ({ secret, model, system, input, maxOutputTokens = 2400, timeoutMs: researchTimeout = 60000 }) => {
+    const body = await requestJson(fetchImpl, 'https://api.openai.com/v1/responses', {
+      method: 'POST', headers: jsonHeaders({ authorization: `Bearer ${credential(secret).key}` }),
+      body: JSON.stringify({ model, store: false, service_tier: 'default', instructions: system, input: JSON.stringify(input), reasoning: { effort: 'low' }, tools: [{ type: 'web_search', search_context_size: 'low' }], tool_choice: 'required', max_tool_calls: 2, include: ['web_search_call.action.sources'], max_output_tokens: maxOutputTokens }),
+    }, researchTimeout);
+    const content = (body?.output ?? []).filter(item => item.type === 'message').flatMap(item => item.content ?? []);
+    const calls = (body?.output ?? []).filter(item => item.type === 'web_search_call');
+    const sources = [...calls.flatMap(item => item.action?.sources ?? []), ...content.flatMap(item => (item.annotations ?? []).filter(item => item.type === 'url_citation'))];
+    // Keep usage even when JSON is truncated: the request may already be billed.
+    let output = null;
+    try { output = JSON.parse(content.filter(item => item.type === 'output_text').map(item => item.text).join('').trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, '$1')); } catch {}
+    return { output, usage: body?.usage ?? null, sources, searchCalls: calls.filter(item => item.action?.type === 'search').length, completed: body?.status === 'completed' };
+  };
   const anthropic = adapter(({ secret }) => requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
   anthropic.models = async ({ secret }) => normalizeModels(await requestJson(fetchImpl, 'https://api.anthropic.com/v1/models', { headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' } }, timeoutMs));
   anthropic.generate = ({ secret, model, system, input }) => chatAdapter({ fetchImpl, provider: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', headers: { 'x-api-key': credential(secret).key, 'anthropic-version': '2023-06-01' }, body: { model, max_tokens: 4096, system, messages: [{ role: 'user', content: JSON.stringify(input) }] } });
@@ -118,6 +132,7 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   dataforseo.keywordIdeas = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'keywords_data/google/keywords_for_keywords/task_post', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordIdeasLive = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/keyword_ideas/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordOverview = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/keyword_overview/live', { method: 'POST', body: tasks }, timeoutMs);
+  dataforseo.myBusinessInfo = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'business_data/google/my_business_info/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.rankedKeywords = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/ranked_keywords/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.keywordsForSite = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/keywords_for_site/live', { method: 'POST', body: tasks }, timeoutMs);
   dataforseo.serpCompetitors = ({ secret, tasks }) => dataForSeoRequest(fetchImpl, secret, 'dataforseo_labs/google/serp_competitors/live', { method: 'POST', body: tasks }, timeoutMs);

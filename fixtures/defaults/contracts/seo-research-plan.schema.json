@@ -13,7 +13,11 @@
         "properties": {
           "query": { "type": "string" },
           "intent": { "type": "string", "enum": ["brand", "discovery", "menu", "reservation"] },
-          "basis": { "type": "string", "enum": ["business-name", "observed-category"] }
+          "basis": { "type": "string", "enum": ["business-name", "observed-category", "observed-content"] },
+          "targetPage": { "type": "string", "enum": ["page-accueil", "page-menu", "page-reservation", "page-services", "page-contact"] },
+          "reason": { "type": "string", "maxLength": 400 },
+          "sourceUrl": { "type": "string", "maxLength": 2048 },
+          "quote": { "type": "string", "maxLength": 250 }
         },
         "additionalProperties": false
       }

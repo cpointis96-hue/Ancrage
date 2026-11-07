@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "minimal-request",
+  "type": "object",
+  "required": ["name", "city", "locale", "idempotencyKey"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "city": {
+      "type": "object",
+      "required": ["id", "label", "countryCode"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" }
+      },
+      "additionalProperties": false
+    },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }
+  },
+  "additionalProperties": false
+}
