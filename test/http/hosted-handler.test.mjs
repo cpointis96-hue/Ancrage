@@ -33,5 +33,8 @@ test('isole les demandes publiques et bloque les routes privées avant initialis
   await Promise.all(background);
   assert.ok(worked >= 2);
   assert.match((await invoke('/')).body, /Ancrage/i);
+  assert.match((await invoke('/demo.html')).body, /public-reports/);
+  assert.equal((await invoke('/demo.mjs')).statusCode, 200);
+  assert.equal((await invoke('/demo.css')).statusCode, 200);
   assert.equal((await invoke('/assets/JetBrainsMono%5Bwght%5D.woff2')).statusCode, 200);
 });

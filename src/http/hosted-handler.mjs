@@ -26,6 +26,7 @@ export function createHostedHandler({ getApp, sessionSecret, workerSecret, waitU
       if (!url.pathname.startsWith('/api/')) {
         const files = { '/': ['intake.html', 'text/html'], '/intake.html': ['intake.html', 'text/html'], '/intake.css': ['intake.css', 'text/css'], '/intake.mjs': ['intake.mjs', 'text/javascript'], '/api.mjs': ['api.mjs', 'text/javascript'], '/assets/brand-rock.png': ['assets/brand-rock.png', 'image/png'], '/assets/jet.woff2': ['assets/jet.woff2', 'font/woff2'] };
         files['/assets/JetBrainsMono[wght].woff2'] = ['assets/JetBrainsMono[wght].woff2', 'font/woff2'];
+        for (const [name, type] of [['demo.html', 'text/html'], ['demo.css', 'text/css'], ['demo.mjs', 'text/javascript']]) files[`/${name}`] = [name, type];
         const file = files[decodeURIComponent(url.pathname)];
         if (!file || method !== 'GET') return sendJson(response, 404, { error: { code: 'NOT_FOUND' } });
         response.setHeader('Content-Type', file[1]);
