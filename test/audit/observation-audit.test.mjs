@@ -206,3 +206,14 @@ test('une observation mal formée ne supprime pas les autres constats étayés',
   assert.equal(run.modules.observation.observations.some(item => item.originalId === 'web-source-99'), false);
   assert.match((await app.publicAudits.readReport(run.id)).value, /Faciliter le contact/);
 });
+
+test('accepte plusieurs extraits exacts séparés par une ellipse mais refuse un fragment inventé', async t => {
+  const response = observationResponse();
+  response.output.observations.push({ id: 'web-source-2', url: 'https://sillage.example/', fact: 'Page de restaurant', quote: 'Restaurant ... Téléphone de fixture' });
+  response.output.observations.push({ id: 'web-source-3', url: 'https://sillage.example/', fact: 'Fragment non vérifié', quote: 'Restaurant ... Réserver' });
+  const { app } = await setup(t, { research: async () => response });
+  const run = await app.publicAudits.create(observationInput);
+  const retained = run.modules.observation.observations.some(item => item.originalId === 'web-source-2');
+  assert.equal(retained, true);
+  assert.equal(run.modules.observation.observations.some(item => item.originalId === 'web-source-3'), false);
+});

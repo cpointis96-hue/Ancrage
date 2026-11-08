@@ -86,8 +86,10 @@ export function qualifyObservationResearch({ result, subject, observations, obse
       const text = observations.filter(observation => publicSource(observation.url) === publicSource(item.url)).map(observation => observation.fact).join(' ');
       const quotes = [...item.quote.matchAll(/"([^"]+)"/g)].map(match => match[1]);
       if (!quotes.length) quotes.push(item.quote);
-      return quotes.length && quotes.every(quote => normalize(decodeHtmlText(quote)).length >= 4 && normalize(decodeHtmlText(text)).includes(normalize(decodeHtmlText(quote))));
+      const excerpts = quotes.flatMap(quote => quote.split(/\s*(?:…|\.{3})\s*/)).filter(Boolean);
+      return excerpts.length && excerpts.every(quote => normalize(decodeHtmlText(quote)).length >= 4 && normalize(decodeHtmlText(text)).includes(normalize(decodeHtmlText(quote))));
     };
+    const rejectedObservations = output.observations.filter(item => !urls.has(publicSource(item.url)) && !capturedQuote(item)).map(item => ({ id: item.id, url: publicSource(item.url), reason: 'QUOTE_NOT_CAPTURED' }));
     const webObservations = output.observations.filter(item => /^web-source-\d+$/.test(item.id) && !seen.has(item.id) && seen.add(item.id) && (urls.has(publicSource(item.url)) || capturedQuote(item))).map((item, index) => ({ ...item, url: publicSource(item.url), id: `web-${index + 1}`, classification: 'AI_INTERPRETED', sourceKind: urls.has(publicSource(item.url)) ? 'web-search' : 'captured-page', originalId: item.id }));
     const ids = new Map([...observations.map(item => [item.id, item.id]), ...webObservations.map(item => [item.originalId, item.id])]);
     const corrections = new Set();
@@ -111,5 +113,5 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     const complete = (priorities.length > 0 || output.conclusion.decision === 'KEEP_SITE') && supportedPriorities.length === output.priorities.length && webObservations.some(item => item.sourceKind === 'web-search') && supportedConclusion;
     const observedWords = new Set(normalize(decodeHtmlText([subject.name, subject.city, subject.category, ...observations.map(item => item.fact), ...webObservations.map(item => item.fact)].join(' '))).split(' '));
     const queries = output.queries.filter(item => normalize(item.query).includes(normalize(subject.city)) && normalize(item.query).split(' ').every(word => word.length < 3 || observedWords.has(word)));
-    return { status: complete ? 'SUCCEEDED' : 'PARTIAL', cause: complete ? null : 'AI_OBSERVATIONS_INSUFFICIENT', execution, source, observations: webObservations, priorities, competitors, queries, conclusion: supportedConclusion ? { ...output.conclusion, observationIds: output.conclusion.observationIds.map(id => ids.get(id)), classification: 'AI_INTERPRETED' } : null, limitations: output.limitations, evidence };
+    return { status: complete ? 'SUCCEEDED' : 'PARTIAL', cause: complete ? null : 'AI_OBSERVATIONS_INSUFFICIENT', execution, source, qualification: { rejectedObservations, rejectedPriorities: output.priorities.filter(item => !item.observationIds.length || !item.observationIds.every(id => ids.has(id))).map(item => ({ title: item.title, missingObservationIds: item.observationIds.filter(id => !ids.has(id)) })), unsupportedConclusionIds: output.conclusion.observationIds.filter(id => !ids.has(id)) }, observations: webObservations, priorities, competitors, queries, conclusion: supportedConclusion ? { ...output.conclusion, observationIds: output.conclusion.observationIds.map(id => ids.get(id)), classification: 'AI_INTERPRETED' } : null, limitations: output.limitations, evidence };
 }
