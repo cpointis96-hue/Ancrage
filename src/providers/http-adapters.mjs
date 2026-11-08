@@ -93,10 +93,18 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   const openai = adapter(({ secret }) => bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openai.models = async ({ secret }) => normalizeModels(await bearer('https://api.openai.com/v1/models', { fetchImpl, token: credential(secret).key, timeoutMs }));
   openai.generate = ({ secret, model, system, input, maxOutputTokens = 700 }) => chatAdapter({ fetchImpl, provider: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', headers: { authorization: `Bearer ${credential(secret).key}` }, body: { model, service_tier: 'default', messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, max_completion_tokens: maxOutputTokens } });
+  // Structured Outputs requires every declared object field to be required.
+  const strictSchema = schema => {
+    if (Array.isArray(schema)) return schema.map(strictSchema);
+    if (!schema || typeof schema !== 'object') return schema;
+    const result = Object.fromEntries(Object.entries(schema).filter(([key]) => key !== '$id').map(([key, value]) => [key, strictSchema(value)]));
+    if (result.type === 'object' && result.properties) { result.required = Object.keys(result.properties); result.additionalProperties = false; }
+    return result;
+  };
   openai.research = async ({ secret, model, system, input, maxOutputTokens = 2400, maxToolCalls = 2, timeoutMs: researchTimeout = 60000 }) => {
     const body = await requestJson(fetchImpl, 'https://api.openai.com/v1/responses', {
       method: 'POST', headers: jsonHeaders({ authorization: `Bearer ${credential(secret).key}` }),
-      body: JSON.stringify({ model, store: false, service_tier: 'default', instructions: system, input: JSON.stringify(input), reasoning: { effort: 'low' }, tools: [{ type: 'web_search', search_context_size: 'low' }], tool_choice: 'required', max_tool_calls: Math.max(1, Math.min(8, maxToolCalls)), include: ['web_search_call.action.sources'], max_output_tokens: maxOutputTokens }),
+      body: JSON.stringify({ model, store: false, service_tier: 'default', instructions: system, input: JSON.stringify(input), ...(input.outputSchema ? { text: { format: { type: 'json_schema', name: 'audit_analysis', strict: true, schema: strictSchema(input.outputSchema) } } } : {}), reasoning: { effort: 'low' }, tools: [{ type: 'web_search', search_context_size: 'low' }], tool_choice: 'required', max_tool_calls: Math.max(1, Math.min(8, maxToolCalls)), include: ['web_search_call.action.sources'], max_output_tokens: maxOutputTokens }),
     }, researchTimeout);
     const content = (body?.output ?? []).filter(item => item.type === 'message').flatMap(item => item.content ?? []);
     const calls = (body?.output ?? []).filter(item => item.type === 'web_search_call');

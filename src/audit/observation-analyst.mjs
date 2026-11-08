@@ -56,7 +56,7 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
       if (settled.overLimit) return failed('BUDGET_EXCEEDED_AFTER_CALL');
     } catch { return failed('AI_COST_RECONCILIATION_REQUIRED'); }
     try { validateJsonSchema(contract.schema, result.output); }
-    catch { return failed('AI_OBSERVATIONS_INVALID'); }
+    catch (error) { return { ...failed('AI_OBSERVATIONS_INVALID'), validationError: error.message }; }
     if (!result.completed || !result.searchCalls) return failed('AI_WEB_SEARCH_NOT_EXECUTED');
     return qualifyObservationResearch({ result, subject, observations, observedAt, provider: step.provider, execution, source: provenance });
   };

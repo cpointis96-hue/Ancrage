@@ -193,3 +193,14 @@ test('recherche avec les adapters registrar sans divulguer la clé dans le résu
   assert.equal(calls.length, 4);
   assert.equal(JSON.stringify(results).includes('secret'), false);
 });
+
+test('la recherche applique le schéma strict au format Responses sans modifier le contrat fourni', async () => {
+  let sent;
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return new Response(JSON.stringify({ status: 'completed', output: [], usage: {} })); } });
+  const schema = { $id: 'fixture', type: 'object', properties: { observations: { type: 'array', items: { type: 'object', properties: { topic: { type: 'string' } }, required: [] } } }, required: ['observations'] };
+  await adapters.openai.research({ secret: 'fixture-only', model: 'gpt-5.4-mini', system: 'fixture', input: { outputSchema: schema }, maxToolCalls: 8 });
+  assert.equal(sent.text.format.type, 'json_schema'); assert.equal(sent.text.format.strict, true);
+  assert.deepEqual(sent.text.format.schema.properties.observations.items.required, ['topic']);
+  assert.equal(sent.text.format.schema.$id, undefined);
+  assert.deepEqual(schema.properties.observations.items.required, []); assert.equal(sent.max_tool_calls, 8);
+});
