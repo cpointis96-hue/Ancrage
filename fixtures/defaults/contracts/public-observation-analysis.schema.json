@@ -34,12 +34,12 @@
           "fact": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 320
+            "maxLength": 640
           },
           "quote": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 240
+            "maxLength": 480
           },
           "topic": {
             "type": "string",

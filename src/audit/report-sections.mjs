@@ -10,7 +10,14 @@ const corrections = {
 
 export function technicalActions(findings) {
   const order = ['HTTP_ERROR', 'NOINDEX_OBSERVED', 'MISSING_TITLE', 'MISSING_VIEWPORT', 'MISSING_IMAGE_ALT', 'MISSING_HTML_LANG', 'MISSING_META_DESCRIPTION'];
-  return [...Map.groupBy(findings.filter(item => order.includes(item.code)), item => item.code)]
+  return [...Map.groupBy(findings.filter(item => {
+    if (!order.includes(item.code)) return false;
+    // A missing description on a legal/support page is not a commercial priority.
+    if (item.code === 'MISSING_META_DESCRIPTION') {
+      try { if (/\/(?:accessibilite|accessibility|mentions-legales|politique-de-confidentialite|privacy)(?:\/|$)/i.test(new URL(item.url).pathname)) return false; } catch {}
+    }
+    return true;
+  }), item => item.code)]
     .sort(([left], [right]) => order.indexOf(left) - order.indexOf(right))
     .map(([code, rows]) => {
       const [title, action, impact] = corrections[code];

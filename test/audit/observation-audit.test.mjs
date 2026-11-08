@@ -194,3 +194,15 @@ test('collecte Google dédiée inclut horaires et avis sans modifier la sélecti
   assert.match(calls[1].mask, /regularOpeningHours/);
   assert.throws(() => adapters.googlePlaces.auditDetails({ secret: 'fixture-only', placeId: '../private' }), /Invalid place ID/);
 });
+
+test('une observation mal formée ne supprime pas les autres constats étayés', async t => {
+  const response = observationResponse();
+  response.output.observations.push({ id: 'web-source-99', url: 'https://voisin.example/menu', fact: 'x'.repeat(1000), quote: 'invalide' });
+  const { app } = await setup(t, { research: async () => response });
+  const run = await app.publicAudits.create(observationInput);
+  assert.equal(run.modules.observation.cause, 'AI_OBSERVATIONS_PARTIALLY_INVALID');
+  assert.equal(run.status, 'PARTIAL');
+  assert.equal(run.modules.observation.priorities.length, 3);
+  assert.equal(run.modules.observation.observations.some(item => item.originalId === 'web-source-99'), false);
+  assert.match((await app.publicAudits.readReport(run.id)).value, /Faciliter le contact/);
+});

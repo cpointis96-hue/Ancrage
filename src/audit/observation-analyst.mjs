@@ -56,7 +56,23 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
       if (settled.overLimit) return failed('BUDGET_EXCEEDED_AFTER_CALL');
     } catch { return failed('AI_COST_RECONCILIATION_REQUIRED'); }
     try { validateJsonSchema(contract.schema, result.output); }
-    catch (error) { return { ...failed('AI_OBSERVATIONS_INVALID'), validationError: error.message }; }
+    catch (error) {
+      // One malformed editorial item must not discard every independently valid finding.
+      const output = result.output;
+      if (!output || typeof output !== 'object' || Array.isArray(output)) return { ...failed('AI_OBSERVATIONS_INVALID'), validationError: error.message };
+      const cleaned = {};
+      for (const key of ['observations', 'priorities', 'competitors', 'queries', 'limitations']) {
+        const definition = contract.schema.properties[key];
+        cleaned[key] = (Array.isArray(output[key]) ? output[key] : []).filter(item => {
+          try { validateJsonSchema(definition.items, item); return true; } catch { return false; }
+        }).slice(0, definition.maxItems);
+      }
+      try { validateJsonSchema(contract.schema.properties.conclusion, output.conclusion); cleaned.conclusion = output.conclusion; }
+      catch { cleaned.conclusion = { decision: 'UNDETERMINED', reason: 'Les éléments valides ne suffisent pas à conclure.', observationIds: [] }; }
+      if (!result.completed || !result.searchCalls || !cleaned.observations.length) return { ...failed('AI_OBSERVATIONS_INVALID'), validationError: error.message };
+      const qualified = qualifyObservationResearch({ result: { ...result, output: cleaned }, subject, observations, observedAt, provider: step.provider, execution, source: provenance });
+      return { ...qualified, status: 'PARTIAL', cause: 'AI_OBSERVATIONS_PARTIALLY_INVALID', validationError: error.message };
+    }
     if (!result.completed || !result.searchCalls) return failed('AI_WEB_SEARCH_NOT_EXECUTED');
     return qualifyObservationResearch({ result, subject, observations, observedAt, provider: step.provider, execution, source: provenance });
   };

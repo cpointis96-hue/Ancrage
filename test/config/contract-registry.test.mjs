@@ -117,3 +117,10 @@ test('résout les références locales encodées et refuse celles qui sont inval
     { $ref: '#/$defs/a', $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } } },
   ]) assert.throws(() => validateJsonSchema(schema, { anything: true }), ValidationError);
 });
+
+test('les longueurs JSON Schema comptent les caractères Unicode et non les unités UTF-16', () => {
+  const schema = { type: 'string', minLength: 2, maxLength: 2 };
+  assert.doesNotThrow(() => validateJsonSchema(schema, 'A🌿'));
+  assert.throws(() => validateJsonSchema(schema, '🌿'));
+  assert.throws(() => validateJsonSchema(schema, 'ABC'));
+});

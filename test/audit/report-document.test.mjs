@@ -7,6 +7,7 @@ import { buildPublicAuditDocument, buildDossierAuditDocument, buildSeoAuditDocum
 import { renderAuditDocumentHtml } from '../../src/audit/report-html.mjs';
 import { renderAuditDocumentPdf } from '../../src/audit/report-pdf.mjs';
 import { qualifyObservationResearch } from '../../src/audit/observation-analyst.mjs';
+import { technicalActions } from '../../src/audit/report-sections.mjs';
 import { analyzeSeoAudit } from '../../src/audit/seo-audit.mjs';
 import { createApp } from '../../src/app.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
@@ -158,6 +159,8 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const old = structuredClone(current.schema);
   delete old.properties.observations.items.properties.topic;
   delete old.properties.priorities.items.properties.topic;
+  old.properties.observations.items.properties.fact.maxLength = 320;
+  old.properties.observations.items.properties.quote.maxLength = 240;
   old.properties.observations.maxItems = 12; old.properties.priorities.maxItems = 3; old.properties.queries.maxItems = 3;
   const draft = await app.contracts.save(current.id, { schema: old }, { expectedHash: current.draftHash });
   const version = await app.contracts.createVersion(current.id, { expectedDraftHash: draft.draftHash });
@@ -171,4 +174,10 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const customVersion = await migrated.contracts.createVersion(current.id, { expectedDraftHash: next.draftHash }); await migrated.contracts.activate(current.id, customVersion.id);
   const preserved = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await preserved.ready;
   assert.equal((await preserved.contracts.getActiveVersion(current.id)).schema.title, custom.title);
+});
+
+test('une description manquante sur la page accessibilité ne devient pas une priorité commerciale', () => {
+  const findings = ['https://fixture.example/accessibilite/', 'https://fixture.example/menu/'].map(url => ({ code: 'MISSING_META_DESCRIPTION', url, detail: 'Description absente' }));
+  const actions = technicalActions(findings);
+  assert.equal(actions.length, 1); assert.deepEqual(actions[0].urls, ['https://fixture.example/menu/']);
 });

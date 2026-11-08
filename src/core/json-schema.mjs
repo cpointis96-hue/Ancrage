@@ -44,8 +44,9 @@ function findError(schema, value, path = '$', root = schema, referenceChain = []
   if (schema?.type && !matchesType(value, schema.type)) return `${path} doit être de type ${schema.type}`;
   if (schema?.enum && !schema.enum.some(item => Object.is(item, value))) return `${path} a une valeur interdite`;
   if (hasType(schema, 'string') && typeof value === 'string') {
-    if (schema.minLength !== undefined && value.length < schema.minLength) return `${path} doit contenir au moins ${schema.minLength} caractères`;
-    if (schema.maxLength !== undefined && value.length > schema.maxLength) return `${path} doit contenir au plus ${schema.maxLength} caractères`;
+    const length = [...value].length;
+    if (schema.minLength !== undefined && length < schema.minLength) return `${path} doit contenir au moins ${schema.minLength} caractères`;
+    if (schema.maxLength !== undefined && length > schema.maxLength) return `${path} doit contenir au plus ${schema.maxLength} caractères`;
     if (schema.pattern !== undefined && !(new RegExp(schema.pattern).test(value))) return `${path} ne respecte pas le format attendu`;
   }
   if ((hasType(schema, 'number') || hasType(schema, 'integer')) && typeof value === 'number') {
