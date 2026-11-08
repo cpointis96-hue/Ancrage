@@ -754,3 +754,5 @@ a { color: var(--moss); }
   .template-create { grid-template-columns: 1fr 1fr; }
   .template-create input[type="file"] { grid-column: 1 / -1; }
 }
+
+.audit-report { display: block; width: 100%; min-height: 300px; margin-top: 16px; border: 0; background: white; }

@@ -83,6 +83,7 @@ test('PostgreSQL conserve les résultats et sérialise écritures et budgets ent
     const finished = await workflows[1].get(created[0].id);
     assert.equal(finished.status, 'PARTIAL');
     assert.equal(finished.reports.filter(item => item.kind === 'final').length, 1);
+    assert.match((await workflows[1].readReport(finished.id, 'gmb', 'pdf')).value, /^%PDF/);
     assert.match((await workflows[1].readReport(finished.id, 'final', 'pdf')).value, /^%PDF/);
     assert.equal((await workflows[1].resume(finished.id)).id, finished.id);
     const queued = await workflows[0].create({ ...input, idempotencyKey: 'scheduled-hosted-audit' }, { defer: true });
@@ -91,7 +92,7 @@ test('PostgreSQL conserve les résultats et sérialise écritures et budgets ent
     const planes = workflows.map((workflow, index) => createPublicControlPlane({ store: index ? second : first, auditStarter: async ({ request, decision }) => {
       const audit = await workflow.create({ ...input, idempotencyKey: `public-${request.id}` }, { defer: true, mode: decision });
       const reports = { audit: { id: audit.id, status: audit.status }, deferred: audit.status === 'RUNNING' };
-      for (const kind of ['gmb', 'final']) if (audit.reports.some(item => item.kind === kind)) reports[kind] = { html: (await workflow.readReport(audit.id, kind)).value, ...(kind === 'final' ? { pdf: (await workflow.readReport(audit.id, kind, 'pdf')).value } : {}) };
+      for (const kind of ['gmb', 'final']) if (audit.reports.some(item => item.kind === kind)) reports[kind] = { html: (await workflow.readReport(audit.id, kind)).value, pdf: (await workflow.readReport(audit.id, kind, 'pdf')).value };
       return reports;
     } }));
     const publicInput = { name: input.name, city: { ...input.city, countryCode: 'FR' }, identity: { ...input.identity, address: 'Fixture, Nantes' }, idempotencyKey: 'public-hosted' };

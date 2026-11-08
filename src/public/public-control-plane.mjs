@@ -315,7 +315,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
     if (typeof auditStarter === 'function') {
       const reports = await auditStarter({ request: response(request), decision });
       if (reports?.audit) request.audit = response(reports.audit);
-      if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html });
+      if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html, pdf: reports.gmb.pdf });
       if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
       if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.audit) request.audit = response(finalReport.audit); if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
       if (!reports?.deferred && !reports?.gmb?.html && !reports?.final?.html && !(reports?.completion instanceof Promise)) { request.status = reports?.audit?.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'; request.errors.push({ code: reports?.audit?.status === 'BLOCKED' ? 'AUDIT_BLOCKED' : 'AUDIT_REPORT_NOT_AVAILABLE' }); }
@@ -340,7 +340,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function publishReport(request, { kind, html, pdf = null } = {}) {
     if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport invalide.');
     const reportId = idFactory(`${kind}-report`); const htmlPath = `public-control-plane/reports/${reportId}.html`; await store.writeText(htmlPath, html, { immutable: true });
-    let pdfPath = null; if (kind === 'final' && typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
+    let pdfPath = null; if (typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
     const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString(), revokedAt: null }); const finalReady = request.reports.some(report => report.kind === 'final'); request.checkpoints = [...(request.checkpoints ?? []).filter(item => item.key !== `${kind}-report`), checkpoint(`${kind}-report`, 'SUCCEEDED', { reportId })]; request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; const auditStatus = request.audit?.status; request.status = finalReady ? (auditStatus === 'BLOCKED' ? 'BLOCKED' : auditStatus === 'PARTIAL' ? 'PARTIAL' : 'SUCCEEDED') : 'RUNNING'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }
@@ -350,7 +350,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: request.reports.map(({ id, kind, status, createdAt, expiresAt }) => ({ id, kind, status, createdAt, expiresAt })) }; }
   async function readReport(requestId, reportId, format = 'html') {
     const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError(); if (report.revokedAt) throw new AppError('Le rapport a été révoqué.', { code: 'REPORT_REVOKED', status: 410 }); if (report.expiresAt && new Date(report.expiresAt).getTime() <= clock().getTime()) throw new AppError('Le rapport a expiré.', { code: 'REPORT_EXPIRED', status: 410 });
-    if (format === 'pdf' && (!report.pdfPath || request.state !== 'FINAL_REPORT_READY')) throw new AppError('Le PDF final n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 });
+    if (format === 'pdf' && (!report.pdfPath || (report.kind === 'final' && request.state !== 'FINAL_REPORT_READY'))) throw new AppError('Le PDF n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 });
     const path = format === 'pdf' ? report.pdfPath : report.htmlPath; const value = await store.readText(path, null); if (value === null) throw new NotFoundError(); return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8' };
   }
   async function createPreparation(requestId, input = {}) {

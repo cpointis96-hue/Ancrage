@@ -200,12 +200,27 @@ async function renderAudits() {
   const selected = requests.find(request => request.id === state.selected.audits) ?? requests.at(-1);
   state.selected.audits = selected.id;
   document.querySelector(`[data-audit-select="${CSS.escape(selected.id)}"]`)?.classList.add('active');
-  const reports = selected.reports ?? [];
+  const reports = [...(selected.reports ?? [])].sort((a, b) => (a.kind === 'gmb' ? 0 : 1) - (b.kind === 'gmb' ? 0 : 1));
   detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><h2>${esc(selected.input?.name)}</h2>${stateIndicator(selected.status)}</header>
     <section class="panel">${reports.length ? reports.map(report => {
       const href = `/api/public/requests/${encodeURIComponent(selected.id)}/reports/${encodeURIComponent(report.id)}`;
-      return `<div class="version-row"><strong>${report.kind === 'final' ? 'Rapport final' : 'Rapport Google Business Profile'}</strong><div class="detail-actions"><a class="btn compact" href="${href}" target="_blank" rel="noopener">HTML</a><a class="btn compact" href="${href}/pdf" target="_blank" rel="noopener">PDF</a></div></div>`;
-    }).join('') : '<p class="muted">Rapport en attente.</p>'}</section></div>`;
+      return `<div class="version-row"><strong>${report.kind === 'final' ? 'Rapport final' : 'Rapport Google Business Profile'}</strong><div class="detail-actions"><a class="btn compact" href="${href}" download="${esc(report.kind)}.html" data-report-download>HTML</a><a class="btn compact" href="${href}/pdf" download="${esc(report.kind)}.pdf" data-report-download>PDF</a></div></div>`;
+    }).join('') : '<p class="muted">Rapport en attente.</p>'}</section>${reports.map(report => `<iframe class="audit-report" title="${report.kind === 'final' ? 'Rapport final' : 'Rapport Google Business Profile'}" sandbox="allow-same-origin" src="/api/public/requests/${encodeURIComponent(selected.id)}/reports/${encodeURIComponent(report.id)}"></iframe>`).join('')}</div>`;
+  detail.querySelectorAll('.audit-report').forEach(frame => frame.addEventListener('load', () => {
+    const doc = frame.contentDocument;
+    if (doc?.documentElement) frame.style.height = `${Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight ?? 0)}px`;
+  }));
+  bindAll('[data-report-download]', async (link, event) => {
+    event.preventDefault();
+    try {
+      const response = await fetch(link.href);
+      if (!response.ok) throw new Error('Ce fichier n’est pas disponible.');
+      const url = URL.createObjectURL(await response.blob());
+      const download = document.createElement('a');
+      download.href = url; download.download = link.download; download.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { notify(error.message); }
+  });
   bindAll('[data-audit-select]', button => { state.selected.audits = button.dataset.auditSelect; render(); });
 }
 

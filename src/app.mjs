@@ -183,7 +183,7 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
         if (report) reports[kind] = { html: (await publicAudits.readReport(audit.id, kind)).value };
-        if (kind === 'final' && report) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
+        if (report?.pdfPath) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
       }
       if (!reports.final && audit.completion) {
         reports.completion = audit.completion.then(async completed => ({ audit: await summary(completed), html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));

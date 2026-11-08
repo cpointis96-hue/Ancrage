@@ -81,16 +81,16 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
   }
   async function writeReport(result, kind) {
     const path = reportPath(result.id, kind);
-    const pdfPath = kind === 'final' ? reportPath(result.id, 'final').replace(/\.html$/, '.pdf') : null;
+    const pdfPath = reportPath(result.id, kind).replace(/\.html$/, '.pdf');
     const packet = await publishPacket(result, kind === 'gmb' ? { gmbReport: path } : { finalReport: path, pdf: pdfPath });
     await store.writeText(path, renderPublicAuditReport(result, kind, packet), { immutable: true });
-    if (pdfPath) await store.writeText(pdfPath, renderPublicAuditPdf(result, packet), { immutable: true });
+    if (pdfPath) await store.writeText(pdfPath, renderAuditDocumentPdf(buildPublicAuditDocument(result, kind, packet)), { immutable: true });
     result.reports = [...(result.reports ?? []).filter(item => item.kind !== kind), { kind, path, pdfPath, status: kind === 'gmb' ? result.stages.find(item => item.id === 'gmb-audit')?.status ?? 'PARTIAL' : result.status, availableAt: clock().toISOString() }];
   }
   async function readReport(id, kind = 'final', format = 'html') {
     const run = await get(id); if (!['gmb', 'final'].includes(kind)) throw new ValidationError('Rapport invalide.', { field: 'kind' });
     const report = run.reports?.find(item => item.kind === kind); if (!report) throw new NotFoundError('Rapport introuvable.');
-    if (!['html', 'pdf'].includes(format) || (format === 'pdf' && kind !== 'final') || (format === 'pdf' && run.status !== 'SUCCEEDED' && run.status !== 'PARTIAL')) throw new ValidationError('Format de rapport invalide.');
+    if (!['html', 'pdf'].includes(format) || (format === 'pdf' && run.status !== 'SUCCEEDED' && run.status !== 'PARTIAL' && kind === 'final')) throw new ValidationError('Format de rapport invalide.');
     const path = format === 'pdf' ? report.pdfPath : report.path; if (!path) throw new NotFoundError('Rapport introuvable.');
     const value = await store.readText(path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
     return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8', report };
