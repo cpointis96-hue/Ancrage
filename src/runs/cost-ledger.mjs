@@ -185,6 +185,12 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
   }
 
   async function withinLock(action) {
+    if (store.withLock) return store.withLock(LOCK_PATH(runId), async () => {
+      reset();
+      await hydrate();
+      await recoverThresholds();
+      return action();
+    });
     const release = await acquireLock();
     try {
       reset();
@@ -257,7 +263,7 @@ export function createCostLedger({ store, runId, envelope = {}, clock = () => ne
       const reservation = reservations.get(authorizationId);
       if (!reservation) throw new ValidationError('Autorisation de coût introuvable.', { field: 'authorizationId' });
       const targetReserved = reserved - reservation.estimate;
-      await append({ type: 'COST_RELEASED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, reason: requiredText(reason, 'reason'), state: state(spent, targetReserved) });
+      await append({ type: 'COST_RELEASED', phase: 'after', authorizationId, stepId: reservation.stepId, provider: reservation.provider, unit: reservation.unit, quantity: reservation.quantity, estimatedCost: reservation.estimate, essential: reservation.essential, reason: requiredText(reason, 'reason'), state: state(spent, targetReserved) });
       reserved = targetReserved;
       reservations.delete(authorizationId);
       return { state: state() };

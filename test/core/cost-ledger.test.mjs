@@ -35,6 +35,12 @@ test('libère une réservation lorsque l’appel échoue', async () => {
   const released = await ledger.cancel({ authorizationId: authorization.authorizationId });
   assert.equal(released.state.reserved, 0);
   assert.equal(released.state.spent, 0);
+  const resumed = createCostLedger({ store: createAtomicStore(root), runId: 'run-release', envelope: { hardLimit: 5 } });
+  await resumed.ready;
+  const next = await resumed.authorize({ stepId: 'retry', provider: 'dataforseo', unit: 'task', estimatedCost: 2 });
+  await resumed.settle({ authorizationId: next.authorizationId, actualCost: 1 });
+  assert.equal(resumed.snapshot().spent, 1);
+  assert.equal(resumed.snapshot().reserved, 0);
 });
 
 test('conserve la réservation si la persistance du règlement échoue', async () => {

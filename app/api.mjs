@@ -4,6 +4,7 @@ async function call(path, options = {}) {
     headers: { 'content-type': 'application/json', ...options.headers },
   });
   const body = await response.json();
+  if (response.status === 401 && location.pathname === '/cockpit') location.replace('/cockpit');
   if (!response.ok) throw new Error(body.error?.message ?? 'Erreur interne.');
   return body;
 }
@@ -29,6 +30,12 @@ export const api = {
   internetSearch: query => call('/internet/search', { method: 'POST', body: JSON.stringify({ query }) }),
   openWorkflowResource: (workflowId, payload) => call(`/workflows/${workflowId}/resources/open`, { method: 'POST', body: JSON.stringify(payload) }),
   openDossier: id => call(`/dossiers/${id}/open`, { method: 'POST' }),
+  placesAutocomplete: ({ input, country = '', mode = 'city', signal } = {}) => {
+    const params = new URLSearchParams({ input, mode });
+    if (country) params.set('country', country);
+    return call(`/places/autocomplete?${params}`, { signal });
+  },
+  placeDetails: (placeId, { signal } = {}) => call(`/places/details?placeId=${encodeURIComponent(placeId)}`, { signal }),
   prompts: () => call('/prompts'),
   contracts: () => call('/contracts'),
   cliProfiles: () => call('/cli-profiles'),

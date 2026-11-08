@@ -1,3 +1,4 @@
+import { buildPublicAuditDocument } from '../../src/audit/report-document.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -44,19 +45,16 @@ test('HTML, PDF et cockpit partagent le statut et les chiffres de la projection'
   assert.deepEqual(packet.aiContributions[0].provenanceRefs, ['workflow:workflow-v7', 'prompt:prompt-v9', 'contract:contract-v3', 'provider:openai', 'model:gpt-test']);
   assert.deepEqual(packet.aiContributions[0].costEventRefs, ['runs/audit-complete-1/cost-events.jsonl']);
   assert.deepEqual(packet.lineage.promptVersions, ['prompt-v9']);
-  assert.match(html, /SUCCEEDED/);
-  assert.match(html, /Mots-clés retenus<\/span><strong>1<\/strong>/);
-  assert.match(html, /Pistes concurrentielles<\/span><strong>1<\/strong>/);
-  assert.match(html, /GMB : SUCCEEDED \/ FULL/);
-  assert.match(html, /0,18 USD dépensé/);
-  assert.match(html, /evidence-gmb/);
-  assert.match(pdf, /Statut : SUCCEEDED/);
-  assert.match(pdf, /Etablissements retournes : 2/);
-  assert.match(pdf, /Pistes de mots-cles : 1/);
-  assert.match(pdf, /Concurrents : 1/);
-  assert.match(pdf, /Couverture GMB : SUCCEEDED\/FULL/);
-  assert.match(pdf, /Couts USD : depense 0.18, reserve 0, plafond 0.5/);
-  assert.match(pdf, /References preuves : evidence-gmb, evidence-seo/);
+  const document = buildPublicAuditDocument(auditRun, 'final', packet);
+  assert.equal(document.status, cockpit.status);
+  assert.match(html, /restaurant nantes/);
+  assert.match(html, /720/);
+  assert.match(html, /api.example\/gmb|maison-sillage.example/);
+  assert.match(html, /Description absente/);
+  assert.doesNotMatch(html, /USD|cost-events|evidence-gmb|SUCCEEDED/);
+  assert.match(pdf, /restaurant nantes/);
+  assert.match(pdf, /720/);
+  assert.doesNotMatch(pdf, /Couts USD|cost-events|evidence-gmb|SUCCEEDED/);
 });
 
 test('publie un snapshot hashé lisible par le cockpit sans appeler de provider ou de crawl', async () => {

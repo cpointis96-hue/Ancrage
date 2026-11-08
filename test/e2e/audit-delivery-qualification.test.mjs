@@ -105,7 +105,7 @@ test('qualifie localement audit → préparation → SiteSpec → AcceptanceRepo
       identity: { source: 'google-places', placeId: 'places/fixture-maison-sillage', address: '1 rue du Port, Nantes', coordinates: { latitude: 47.2184, longitude: -1.5536 }, primaryType: 'restaurant' },
       idempotencyKey: fixture.idempotencyKey,
     };
-    const audit = await app.publicAudits.create(auditInput);
+    const audit = await app.publicAudits.create(auditInput, { enrichment: 'dataforseo' });
     const { packet, snapshot } = await app.publicAudits.readPacket(audit.id);
 
     assert.equal(audit.provider.readiness, 'ready');
@@ -127,7 +127,7 @@ test('qualifie localement audit → préparation → SiteSpec → AcceptanceRepo
     const endpointCallsBeforeReplay = calls.length;
     const rehydrated = createApp(appOptions);
     await rehydrated.ready;
-    const replay = await rehydrated.publicAudits.create(auditInput);
+    const replay = await rehydrated.publicAudits.create(auditInput, { enrichment: 'dataforseo' });
     assert.equal(replay.id, audit.id);
     assert.equal(calls.length, endpointCallsBeforeReplay, 'La reprise idempotente ne rappelle aucun endpoint de fixture');
 

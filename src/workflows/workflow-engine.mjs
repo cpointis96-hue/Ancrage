@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { createId } from '../core/ids.mjs';
 import { ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
 import { validateWorkflowDefinition } from './workflow-validator.mjs';

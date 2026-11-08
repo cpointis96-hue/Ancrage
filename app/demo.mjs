@@ -27,6 +27,13 @@ let searchTimer;
 let activeSuggestionIndex = -1;
 let publicRequest = null;
 let demoRequest = null;
+let detectedEstablishment = null;
+const intakeParams = new URLSearchParams(window.location.search);
+if (intakeParams.get('placeId')) {
+  name.value = intakeParams.get('name') || '';
+  selectedEstablishment = { placeId: intakeParams.get('placeId'), label: name.value };
+  if (intakeParams.get('auto') === '1') setTimeout(() => form.requestSubmit(), 0);
+}
 const requestKey = prefix => `${prefix}-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
 async function jsonRequest(url, options = {}) {
   const response = await fetch(url, options); const body = await response.json();
@@ -119,7 +126,7 @@ form.addEventListener('submit', async event => {
       payload = { name: data.get('name'), city: { id: cityId(), label: selectedCityLabel, countryCode: country.value }, identity: { source: 'manual', address: { addressLine1: data.get('addressLine1'), addressLine2: data.get('addressLine2'), postalCode: data.get('postalCode'), city: selectedCityLabel, countryCode: country.value } } };
     } else {
       selectedEstablishment = selectedEstablishment ?? suggestedEstablishments.find(item => item.label === name.value) ?? null; if (!selectedEstablishment) throw new Error('Sélectionnez un établissement proposé.');
-      const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(selectedEstablishment.placeId)}`); const detailsBody = await detailsResponse.json(); const establishment = detailsBody.establishment; if (!detailsResponse.ok || detailsBody.status !== 'SUCCEEDED' || !establishment?.cityLabel || !establishment.countryCode) throw new Error('Les détails de cet établissement sont indisponibles.');
+      const detailsResponse = await fetch(`/api/places/details?placeId=${encodeURIComponent(selectedEstablishment.placeId)}`); const detailsBody = await detailsResponse.json(); const establishment = detailsBody.establishment; if (!detailsResponse.ok || detailsBody.status !== 'SUCCEEDED' || !establishment?.cityLabel || !establishment.countryCode) throw new Error('Les détails de cet établissement sont indisponibles.'); detectedEstablishment = establishment;
       payload = { name: establishment.name, city: { id: `google-${establishment.placeId.replace(/[^a-z0-9]+/gi, '-')}`, label: establishment.cityLabel, countryCode: establishment.countryCode }, domain: establishment.websiteUri, identity: { source: 'google-places', placeId: establishment.placeId, address: establishment.formattedAddress, ...(establishment.coordinates ? { coordinates: establishment.coordinates } : {}), ...(establishment.primaryType ? { primaryType: establishment.primaryType } : {}), ...(establishment.primaryTypeDisplayName ? { primaryTypeDisplayName: establishment.primaryTypeDisplayName } : {}), ...(establishment.types?.length ? { types: establishment.types } : {}) } };
     }
     publicRequest = await jsonRequest('/api/public/requests', { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('public-request') }, body: JSON.stringify({ name: payload.name, city: payload.city, domain: payload.domain ?? null, identity: payload.identity }) });
@@ -132,7 +139,7 @@ form.addEventListener('submit', async event => {
 
 preparationForm.addEventListener('submit', async event => {
   event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = true;
-  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; if (detectedEstablishment) { intakeForm.elements.address.value = detectedEstablishment.formattedAddress || ''; intakeForm.elements.locale.value = detectedEstablishment.countryCode === 'FR' ? 'fr-FR' : 'en'; } publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });
 
 intakeForm.addEventListener('submit', async event => {

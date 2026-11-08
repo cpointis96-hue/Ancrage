@@ -2,11 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSeoResearchPlan, competitorType, qualifyCompetitorResults, qualifyKeywordResults, selectBusinessCompetitors } from '../../src/audit/seo-qualification.mjs';
 
+test('lit le vrai contrat keywords_positions sans inventer une identité métier', () => {
+  const result = qualifyCompetitorResults({ tasks: [{ result: [{ items: [{ domain: 'voisin.example', keywords_positions: { 'restaurant Teyran': [2, 8], 'restaurant Mende': [4] }, keywords_count: 2, avg_position: 4.6 }] }] }] }, { selectedKeywords: ['restaurant Teyran'], locality: 'Teyran' });
+  assert.equal(result.selected.length, 0);
+  assert.equal(result.candidates.length, 1);
+  assert.deepEqual(result.candidates[0].matchedKeywords, ['restaurant Teyran']);
+  assert.deepEqual(result.candidates[0].keywordPositions, { 'restaurant Teyran': [2, 8] });
+  const qualified = selectBusinessCompetitors([...result.candidates, { title: 'Voisin', domain: 'voisin.example', scope: 'local-serp', source: 'dataforseo_local_finder' }]);
+  assert.equal(qualified.selected.length, 1);
+  assert.deepEqual(qualified.selected[0].keywordPositions['restaurant Teyran'], [2, 8]);
+});
+
 test('construit les seeds depuis la catégorie observée et la ville', () => {
   const plan = buildSeoResearchPlan({ cityLabel: 'Teyran', country: 'FR', identity: { primaryType: 'restaurant' } });
-  assert.deepEqual(plan.seeds, ['restaurant Teyran', 'restaurant Teyran menu', 'restaurant Teyran reservation']);
+  assert.deepEqual(plan.seeds, ['restaurant Teyran']);
   assert.deepEqual(plan.anchors, ['restaurant']);
   assert.equal(plan.scope, 'local-business-category');
+});
+
+test('le plan de secours n’invente aucun service pour une autre activité', () => {
+  const plan = buildSeoResearchPlan({ name: 'Atelier des Pins', cityLabel: 'Tours', country: 'FR', identity: { primaryTypeDisplayName: 'Plombier' } });
+  assert.deepEqual(plan.seeds, ['plombier Tours', 'Atelier des Pins Tours']);
+  assert.doesNotMatch(plan.seeds.join(' '), /menu|reservation|livraison/);
 });
 
 test('rejette les mots-clés hors activité mais conserve les opportunités de marché liées à la catégorie', () => {
@@ -99,7 +116,7 @@ test('écarte les villes et enseignes remontées par une idée nationale', () =>
     { keyword: 'menu restaurant scolaire', keyword_info: { search_volume: 2900 } },
     { keyword: 'menu restaurant', keyword_info: { search_volume: 1000 } },
   ] }] }] }, plan);
-  assert.deepEqual(result.selected.map(item => item.keyword), ['restaurant Teyran menu', 'menu restaurant']);
+  assert.deepEqual(result.selected.map(item => item.keyword), ['restaurant Teyran menu']);
   assert.equal(result.rejected.find(item => item.keyword === 'restaurant Mende').reason, 'QUERY_NOT_RELEVANT_TO_LOCAL_BUSINESS');
   assert.equal(result.rejected.find(item => item.keyword === "Damian's restaurant menu").reason, 'QUERY_NOT_RELEVANT_TO_LOCAL_BUSINESS');
 });

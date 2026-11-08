@@ -1,0 +1,13 @@
+{
+  "framework": null,
+  "outputDirectory": "public",
+  "regions": ["iad1"],
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 300,
+      "includeFiles": "{app,fixtures/defaults}/**"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
+  "crons": [{ "path": "/api/internal/work", "schedule": "0 4 * * *" }]
+}

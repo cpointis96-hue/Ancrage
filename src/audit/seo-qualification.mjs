@@ -76,9 +76,10 @@ function hasNamedNoise(keyword, plan) {
   const normalized = normalize(keyword);
   if (OFF_TOPIC_TERMS.some(term => normalized.includes(normalize(term)))) return true;
   if (String(keyword).includes("'") || String(keyword).includes('’')) return true;
+  if (GENERIC_CATEGORY_QUERIES.has(normalized)) return true;
   if (plan.locality && includesPhraseOrWords(keyword, plan.locality)) return false;
   if (plan.name && keywordMatchesName(keyword, plan.name)) return false;
-  return !GENERIC_CATEGORY_QUERIES.has(normalized);
+  return Boolean(plan.locality);
 }
 
 function domainOf(value) {
@@ -99,8 +100,7 @@ export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, 
     : primaryAnchor && locality
     ? unique([
       `${primaryAnchor} ${locality}`,
-      `${primaryAnchor} ${locality} menu`,
-      name ? `${name} ${locality}` : `${primaryAnchor} ${locality} reservation`,
+      name ? `${name} ${locality}` : null,
     ])
     : [];
   return {
@@ -110,6 +110,7 @@ export function buildSeoResearchPlan({ name, cityLabel, country, identity = {}, 
     anchors,
     category: planned?.category ?? primaryAnchor,
     seeds,
+    queries: plannedQueries.filter(item => seeds.includes(item.query)),
     scope: primaryAnchor ? 'local-business-category' : 'local-business-category-unknown',
     planner: plannedQueries.length ? 'configured-ai' : 'deterministic-fallback',
     reasons: primaryAnchor ? ['OBSERVED_PRIMARY_CATEGORY'] : ['IDENTITY_CATEGORY_NOT_OBSERVED'],
@@ -124,6 +125,7 @@ function normalizedKeywordRow(item, plan) {
   const businessMatch = plan.anchors.some(anchor => includesPhraseOrWords(keyword, anchor));
   const nameMatch = keywordMatchesName(keyword, plan.name);
   const intent = keywordIntent(item, keyword);
+  const targetPage = plan.queries?.find(item => normalize(item.query) === normalize(keyword))?.targetPage ?? (intent === 'menu' ? 'page-menu' : intent === 'reservation' ? 'page-reservation' : intent === 'delivery' ? 'page-services' : intent === 'contact' ? 'page-contact' : 'page-accueil');
   const searchVolume = info.search_volume ?? null;
   const competition = info.competition ?? null;
   const cpc = info.cpc ?? null;
@@ -137,6 +139,7 @@ function normalizedKeywordRow(item, plan) {
     cpc,
     keywordDifficulty,
     intent,
+    targetPage,
     source: item?.source ?? item?.keyword_data?.source ?? null,
     sourceSeed: item?.seed ?? item?.source_seed ?? item?.keyword_data?.seed ?? null,
     localityMatch,
@@ -261,6 +264,7 @@ export function mergeCompetitorCandidates(candidates) {
       scopes: unique([...previous.scopes, ...normalized.scopes]),
       sources: unique([...previous.sources, ...normalized.sources]),
       matchedKeywords: unique([...previous.matchedKeywords, ...normalized.matchedKeywords]),
+      keywordPositions: { ...(previous.keywordPositions ?? {}), ...(normalized.keywordPositions ?? {}) },
       provenances: unique([...previous.provenances, ...normalized.provenances]),
       businessConfirmed: previous.businessConfirmed || normalized.businessConfirmed,
       mergedCandidateCount: (previous.mergedCandidateCount ?? 1) + 1,
@@ -296,7 +300,7 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
     const domain = domainOf(item?.domain) ?? domainOf(item?.url) ?? domainOf(item?.target);
     if (!domain) continue;
     const metrics = competitorMetrics(item);
-    const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : [];
+    const rawKeywords = Array.isArray(item?.keywords) ? item.keywords : item?.keyword ? [item.keyword] : Object.keys(item?.keywords_positions ?? {});
     const matchedKeywords = rawKeywords.map(value => String(value).trim()).filter(value => wanted.has(normalize(value)));
     if (!matchedKeywords.length) continue;
     const existing = byDomain.get(domain);
@@ -307,6 +311,7 @@ export function qualifyCompetitorResults(result, { targetDomain = null, selected
       locality: locality ?? null,
       classification: 'SEO_COMPETITOR_CANDIDATE',
       matchedKeywords,
+      keywordPositions: Object.fromEntries(matchedKeywords.filter(keyword => Array.isArray(item.keywords_positions?.[keyword])).map(keyword => [keyword, item.keywords_positions[keyword].filter(value => Number.isInteger(value) && value > 0)])),
       businessConfirmed: item?.is_business === true || item?.business === true,
       providerBusinessType: item?.business_type ?? item?.entity_type ?? item?.type ?? null,
       ...metrics,

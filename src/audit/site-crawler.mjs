@@ -185,7 +185,7 @@ function redirectTarget(response, base) {
   catch (error) { if (error?.code) throw error; throw crawlerError('Redirection invalide.', 'REDIRECT_INVALID'); }
 }
 
-export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup = hostname => dnsLookup(hostname, { all: true, verbatim: true }), maxPages = DEFAULT_MAX_PAGES, maxBytes = DEFAULT_MAX_BYTES, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup = hostname => dnsLookup(hostname, { all: true, verbatim: true }), maxPages = DEFAULT_MAX_PAGES, maxBytes = DEFAULT_MAX_BYTES, timeoutMs = DEFAULT_TIMEOUT_MS, prioritizeClientPages = false } = {}) {
   if (typeof fetchImpl !== 'function') throw new ValidationError('fetchImpl est requis.');
   if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > DEFAULT_MAX_PAGES) throw new ValidationError('maxPages est invalide.', { field: 'maxPages' });
   if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BYTES) throw new ValidationError('maxBytes est invalide.', { field: 'maxBytes' });
@@ -213,6 +213,7 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
         let response;
         for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
           await assertPublic(current, lookup, signal);
+          if (root.protocol === 'http:' && current.protocol === 'https:' && current.hostname === root.hostname && !current.port) root.protocol = 'https:';
           if (current.origin !== root.origin) throw crawlerError('Redirection hors origin.', 'REDIRECT_OUT_OF_ORIGIN');
           response = await awaitWithSignal(fetchImpl(current.href, { redirect: 'manual', signal }), signal);
           const status = Number(response.status ?? 200);
@@ -231,6 +232,10 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
         const html = await readHtml(response, { signal, remainingBytes: () => maxBytes - usedBytes, consumeBytes: size => { usedBytes += size; } });
         pages.push({ url: current.href, status, crawlStatus: 'complete', html });
         for (const link of links(html, current.href, root.origin)) if (!visited.has(link) && !queue.includes(link)) queue.push(link);
+        if (prioritizeClientPages) {
+          const important = value => /contact|reserv|booking|menu|carte|service|horaire|acces/i.test(new URL(value).pathname) ? 0 : 1;
+          queue.sort((left, right) => important(left) - important(right));
+        }
       } catch (error) {
         pages.push({ url, status: null, crawlStatus: 'blocked', html: '', errorCode: error.code ?? 'FETCH_FAILED' });
         if (error.code === 'CRAWL_TIMEOUT') break;

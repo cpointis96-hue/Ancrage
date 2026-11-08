@@ -4,6 +4,13 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createSeoResearchPlanner } from '../../src/audit/seo-research-planner.mjs';
+
+test('le secours sans IA reste adapté à l’activité, sans menu ni réservation supposés', async () => {
+  const planner = createSeoResearchPlanner();
+  const result = await planner({ name: 'Atelier des Pins', cityLabel: 'Tours', categories: ['Plombier'] });
+  assert.deepEqual(result.plan.queries.map(item => item.query), ['Plombier Tours', 'Atelier des Pins Tours']);
+  assert.doesNotMatch(JSON.stringify(result.plan), /menu|reservation|livraison/);
+});
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
 import { createCostLedger } from '../../src/runs/cost-ledger.mjs';
 
@@ -41,6 +48,35 @@ async function ledger(failEventType = null) {
   } } : store;
   return { store, ledger: createCostLedger({ store: journalStore, runId: 'planner-run', envelope: { hardLimit: 0.5 } }) };
 }
+
+test('personnalise depuis un extrait vérifiable et refuse une spécialité inventée', async () => {
+  const contract = JSON.parse(await readFile(new URL('../../fixtures/defaults/contracts/seo-research-plan.schema.json', import.meta.url), 'utf8'));
+  const quote = 'Restaurant avec terrasse à Teyran';
+  for (const [query, expected] of [['restaurant terrasse Teyran', 'SUCCEEDED'], ['restaurant italien Teyran', 'PARTIAL']]) {
+    const output = { category: 'restaurant', queries: [{ query, intent: 'discovery', basis: 'observed-content', targetPage: 'page-accueil', sourceUrl: 'https://fixture.example/', quote, reason: 'Vérifier la visibilité de la terrasse annoncée.' }] };
+    const deps = dependencies(output);
+    deps.contracts.getActiveVersion = async () => ({ versionId: 'contract-content-test', schema: contract });
+    const context = await ledger();
+    const result = await createSeoResearchPlanner(deps)({ name: 'Test', cityLabel: 'Teyran', country: 'FR', categories: ['restaurant'], sitePages: [{ url: 'https://fixture.example/', text: quote }], ledger: context.ledger });
+    assert.equal(result.status, expected);
+    if (expected === 'SUCCEEDED') assert.equal(result.plan.queries[0].quote, quote);
+    else assert.equal(result.cause, 'AI_QUERY_PLAN_REJECTED');
+  }
+});
+
+test('règle la consommation tokens au tarif versionné sans rejeter le plan IA', async () => {
+  const output = { category: 'restaurant', queries: [{ query: 'restaurant Teyran', intent: 'discovery', basis: 'observed-category' }] };
+  const deps = dependencies(output);
+  const definition = JSON.parse(await readFile(new URL('../../fixtures/defaults/workflows/local-seo-research.json', import.meta.url), 'utf8'));
+  deps.workflows.resolveActive = async () => ({ versionId: 'priced-workflow', definition });
+  deps.adapters.openai.generate = async () => ({ output, usage: { prompt_tokens: 1000, prompt_tokens_details: { cached_tokens: 100 }, completion_tokens: 100 } });
+  const context = await ledger();
+  const result = await createSeoResearchPlanner(deps)({ name: 'Test', cityLabel: 'Teyran', country: 'FR', categories: ['restaurant'], ledger: context.ledger });
+  assert.equal(result.status, 'SUCCEEDED');
+  assert.ok(Math.abs(context.ledger.snapshot().spent - 0.0011325) < 1e-12);
+  assert.equal(context.ledger.snapshot().reserved, 0);
+  assert.equal(result.source.pricing.model, 'gpt-5.4-mini');
+});
 
 test('exécute le plan IA configuré et borne sa sortie', async () => {
   const output = { category: 'restaurant', queries: [{ query: 'restaurant Assas', intent: 'discovery', basis: 'observed-category' }] };

@@ -15,7 +15,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
   async function list() {
     const [items, status] = await Promise.all([defs(), statuses()]);
     return Promise.all(items.map(async item => {
-      const configured = await secretStore.has(SECRET_REF(item.id));
+      const configured = await secretStore.has(SECRET_REF(item.id)) || (item.id === 'openai' && Boolean(process.env.OPENAI_API_KEY));
       return {
         ...item,
         configured,
@@ -41,7 +41,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
   }
   async function deleteSecret(id) { await getDefinition(id); await secretStore.delete(SECRET_REF(id)); await saveStatus(id, { enabled: false, health: 'unknown', lastCheckedAt: null, lastErrorCode: null }); return (await list()).find(item => item.id === id); }
   async function testConnection(id, { timeoutMs = 8000, secretOverride = null } = {}) {
-    const definition = await getDefinition(id); const secret = secretOverride ?? await secretStore.get(SECRET_REF(id));
+    const definition = await getDefinition(id); const secret = secretOverride ?? await secretStore.get(SECRET_REF(id)) ?? (id === 'openai' ? process.env.OPENAI_API_KEY : null);
     if (!secret) throw new ValidationError('Secret absente.');
     const adapter = adapters[id];
     const wasEnabled = Boolean((await statuses())[id]?.enabled);
@@ -66,7 +66,7 @@ export function createProviderRegistry({ store, secretStore, adapters = {}, cloc
     const provider = (await list()).find(item => item.id === id);
     if (!provider) throw new NotFoundError(`Provider introuvable : ${id}`);
     if (!provider.configured || provider.health !== 'healthy' || !provider.enabled) throw new ConflictError(`Le provider ${id} doit être configuré, testé et activé.`);
-    const secret = await secretStore.get(SECRET_REF(id));
+    const secret = await secretStore.get(SECRET_REF(id)) ?? (id === 'openai' ? process.env.OPENAI_API_KEY : null);
     if (!secret) throw new ValidationError('Secret provider absent.');
     return { provider, secret };
   }

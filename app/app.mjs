@@ -3,6 +3,7 @@ import { icon } from './icons.mjs';
 
 const views = [
   { id: 'inbox', label: 'À traiter', icon: 'inbox', group: 'ops' },
+  { id: 'audits', label: 'Audits', icon: 'runs', group: 'ops' },
   { id: 'runs', label: 'Runs', icon: 'runs', group: 'ops' },
   { id: 'dossiers', label: 'Dossiers', icon: 'dossiers', group: 'ops' },
   { id: 'configuration', label: 'Configuration', icon: 'config', group: 'control' },
@@ -32,6 +33,7 @@ const detail = $('#detail');
 let toastTimer;
 let renderQueue = Promise.resolve();
 let pointerScroll = null;
+let initialRender = true;
 
 function capturePointerScroll(event) {
   if (!event.target.closest('button, input, select, textarea, a')) return;
@@ -184,6 +186,27 @@ function publicInboxDescriptor(item) {
   if (status === 'READY_FOR_PROSPECT') return { action: 'Ouvrir la démo', phase: 'Démo validée', status: 'APPROVED' };
   if (status === 'NEEDS_CORRECTION') return { action: 'Voir les corrections', phase: 'Corrections demandées', status: 'CHANGES_REQUESTED' };
   return { action: 'Vérifier la préparation', phase: 'Préparation reçue', status: 'WARN' };
+}
+
+async function renderAudits() {
+  const requests = await api.publicRequests();
+  list.innerHTML = listHeader('Audits', '<button class="btn compact" type="button" data-refresh-audits>Actualiser</button>') + (requests.length ? requests.map(request => `
+    <button class="list-row ${state.selected.audits === request.id ? 'active' : ''}" type="button" data-audit-select="${esc(request.id)}">
+      <span class="row-top"><strong>${esc(request.input?.name)}</strong>${stateIndicator(request.status)}</span>
+      <span class="row-meta">${formatDate(request.createdAt)}</span>
+    </button>`).join('') : '<p class="list-empty">Aucune demande d’audit.</p>');
+  $('[data-refresh-audits]')?.addEventListener('click', () => render());
+  if (!requests.length) { detail.innerHTML = ''; return; }
+  const selected = requests.find(request => request.id === state.selected.audits) ?? requests.at(-1);
+  state.selected.audits = selected.id;
+  document.querySelector(`[data-audit-select="${CSS.escape(selected.id)}"]`)?.classList.add('active');
+  const reports = selected.reports ?? [];
+  detail.innerHTML = `<div class="detail-inner"><header class="inspect-head"><h2>${esc(selected.input?.name)}</h2>${stateIndicator(selected.status)}</header>
+    <section class="panel">${reports.length ? reports.map(report => {
+      const href = `/api/public/requests/${encodeURIComponent(selected.id)}/reports/${encodeURIComponent(report.id)}`;
+      return `<div class="version-row"><strong>${report.kind === 'final' ? 'Rapport final' : 'Rapport Google Business Profile'}</strong><div class="detail-actions"><a class="btn compact" href="${href}" target="_blank" rel="noopener">HTML</a><a class="btn compact" href="${href}/pdf" target="_blank" rel="noopener">PDF</a></div></div>`;
+    }).join('') : '<p class="muted">Rapport en attente.</p>'}</section></div>`;
+  bindAll('[data-audit-select]', button => { state.selected.audits = button.dataset.auditSelect; render(); });
 }
 
 async function renderInbox() {
@@ -667,6 +690,11 @@ async function renderInternet() {
     if (result.ok) { state.internetResult = result.value; await render(); }
   };
   $('[data-internet-form]')?.addEventListener('submit', submitInternet);
+  const searchInput = $('[data-internet-form] input[name="query"]');
+  const focusSearchInput = event => { event.stopPropagation(); searchInput.focus({ preventScroll: true }); };
+  searchInput?.addEventListener('pointerdown', focusSearchInput);
+  searchInput?.addEventListener('click', focusSearchInput);
+  searchInput?.addEventListener('input', () => { state.internetQuery = searchInput.value; });
   $('[data-toggle-internet-config]')?.addEventListener('click', () => { state.internetConfigOpen = !state.internetConfigOpen; render(); });
 }
 
@@ -674,9 +702,15 @@ async function renderNow({ preserveScroll = true } = {}) {
       const scroll = preserveScroll ? { list: list.scrollTop, detail: pointerScroll?.top ?? detail.scrollTop, pageTop: pointerScroll?.pageTop ?? (document.scrollingElement?.scrollTop ?? 0), pageLeft: pointerScroll?.pageLeft ?? (document.scrollingElement?.scrollLeft ?? 0) } : null;
   renderNav();
   document.body.dataset.view = state.view;
-  loading();
+  if (initialRender) {
+    loading();
+    initialRender = false;
+  }
+  list.inert = true;
+  detail.inert = true;
   try {
     if (state.view === 'inbox') await renderInbox();
+    else if (state.view === 'audits') await renderAudits();
     else if (state.view === 'runs') await renderRuns();
     else if (state.view === 'dossiers') await renderDossiers();
     else if (state.view === 'configuration') await renderConfiguration();
@@ -685,6 +719,8 @@ async function renderNow({ preserveScroll = true } = {}) {
   } catch (error) {
     showError(error);
   } finally {
+    list.inert = false;
+    detail.inert = false;
     if (scroll) {
       list.scrollTop = scroll.list;
       detail.scrollTop = scroll.detail;

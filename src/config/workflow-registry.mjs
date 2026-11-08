@@ -60,7 +60,7 @@ export function createWorkflowRegistry({ store, clock = () => new Date(), prompt
     if (!definition || typeof definition !== 'object' || definition.id !== id) throw new ValidationError('Définition de workflow invalide.');
     const validated = validateWorkflowDefinition(definition);
     await validateReferences(validated);
-    const result = await store.writeJson(workflowPath(id), validated, { expectedHash });
+    await store.writeJson(workflowPath(id), validated, { expectedHash });
     await ensureIndexed(id);
     const currentManifest = await store.readJson(manifestPath(id), null);
     if (!currentManifest) {

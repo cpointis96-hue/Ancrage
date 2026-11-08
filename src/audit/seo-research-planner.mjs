@@ -2,7 +2,7 @@ import { validateJsonSchema } from '../core/json-schema.mjs';
 import { parsePromptMarkdown } from '../config/frontmatter.mjs';
 import { normalize } from './seo-qualification.mjs';
 
-const MAX_QUERIES = 6;
+const MAX_QUERIES = 3;
 
 function clean(value) { return String(value ?? '').trim(); }
 function uniqueQueries(values) {
@@ -13,22 +13,31 @@ function includesText(value, expected) { return normalize(value).includes(normal
 function knownCost(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null; }
 function fallbackResult(fallback, cause) { return { status: 'PARTIAL', cause, execution: 'not-run', plan: fallback, source: 'deterministic-fallback' }; }
 function errorCode(error, fallback) { return typeof error?.code === 'string' && error.code ? error.code : fallback; }
+function costFromUsage(usage, step) {
+  const pricing = step.pricing;
+  if (pricing?.provider !== step.provider || pricing?.model !== step.model || pricing?.currency !== 'USD') return null;
+  if (![pricing.inputPerMillion, pricing.cachedInputPerMillion, pricing.outputPerMillion].every(value => knownCost(value) !== null)) return null;
+  const input = usage?.prompt_tokens; const output = usage?.completion_tokens; const cached = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  if (![input, output, cached].every(value => Number.isInteger(value) && value >= 0) || cached > input) return null;
+  return ((input - cached) * pricing.inputPerMillion + cached * pricing.cachedInputPerMillion + output * pricing.outputPerMillion) / 1_000_000;
+}
 function executionFor(adapter, failed = false) {
   const execution = adapter?.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network';
   return failed ? `${execution}-failed` : execution;
 }
 
 export function createSeoResearchPlanner({ providers, adapters, prompts, workflows, contracts } = {}) {
-  return async function plan({ name, cityLabel, country, categories = [], ledger = null, costEventsRef = null } = {}) {
+  return async function plan({ name, cityLabel, country, categories = [], sitePages = [], rankedKeywords = [], ledger = null, costEventsRef = null } = {}) {
     const fallback = {
       category: categories[0] ?? null,
       queries: categories[0] && cityLabel ? [
         { query: `${categories[0]} ${cityLabel}`, intent: 'discovery', basis: 'observed-category' },
-        { query: `${categories[0]} ${cityLabel} menu`, intent: 'menu', basis: 'observed-category' },
-        { query: `${name} ${cityLabel}`, intent: 'brand', basis: 'business-name' },
+        ...(name ? [{ query: `${name} ${cityLabel}`, intent: 'brand', basis: 'business-name' }] : []),
       ] : [],
     };
     if (!categories.length || !cityLabel) return fallbackResult(fallback, 'IDENTITY_CATEGORY_NOT_OBSERVED');
+
+    const generationInput = { name, locality: cityLabel, country, allowedCategories: categories, sitePages: sitePages.slice(0, 6).map(page => ({ url: page.url, title: String(page.title ?? '').slice(0, 200), description: String(page.description ?? '').slice(0, 500), heading: String(page.heading ?? '').slice(0, 200), text: String(page.text ?? '').slice(0, 1200) })), rankedKeywords: rankedKeywords.slice(0, 30) };
 
     let active; let step; let adapter; let estimate; let context; let prompt; let promptText; let contract; let authorization;
     try {
@@ -45,6 +54,8 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
       if (!prompt.activeVersionId) return fallbackResult(fallback, 'AI_PROMPT_NOT_ACTIVE');
       promptText = await prompts.resolveRevision(step.promptRef, prompt.activeVersionId);
       contract = await contracts.getActiveVersion(step.contractRef);
+      const upperCost = costFromUsage({ prompt_tokens: Buffer.byteLength(parsePromptMarkdown(promptText).body + JSON.stringify(generationInput), 'utf8') + 256, completion_tokens: step.maxOutputTokens ?? 700 }, step);
+      if (upperCost !== null && upperCost > estimate) return fallbackResult(fallback, 'AI_INPUT_EXCEEDS_BUDGET');
       authorization = await ledger.authorize({ stepId: step.id, provider: step.provider, unit: 'request', quantity: 1, estimatedCost: estimate, essential: false });
     } catch (error) {
       return fallbackResult(fallback, errorCode(error, 'AI_RESEARCH_PLAN_FAILED'));
@@ -58,6 +69,7 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
       model: step.model,
       maxOutputTokens: step.maxOutputTokens ?? 700,
       configuredBudget: estimate,
+      ...(step.pricing ? { pricing: step.pricing } : {}),
       costEventsRef,
       authorizationId: authorization.authorizationId,
       ...extra,
@@ -69,7 +81,7 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
         secret: context.secret,
         model: step.model,
         system: parsePromptMarkdown(promptText).body,
-        input: { name, locality: cityLabel, country, allowedCategories: categories },
+        input: generationInput,
         maxOutputTokens: step.maxOutputTokens ?? 700,
       });
     } catch (providerError) {
@@ -82,7 +94,7 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
       }
     }
 
-    const actualCost = knownCost(generated?.cost ?? generated?.usage?.cost);
+    const actualCost = knownCost(generated?.cost ?? generated?.usage?.cost ?? costFromUsage(generated?.usage, step));
     if (actualCost === null) return { status: 'PARTIAL', cause: 'AI_COST_UNAVAILABLE_AFTER_CALL', execution: executionFor(adapter), plan: fallback, source: source({ usage: generated?.usage ?? null, costEvent: { type: 'COST_AUTHORIZED' }, ledgerReconciliation: 'REQUIRED' }) };
 
     let settled;
@@ -104,7 +116,14 @@ export function createSeoResearchPlanner({ providers, adapters, prompts, workflo
       if (!query || query.length > 120 || !includesText(query, cityLabel)) return null;
       if (item.basis === 'business-name' && !includesText(query, name)) return null;
       if (item.basis === 'observed-category' && !includesText(query, category)) return null;
-      return { query, intent: item.intent, basis: item.basis };
+      if (item.basis === 'observed-content') {
+        const page = sitePages.find(page => page.url === item.sourceUrl);
+        const quote = clean(item.quote);
+        if (!page || quote.length < 10 || !includesText(page.text, quote) || !includesText(query, category)) return null;
+        const allowedWords = new Set(normalize(`${quote} ${category} ${cityLabel} ${name} a au aux de du des le la les en et pour`).split(' '));
+        if (normalize(query).split(' ').some(word => !allowedWords.has(word))) return null;
+      }
+      return { query, intent: item.intent, basis: item.basis, ...(item.targetPage ? { targetPage: item.targetPage } : {}), ...(item.reason ? { reason: item.reason } : {}), ...(item.basis === 'observed-content' ? { sourceUrl: item.sourceUrl, quote: item.quote } : {}) };
     })).slice(0, MAX_QUERIES);
     if (!queries.length) return { status: 'PARTIAL', cause: 'AI_QUERY_PLAN_REJECTED', execution: executionFor(adapter), plan: fallback, source: settledSource };
     return { status: 'SUCCEEDED', execution: executionFor(adapter), plan: { category, queries }, source: settledSource };

@@ -1,0 +1,207 @@
+{
+  "type": "object",
+  "required": [
+    "observations",
+    "priorities",
+    "competitors",
+    "queries",
+    "conclusion",
+    "limitations"
+  ],
+  "properties": {
+    "observations": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "fact",
+          "quote"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "fact": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "priorities": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "observationIds",
+          "consequence",
+          "correction",
+          "limitation"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "observationIds": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "consequence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "correction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "limitation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "competitors": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "comparison"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "comparison": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "queries": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "query",
+          "intent",
+          "targetPage",
+          "reason"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "targetPage": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "conclusion": {
+      "type": "object",
+      "required": [
+        "decision",
+        "reason",
+        "observationIds"
+      ],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "KEEP_SITE",
+            "IMPROVE_SITE",
+            "GOOGLE_PROFILE_FIRST",
+            "SITE_USEFUL",
+            "UNDETERMINED"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "observationIds": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$id": "public-observation-analysis"
+}

@@ -29,12 +29,19 @@ function safeCompetitor(value) {
     url: value?.url ?? null,
     scope: value?.scope ?? null,
     type: value?.type ?? value?.classification ?? 'unknown',
+    matchedKeywords: value?.matchedKeywords ?? [],
+    keywordPositions: value?.keywordPositions ?? {},
+    scopes: value?.scopes ?? [value?.scope].filter(Boolean),
+    ...(value?.comparison ? { comparison: value.comparison } : {}),
   };
 }
 function safeKeyword(value) {
   return {
     keyword: value?.keyword ?? null,
     intent: value?.intent ?? null,
+    targetPage: value?.targetPage ?? null,
+    localityMatch: value?.localityMatch ?? false,
+    evidence: value?.evidence ?? null,
     scope: value?.scope ?? null,
     searchVolume: Number.isFinite(value?.searchVolume) ? value.searchVolume : null,
     cpc: Number.isFinite(value?.cpc) ? value.cpc : null,
@@ -47,10 +54,14 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
   const observedAt = auditRun.updatedAt ?? auditRun.startedAt ?? new Date(0).toISOString();
   const input = auditRun.input ?? {};
   const identity = input.identity ?? {};
-  const evidenceRefs = unique((auditRun.evidence ?? []).map(item => item?.id));
+  const seenEvidence = new Set();
+  const evidence = [...(auditRun.evidence ?? []), ...(auditRun.modules?.seo?.findings ?? []).map(item => item.evidence).filter(Boolean)].filter(item => !seenEvidence.has(item.id) && seenEvidence.add(item.id));
+  const evidenceRefs = unique(evidence.map(item => item?.id)).slice(0, 200);
   const seoFindings = (auditRun.modules?.seo?.findings ?? []).map((item, index) => ({
     ref: `finding:${item.code ?? 'OBSERVATION'}:${index + 1}`,
     code: item.code ?? 'OBSERVATION', severity: item.severity ?? null,
+    detail: item.detail ?? null,
+    url: item.evidence?.canonicalUrl ?? evidence.find(value => value.id === item.evidence?.id)?.canonicalUrl ?? null,
     classification: item.classification ?? null,
     evidenceRefs: unique([item.evidence?.id]),
   }));
@@ -90,7 +101,7 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
         decision: input.mode ?? 'CONFIRM',
         establishmentStatus: stage(auditRun, 'establishment-search').status,
         siteStatus: auditRun.modules?.site?.confirmation?.status ?? stage(auditRun, 'site-discovery').status,
-        selectedEstablishmentEvidenceRefs: evidenceRefs,
+        selectedEstablishmentEvidenceRefs: evidenceRefs.slice(0, 50),
       },
     },
     values: {
@@ -106,11 +117,14 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
     },
     evidenceRefs,
     findings: [
-      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null })), evidenceRefs },
-      { ref: 'finding:SEO_PAGES_ANALYZED', code: 'SEO_PAGES_ANALYZED', count: auditRun.modules?.seo?.summary?.pagesAnalyzed ?? 0, evidenceRefs },
+      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null, phone: item?.phone ?? null, category: item?.category ?? null, rating: item?.rating ?? null, observedAt: item?.observedAt ?? null })), evidenceRefs },
+      { ref: 'finding:SEO_PAGES_ANALYZED', code: 'SEO_PAGES_ANALYZED', count: auditRun.modules?.seo?.pages ? auditRun.modules.seo.pages.filter(item => item.crawlStatus === 'complete').length : auditRun.modules?.seo?.summary?.pagesAnalyzed ?? 0, evidenceRefs },
       { ref: 'finding:STAGES', code: 'STAGES', items: (auditRun.stages ?? []).map(item => ({ id: item.id, status: item.status, cause: item.cause ?? null })), evidenceRefs: [] },
-      { ref: 'finding:EVIDENCE', code: 'EVIDENCE', items: (auditRun.evidence ?? []).map(item => ({ ref: item.id, provider: item.provider ?? null, canonicalUrl: item.canonicalUrl ?? null })), evidenceRefs },
-      ...seoFindings,
+      { ref: 'finding:EVIDENCE', code: 'EVIDENCE', items: evidence.slice(0, 200).map(item => ({ ref: item.id, provider: item.provider ?? 'crawl HTML', canonicalUrl: item.canonicalUrl ?? null })), evidenceRefs },
+      { ref: 'finding:SEO_RANKINGS', code: 'SEO_RANKINGS', items: auditRun.modules?.keywords?.rankedKeywords ?? [], cause: auditRun.modules?.keywords?.rankings?.cause ?? null, evidenceRefs },
+      { ref: 'finding:SEO_RESEARCH_QUERIES', code: 'SEO_RESEARCH_QUERIES', items: auditRun.modules?.keywords?.researchPlan?.queries?.length ? auditRun.modules.keywords.researchPlan.queries : auditRun.modules?.keywords?.researchPlan?.seeds ?? [], evidenceRefs: [] },
+      ...(auditRun.modules?.observation ? [{ ref: 'finding:PUBLIC_OBSERVATIONS', code: 'PUBLIC_OBSERVATIONS', items: [auditRun.modules.observation], evidenceRefs }] : []),
+      ...seoFindings.slice(0, auditRun.modules?.observation ? 193 : 194),
     ],
     market: {
       searchMarket: { engine: 'google', countryCode, languageCode, location: input.city?.label ?? 'Inconnue', device: 'desktop' },
@@ -120,13 +134,13 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
     },
     deterministicRecommendations: (strategy.recommendations ?? []).map((text, index) => ({ code: `RECOMMENDATION_${index + 1}`, text, findingRefs: [] })),
     aiContributions: [{
-      purpose: 'SEO_RESEARCH_PLAN',
+      purpose: auditRun.modules?.observation ? 'PUBLIC_OBSERVATION_ANALYSIS' : 'SEO_RESEARCH_PLAN',
       status: planner.execution === 'not-run' ? 'NOT_RUN' : ['SUCCEEDED', 'PARTIAL', 'BLOCKED', 'FAILED'].includes(planner.status) ? planner.status : 'NOT_RUN',
       cause: planner.cause ?? null,
       executionRef: planner.execution && planner.execution !== 'not-run' ? `execution:${planner.execution}` : null,
       provenanceRefs: plannerProvenanceRefs,
       costEventRefs: plannerSource.costEventsRef ? [plannerSource.costEventsRef] : [],
-      recommendations: [],
+      recommendations: auditRun.modules?.observation?.priorities ?? [],
     }],
     limitations: unique((auditRun.stages ?? []).filter(item => item.cause).map(item => item.cause)),
     cost: {
@@ -183,6 +197,11 @@ export function projectAuditPacket(packet) {
       recommendations: packet.deterministicRecommendations,
       limitations: packet.limitations,
       aiContributions: packet.aiContributions,
+      technicalFindings: packet.findings.filter(item => item.classification === 'CALCULATED'),
+      rankedKeywords: items('SEO_RANKINGS'),
+      researchQueries: items('SEO_RESEARCH_QUERIES'),
+      observation: items('PUBLIC_OBSERVATIONS')[0] ?? null,
+      rankingCause: packet.findings.find(item => item.code === 'SEO_RANKINGS')?.cause ?? null,
     },
     preparationDraft: packet.preparationDraft,
   };

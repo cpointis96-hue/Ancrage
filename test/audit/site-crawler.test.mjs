@@ -17,6 +17,20 @@ function response(body, { url, status = 200, contentType = 'text/html; charset=u
 
 const lookupPublic = async hostname => [{ address: hostname === 'fixture.example.test' ? '93.184.216.34' : '93.184.216.35', family: 4 }];
 
+test('suit la mise à niveau HTTPS du même hôte et refuse les autres changements d’origine', async () => {
+  const calls = [];
+  const upgraded = await crawlSite({ target: 'http://fixture.example.test/', lookup: lookupPublic, maxPages: 1, fetchImpl: async url => {
+    calls.push(url);
+    return url.startsWith('http:') ? response('', { status: 301, location: 'https://fixture.example.test/' }) : response('<html><title>Fixture</title></html>');
+  } });
+  assert.deepEqual(calls, ['http://fixture.example.test/', 'https://fixture.example.test/']);
+  assert.equal(upgraded.pages[0].crawlStatus, 'complete');
+  for (const location of ['https://other.example/', 'http://fixture.example.test/']) {
+    const blocked = await crawlSite({ target: 'https://fixture.example.test/', lookup: lookupPublic, maxPages: 1, fetchImpl: async () => response('', { status: 301, location }) });
+    assert.equal(blocked.pages[0].errorCode, 'REDIRECT_OUT_OF_ORIGIN');
+  }
+});
+
 test('crawl HTML uniquement sur le même origin et respecte la borne de pages', async () => {
   const calls = [];
   const pages = {

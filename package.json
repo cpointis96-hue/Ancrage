@@ -1,13 +1,20 @@
 {
-  "name": "business-site-factory-prototypes",
+  "name": "ancrage",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "node ship-studio-preview.mjs",
+    "dev": "node src/server.mjs",
+    "start": "node src/server.mjs",
     "test": "node --test",
-    "check": "node --check ship-studio-preview.mjs"
+    "check": "node scripts/check.mjs",
+    "preview:audits": "node scripts/preview-audits.mjs",
+    "build:desktop": "node scripts/build-desktop.mjs"
+  },
+  "dependencies": {
+    "@vercel/functions": "3.11.0",
+    "pg": "8.23.1"
   }
 }

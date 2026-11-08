@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion — Ancrage</title>
+  <link rel="stylesheet" href="/operator-login.css">
+</head>
+<body>
+  <main>
+    <h1>Ancrage</h1>
+    <form id="login">
+      <label for="password">Mot de passe du cockpit</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus maxlength="256">
+      <button type="submit">Se connecter</button>
+      <p id="error" role="alert"></p>
+    </form>
+  </main>
+  <script type="module" src="/operator-login.mjs"></script>
+</body>
+</html>

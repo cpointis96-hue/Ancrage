@@ -157,5 +157,5 @@ export function createPromptRegistry({ store, clock = () => new Date(), contract
     };
   }
 
-  return { activate, createVersion, diff, get, list, saveDraft };
+  return { activate, createVersion, diff, get, list, resolveRevision, saveDraft };
 }

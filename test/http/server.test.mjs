@@ -184,10 +184,10 @@ test('reçoit un intake, crée le dossier, exécute son run et sert ses artefact
     assert.deepEqual(JSON.parse(await artifacts.text()).map(item => item.kind).sort(), ['gmb-report', 'seo-report', 'site']);
     const gmbReport = await request(`${base}/api/runs/${run.id}/artifacts/gmb-report`, { headers: { origin: base } });
     assert.equal(gmbReport.status, 200);
-    assert.match(await gmbReport.text(), /AUDIT GMB/);
+    assert.match(await gmbReport.text(), /Présence locale/);
     const seoReport = await request(`${base}/api/runs/${run.id}/artifacts/seo-report`, { headers: { origin: base } });
     assert.equal(seoReport.status, 200);
-    assert.match(await seoReport.text(), /AUDIT SEO ET CONCURRENCE/);
+    assert.match(await seoReport.text(), /Audit de visibilité/);
     const site = await request(`${base}/api/runs/${run.id}/artifacts/site`, { headers: { origin: base } });
     assert.equal(site.status, 200);
     assert.match(await site.text(), /Le Rivage/);

@@ -1,3 +1,5 @@
+import { buildPublicAuditDocument } from './report-document.mjs';
+import { renderAuditDocumentPdf } from './report-pdf.mjs';
 import { createHash } from 'node:crypto';
 import { AppError, ConflictError, NotFoundError, ValidationError } from '../core/errors.mjs';
 import { createId } from '../core/ids.mjs';
@@ -9,6 +11,7 @@ import { buildSeoResearchPlan, domainOf, mergeKeywordMetrics, qualifyCompetitorR
 import { renderPublicAuditReport } from './public-audit-report.mjs';
 import { assembleAuditPacket, projectAuditPacket } from './audit-packet.mjs';
 import { validateJsonSchema } from '../core/json-schema.mjs';
+import { runObservationAudit } from './observation-audit.mjs';
 
 const INDEX_PATH = 'audit-runs/index.json';
 const IDEMPOTENCY_PATH = key => `audit-runs/idempotency/${createHash('sha256').update(key).digest('hex')}.json`;
@@ -32,44 +35,11 @@ function validUrl(value, field = 'domain') {
 function fingerprint(input) { return JSON.stringify(input); }
 
 function stage(id, status, extra = {}) { return { id, status, ...extra }; }
-function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
-function pdfText(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '?').replace(/[\\()]/g, character => `\\${character}`); }
 export function renderPublicAuditPdf(result, auditPacket = null) {
-  const projection = projectAuditPacket(auditPacket ?? assembleAuditPacket({ auditRun: result }).packet);
-  const lines = [
-    'Rapport final SEO et concurrence',
-    projection.subject.name,
-    `${projection.subject.city} - observation ${(auditPacket ?? assembleAuditPacket({ auditRun: result }).packet).createdAt}`,
-    '',
-    `Statut : ${projection.status}`,
-    `Etablissements retournes : ${projection.metrics.gmbCandidates}`,
-    `Pistes de mots-cles : ${projection.metrics.keywordOpportunities}`,
-    `Concurrents : ${projection.metrics.competitors}`,
-    `Preuves provider : ${projection.metrics.evidence}`,
-    `Couverture GMB : ${projection.coverage.localPresence.status}/${projection.coverage.localPresence.coverage}`,
-    `Couverture site : ${projection.coverage.siteAudit.status}/${projection.coverage.siteAudit.coverage}`,
-    `Couts USD : depense ${projection.cost.spent}, reserve ${projection.cost.reserved}, plafond ${projection.cost.hardLimit}`,
-    `Reference couts : ${projection.cost.costEventsRef}`,
-    `References preuves : ${projection.evidenceRefs.join(', ') || 'aucune'}`,
-    `Limites : ${projection.report.limitations.join(', ') || 'aucune'}`,
-    '',
-    'Les branches absentes, partielles ou non confirmees restent signalees.',
-  ];
-  const commands = ['BT', '/F1 11 Tf', '50 760 Td', ...lines.flatMap((line, index) => [index ? '0 -18 Td' : '', `(${pdfText(line)}) Tj`]).filter(Boolean), 'ET'].join('\n');
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${Buffer.byteLength(commands, 'ascii')} >>\nstream\n${commands}\nendstream`,
-  ];
-  let pdf = '%PDF-1.4\n'; const offsets = [0];
-  for (let index = 0; index < objects.length; index += 1) { offsets.push(Buffer.byteLength(pdf, 'ascii')); pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`; }
-  const xref = Buffer.byteLength(pdf, 'ascii'); pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return pdf;
+  return renderAuditDocumentPdf(buildPublicAuditDocument(result, 'final', auditPacket));
 }
 
-export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, contracts = null, seoResearchPlanner = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
+export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, contracts = null, seoResearchPlanner = null, observationAnalyst = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
   async function get(id) {
     const run = await store.readJson(pathFor(id), null);
     if (!run) throw new NotFoundError(`Run d’audit introuvable : ${id}`);
@@ -103,6 +73,13 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     return assembled.packet;
   }
   async function publishReport(result, kind) {
+    if (store.withLock) return store.withLock(`audit-runs/${result.id}/publication.lock`, async () => {
+      await writeReport(result, kind);
+      await store.writeJson(pathFor(result.id), result);
+    });
+    return writeReport(result, kind);
+  }
+  async function writeReport(result, kind) {
     const path = reportPath(result.id, kind);
     const pdfPath = kind === 'final' ? reportPath(result.id, 'final').replace(/\.html$/, '.pdf') : null;
     const packet = await publishPacket(result, kind === 'gmb' ? { gmbReport: path } : { finalReport: path, pdf: pdfPath });
@@ -145,22 +122,46 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
   }
   async function call({ runId, ledger, ready, stepId, capability, tasks, estimate, endpoint, optional = true }) {
     const started = Date.now();
+    if (ready.failure) return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: ready.failure, providerState: ready.state, execution: 'not-run', durationMs: 0 };
     if (ready.state !== 'ready') return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: ready.code, providerState: ready.state, execution: 'not-run', durationMs: Date.now() - started };
     let authorization;
     try { authorization = await ledger.authorize({ stepId, provider: 'dataforseo', unit: 'request', quantity: 1, estimatedCost: estimate, essential: !optional }); }
     catch (error) { return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'COST_NOT_AUTHORIZED', durationMs: Date.now() - started }; }
+    let payload;
     try {
       const adapter = adapters.dataforseo[endpoint];
       if (typeof adapter !== 'function') throw Object.assign(new Error('DataForSEO capability unavailable'), { code: 'CAPABILITY_UNAVAILABLE' });
-      const payload = await adapter({ secret: ready.secret, tasks });
-      const actualCost = typeof payload?.cost === 'number' ? payload.cost : estimate;
-      const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost });
-      const taskFailure = providerTaskFailed(payload);
-      return { status: settled.overLimit || taskFailure ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : taskFailure ? 'PROVIDER_TASK_FAILED' : null, capability, providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network', durationMs: Date.now() - started, evidence: createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' }), data: payload };
+      payload = await adapter({ secret: ready.secret, tasks });
     } catch (error) {
+      const rejectedBeforeCharge = /^HTTP_4\d\d$/.test(error.code ?? '') || /^DATAFORSEO_40\d{3}$/.test(error.code ?? '') || ['CAPABILITY_UNAVAILABLE', 'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL'].includes(error.code);
+      if (ready.executionType === 'http' && !rejectedBeforeCharge) {
+        ready.failure = 'COST_RECONCILIATION_REQUIRED';
+        return { status: 'PARTIAL', cause: 'PROVIDER_COST_UNKNOWN_AFTER_FAILURE', providerState: ready.state, execution: 'real-http-call-failed', durationMs: Date.now() - started };
+      }
       await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code ?? 'PROVIDER_CALL_FAILED' });
-      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause: error.code ?? 'PROVIDER_CALL_FAILED', providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call-failed' : 'adapter-call-no-network-failed', durationMs: Date.now() - started };
+      const providerCode = Number(error.providerCode ?? String(error.code ?? '').replace('DATAFORSEO_', ''));
+      const cause = [40200, 40210].includes(providerCode) ? 'DATAFORSEO_CREDIT_REQUIRED' : error.code === 'HTTP_402' ? 'DATAFORSEO_BILLING_REJECTED' : (error.code ?? 'PROVIDER_CALL_FAILED');
+      if (cause === 'DATAFORSEO_CREDIT_REQUIRED' || cause === 'DATAFORSEO_BILLING_REJECTED') ready.failure = cause;
+      return { status: optional ? 'PARTIAL' : 'BLOCKED', cause, providerState: ready.state, execution: ready.executionType === 'http' ? 'real-http-call-failed' : 'adapter-call-no-network-failed', durationMs: Date.now() - started };
     }
+    const evidence = createEvidenceSnapshot({ sourceType: 'provider', provider: 'dataforseo', canonicalUrl: `https://api.dataforseo.com/v3/${capability}`, observedAt: clock().toISOString(), requestParameters: { endpoint, tasks }, rawPayload: JSON.stringify(payload), ruleVersion: WORKFLOW_VERSION, licenseOrTermsRef: 'dataforseo-terms-pending', retentionClass: 'audit-provider-metadata' });
+    const execution = ready.executionType === 'http' ? 'real-http-call' : 'adapter-call-no-network';
+    const actualCost = payload?.cost ?? (ready.executionType !== 'http' ? estimate : null);
+    if (typeof actualCost !== 'number' || !Number.isFinite(actualCost) || actualCost < 0) {
+      ready.failure = 'COST_RECONCILIATION_REQUIRED';
+      return { status: 'PARTIAL', cause: 'PROVIDER_COST_UNAVAILABLE', execution, durationMs: Date.now() - started, evidence, data: payload };
+    }
+    let settled;
+    try { settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost }); }
+    catch {
+      ready.failure = 'COST_RECONCILIATION_REQUIRED';
+      return { status: 'PARTIAL', cause: 'COST_SETTLE_FAILED', execution, durationMs: Date.now() - started, evidence, data: payload };
+    }
+    const taskFailure = providerTaskFailed(payload);
+    const billingTask = payload?.tasks?.find(task => [40200, 40210, 40203].includes(Number(task.status_code)));
+    if (billingTask) ready.failure = [40200, 40210].includes(Number(billingTask.status_code)) ? 'DATAFORSEO_CREDIT_REQUIRED' : 'DATAFORSEO_BILLING_REJECTED';
+    if (settled.overLimit) ready.failure = 'BUDGET_EXCEEDED_AFTER_CALL';
+    return { status: settled.overLimit || taskFailure ? 'PARTIAL' : 'SUCCEEDED', cause: settled.overLimit ? 'BUDGET_EXCEEDED_AFTER_CALL' : billingTask ? ready.failure : taskFailure ? 'PROVIDER_TASK_FAILED' : null, capability, providerState: ready.state, execution, durationMs: Date.now() - started, evidence, data: taskFailure ? null : payload };
   }
   function summarizeProviderCall(result) {
     const { data, ...summary } = result;
@@ -183,6 +184,12 @@ function normalizeCandidates(result, query = '') {
       title: item?.title ?? item?.name ?? null,
       url: item?.url ?? null,
       domain: item?.domain ?? null,
+      address: item?.address ?? null,
+      phone: item?.phone ?? null,
+      category: item?.category ?? null,
+      placeId: item?.place_id ?? null,
+      rating: item?.rating ?? null,
+      observedAt: item?.last_updated_time ?? null,
     }));
 }
 function providerTaskFailed(payload) {
@@ -225,7 +232,7 @@ function findLabsPair(result, country, preferred = 'en') {
     const normalized = { name, city: { id: cityId, label: cityLabel, country }, address: input.address ?? identity?.address ?? null, domain, domainSource: domain ? (input.domainSource === 'google-places' ? 'google-places' : 'request') : null, identity, mode: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : 'CONFIRM', profile, budget };
     const key = input.idempotencyKey;
     if (key !== undefined && (typeof key !== 'string' || !key.trim() || key.length > 200)) throw new ValidationError('idempotencyKey est invalide.', { field: 'idempotencyKey' });
-    const fp = fingerprint(normalized);
+    const fp = fingerprint({ ...normalized, enrichment: options.enrichment ?? null });
     if (key) {
       const previous = await store.readJson(IDEMPOTENCY_PATH(key.trim()), null);
       if (previous) { if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre requête.'); return get(previous.runId); }
@@ -234,6 +241,28 @@ function findLabsPair(result, country, preferred = 'en') {
     const id = idFactory('audit-run');
     let ledgerSequence = 0;
     const actualLedger = createCostLedger({ store, runId: id, envelope: { hardLimit, currency: budget.currency ?? 'USD' }, clock, idFactory: prefix => `${idFactory(prefix)}-${ledgerSequence++}` });
+    await actualLedger.ready;
+    if (options.enrichment !== 'dataforseo') {
+      const observedAt = clock().toISOString();
+      const result = { id, workflowVersion: 'observation-audit-v1', status: 'RUNNING', input: normalized, startedAt: observedAt, updatedAt: observedAt, stages: [], evidence: [], modules: {}, reports: [], budget: actualLedger.snapshot() };
+      if (store.withLease) {
+        const created = await store.withLock('audit-runs/registry.lock', async () => {
+          const previous = key ? await store.readJson(IDEMPOTENCY_PATH(key.trim()), null) : null;
+          if (previous) {
+            if (previous.fingerprint !== fp) throw new ConflictError('La clé d’idempotence est déjà associée à une autre requête.');
+            return get(previous.runId);
+          }
+          await store.writeJson(pathFor(id), result, { immutable: true });
+          await addIndex(id);
+          if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
+          return result;
+        });
+        return options.defer ? created : resume(created.id);
+      }
+      await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
+      if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
+      return runObservationAudit({ result, ledger: actualLedger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: options.waitFor === 'gmb' });
+    }
     const ready = await dataForSeoReady();
     const costs = budget.endpointCosts ?? {};
     const coordinates = identity?.coordinates;
@@ -307,18 +336,21 @@ function findLabsPair(result, country, preferred = 'en') {
         : call({ runId: id, ledger: actualLedger, ready, stepId: 'site-discovery', capability: 'serp/google/organic/live/advanced', endpoint: 'serpOrganicLiveAdvanced', tasks: [{ keyword: `${name} ${cityLabel}`, ...serpTarget }], estimate: costs.serpOrganicLiveAdvanced }),
       localPreview
         ? Promise.resolve({ status: 'PARTIAL', cause: 'LOCAL_PREVIEW_WITHOUT_GMB', execution: 'not-run', durationMs: 0 })
+        : identity?.source === 'google-places' && identity.placeId && coordinates && adapters.dataforseo?.myBusinessInfo
+          ? call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/google/my_business_info/live', endpoint: 'myBusinessInfo', tasks: [{ keyword: `place_id:${identity.placeId}`, location_coordinate: `${coordinates.latitude},${coordinates.longitude},200`, language_code: country === 'FR' ? 'fr' : 'en' }], estimate: costs.myBusinessInfo })
         : coordinates
           ? ready.state === 'ready' && hasBusinessResolver && !resolvedLocations.business
             ? Promise.resolve({ status: 'PARTIAL', cause: resultResolutionError ?? 'BUSINESS_LISTINGS_LOCATION_UNRESOLVED', execution: 'not-run', durationMs: 0 })
-            : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ title: name, location_coordinate: `${coordinates.latitude},${coordinates.longitude},200`, limit: 10 }], estimate: costs.businessListings })
+            : call({ runId: id, ledger: actualLedger, ready, stepId: 'gmb-audit', capability: 'business_data/business_listings/search/live', endpoint: 'businessListings', tasks: [{ title: name, location_coordinate: `${coordinates.latitude},${coordinates.longitude},5`, limit: 10 }], estimate: costs.businessListings })
           : Promise.resolve({ status: 'PARTIAL', cause: 'GOOGLE_PLACES_COORDINATES_REQUIRED', execution: 'not-run', durationMs: 0 }),
     ]);
     const siteCandidates = normalizeCandidates(discovered, name);
     result.stages.push(stage('site-discovery', domain ? discovered.status : (discovered.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'), { cause: discovered.cause ?? (domain ? null : 'SITE_NOT_CONFIRMED'), providerState: discovered.providerState ?? ready.state, execution: discovered.execution ?? 'not-run', durationMs: discovered.durationMs })); if (discovered.evidence) result.evidence.push(discovered.evidence); result.modules.site = { providedDomain: domain, candidates: siteCandidates, confirmation: domain ? { status: 'CONFIRMED', source: normalized.domainSource } : { status: 'NOT_CONFIRMED', cause: 'SITE_NOT_CONFIRMED' } };
-    const gmbCandidates = normalizeCandidates(gmb, name);
+    const gmbCandidates = normalizeCandidates(gmb, name).filter(item => !identity?.placeId || !item.placeId || item.placeId === identity.placeId);
     const gmbStatus = gmb.status === 'SUCCEEDED' && gmbCandidates.length === 0 ? 'PARTIAL' : gmb.status;
     const gmbCause = gmb.cause ?? (gmbCandidates.length === 0 ? 'ESTABLISHMENT_NOT_CORROBORATED' : null);
     result.stages.push(stage('gmb-audit', gmbStatus, { cause: gmbCause, providerState: gmb.providerState ?? ready.state, execution: gmb.execution ?? 'not-run', durationMs: gmb.durationMs })); if (gmb.evidence) result.evidence.push(gmb.evidence); result.modules.gmb = { candidates: gmbCandidates, confirmation: { status: localPreview ? 'NOT_RUN' : gmbCandidates.length ? 'CANDIDATES_FOUND' : 'NOT_CONFIRMED', cause: localPreview ? 'LOCAL_PREVIEW_WITHOUT_GMB' : gmbCandidates.length ? null : gmbCause } };
+    result.budget = actualLedger.snapshot();
     if (!localPreview) await publishReport(result, 'gmb'); result.updatedAt = clock().toISOString(); await save();
     const continueAfterGmb = async () => {
     try {
@@ -334,8 +366,15 @@ function findLabsPair(result, country, preferred = 'en') {
     if (onPage.evidence) result.evidence.push(onPage.evidence);
     result.stages.push(stage('seo-audit', seoStatus, { cause: seoCause, providerState: onPage.providerState ?? null, execution: domain ? onPage.execution ?? seoBase.module.execution ?? 'local-crawl' : 'not-run', durationMs: seoBase.durationMs + onPage.durationMs }));
     const observedCategories = [identity?.primaryTypeDisplayName, identity?.primaryType].filter(value => typeof value === 'string' && value.trim());
+    const rankings = domain && resolvedLocations.labs && adapters.dataforseo?.rankedKeywords
+      ? await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/ranked_keywords/live', endpoint: 'rankedKeywords', tasks: [{ target: domainOf(domain), ...labTarget, item_types: ['organic'], limit: 30, order_by: ['ranked_serp_element.serp_item.rank_group,asc'] }], estimate: costs.rankedKeywords })
+      : notRun(domain ? 'RANKED_KEYWORDS_NOT_CONFIGURED' : 'SITE_NOT_CONFIRMED');
+    const rankedKeywords = items(rankings).flatMap(item => {
+      const keyword = item.keyword_data?.keyword; const serp = item.ranked_serp_element?.serp_item;
+      return keyword && serp?.url && domainOf(serp.url) === domainOf(domain) ? [{ keyword, url: serp.url, position: serp.rank_group ?? null, absolutePosition: serp.rank_absolute ?? null, searchVolume: item.keyword_data?.keyword_info?.search_volume ?? null, observedAt: item.keyword_data?.serp_info?.last_updated_time ?? null, evidenceRef: rankings.evidence?.id ?? null }] : [];
+    });
     const planner = seoResearchPlanner
-      ? await seoResearchPlanner({ name, cityLabel, country, categories: observedCategories, ledger: actualLedger, costEventsRef: `runs/${id}/cost-events.jsonl` })
+      ? await seoResearchPlanner({ name, cityLabel, country, categories: observedCategories, sitePages: seoBase.module.pages ?? [], rankedKeywords, ledger: actualLedger, costEventsRef: `runs/${id}/cost-events.jsonl` })
       : { status: 'PARTIAL', cause: 'AI_ROUTING_NOT_CONFIGURED', execution: 'not-run', plan: null, source: 'deterministic-fallback' };
     const researchPlan = buildSeoResearchPlan({ name, cityLabel, country, identity, planned: planner.plan });
     const ideas = researchPlan.seeds.length
@@ -349,7 +388,7 @@ function findLabsPair(result, country, preferred = 'en') {
       : notRun('NO_RELEVANT_KEYWORDS');
     if (overview.data) keywordIdeas = mergeKeywordMetrics(keywordIdeas, qualifyKeywordResults(overview.data, researchPlan).selected);
     const competitors = selectedKeywords.length
-      ? await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: selectedKeywords, ...labTarget }], estimate: costs.serpCompetitors })
+      ? await call({ runId: id, ledger: actualLedger, ready, stepId: 'competitor-keywords', capability: 'dataforseo_labs/google/serp_competitors/live', endpoint: 'serpCompetitors', tasks: [{ keywords: selectedKeywords, ...labTarget, item_types: ['organic'], limit: 5 }], estimate: costs.serpCompetitors })
       : notRun('NO_RELEVANT_KEYWORDS');
     const qualifiedCompetitors = qualifyCompetitorResults(competitors.data ?? competitors, { selectedKeywords, locality: cityLabel });
     const localFinder = coordinates && researchPlan.seeds.length
@@ -368,7 +407,9 @@ function findLabsPair(result, country, preferred = 'en') {
         : 'not-run';
     result.stages.push(stage('competitor-keywords', keywordStatus, { cause: researchCause, providerState: ready.state, execution: researchExecution, durationMs: ideas.durationMs + overview.durationMs + competitors.durationMs + localFinder.durationMs }));
     result.modules.keywords = { ideas: keywordIdeas, rejected: qualifiedKeywords.rejected, overview: summarizeProviderCall(overview), competitors: allCompetitors, competitorCandidates: selectedCompetitors.candidates, competitorRejected: selectedCompetitors.rejected, localCompetitors, researchPlan, planner: { status: planner.status, cause: planner.cause ?? null, execution: planner.execution, source: planner.source }, location: labTarget, execution: { ideas: ideas.execution ?? 'not-run', overview: overview.execution ?? 'not-run', competitors: competitors.execution ?? 'not-run', localFinder: localFinder.execution ?? 'not-run' } };
-    for (const item of [ideas, overview, competitors, localFinder]) if (item.evidence) result.evidence.push(item.evidence);
+    result.modules.keywords.rankedKeywords = rankedKeywords;
+    result.modules.keywords.rankings = summarizeProviderCall(rankings);
+    for (const item of [ideas, overview, competitors, localFinder, rankings]) if (item.evidence) result.evidence.push(item.evidence);
     result.modules.strategy = { intents: researchPlan.seeds.map(value => ({ value, classification: 'SUGGESTED' })), recommendations: [!domain ? 'Confirmer le site officiel avant toute conclusion SEO technique.' : null, !gmbCandidates.length ? 'Vérifier l’identité et l’adresse avant de retenir une fiche GMB.' : null, !keywordIdeas.length && !allCompetitors.length ? 'Aucune recommandation concurrentielle n’est fondée sans résultat exploitable.' : null].filter(Boolean), source: 'deterministic-v1', facts: ['provider-results-required'], interpretation: { status: planner.status, cause: planner.cause ?? null } };
     result.stages.push(stage('strategy', 'SUCCEEDED', { durationMs: 0 }));
     result.budget = actualLedger.snapshot(); result.status = result.stages.some(item => item.status === 'PARTIAL' || item.status === 'BLOCKED') ? 'PARTIAL' : 'SUCCEEDED'; result.durationMs = Date.now() - runStarted; await publishReport(result, 'final'); result.updatedAt = clock().toISOString(); await save();
@@ -385,5 +426,32 @@ function findLabsPair(result, country, preferred = 'en') {
     if (options.waitFor === 'gmb') return { ...result, completion: continueAfterGmb() };
     return continueAfterGmb();
   }
-  return { create, get, list, readPacket, readReport };
+  async function resume(id) {
+    if (store.withLease) return store.withLease(`audit-runs/${id}/worker.lease`, () => resumeRun(id));
+    return resumeRun(id);
+  }
+  async function resumeRun(id) {
+    const result = await get(id);
+    if (result.reports?.some(report => report.kind === 'final') || result.status === 'BLOCKED') return result;
+    if (result.workflowVersion !== 'observation-audit-v1') throw new ConflictError('La reprise de cette version d’audit n’est pas disponible.');
+    const ledger = createCostLedger({ store, runId: id, envelope: { hardLimit: result.input.budget.hardLimit, currency: result.input.budget.currency ?? 'USD' }, clock });
+    await ledger.ready;
+    return runObservationAudit({ result, ledger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: false });
+  }
+  async function workPending({ limit = 1 } = {}) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new ValidationError('Limite de traitement invalide.');
+    const pending = (await list()).filter(run => run.status === 'RUNNING' && run.workflowVersion === 'observation-audit-v1');
+    const results = [];
+    for (const run of pending) {
+      if (results.length >= limit) break;
+      try {
+        const completed = await resume(run.id);
+        results.push({ id: completed.id, status: completed.status });
+      } catch (error) {
+        if (error.code !== 'CONFLICT') throw error;
+      }
+    }
+    return results;
+  }
+  return { create, get, list, readPacket, readReport, resume, workPending };
 }

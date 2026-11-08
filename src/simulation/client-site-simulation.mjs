@@ -1,3 +1,5 @@
+import { buildDossierAuditDocument } from '../audit/report-document.mjs';
+import { auditReportStyles, renderAuditDocumentContent } from '../audit/report-html.mjs';
 import { createId } from '../core/ids.mjs';
 import { createDossierRegistry } from '../dossiers/dossier-registry.mjs';
 
@@ -14,7 +16,7 @@ export const clientSiteWorkflow = { id: workflowId, name: 'Création de site cli
 function dossierPaths(id) { return `dossiers/${id}`; }
 const runPath = id => `runs/${id}`;
 const esc = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
-const fallbackReportTemplate = { content: '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}}</title><style>{{style}}</style></head><body><main><header><h1>{{title}}</h1></header>{{content}}</main></body></html>' };
+const fallbackReportTemplate = { content: '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}}</title><style>{{style}}</style></head><body><main data-report-format="ancrage-audit-v2"><header class="report-header"><div class="report-brand"><strong>ANCRAGE</strong></div><h1>{{title}}</h1></header>{{content}}</main></body></html>' };
 
 function renderTemplate(template, values) {
   return template.replace(/{{\s*(title|content|style)\s*}}/g, (_, key) => values[key] ?? '');
@@ -35,9 +37,9 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
       const story = await localStore.readText(`${dossierPaths(input.dossierId)}/story.md`, null);
       const menu = await localStore.readJson(`${dossierPaths(input.dossierId)}/menu.json`, null);
       if (!dossier || !story || !menu) throw Object.assign(new Error('dossier incomplet'), { code: 'DOSSIER_INCOMPLETE' });
-      const content = `<section><h2>Identité</h2><p>${esc(dossier.name)} · ${esc(dossier.city)}</p></section><section><h2>Histoire fournie</h2><p>${esc(story)}</p></section><section><h2>Offre fournie</h2><ul>${menu.map(item => `<li>${esc(item.name)}</li>`).join('')}</ul></section>`;
+      const content = renderAuditDocumentContent(buildDossierAuditDocument({ business: dossier, story, menu, kind: 'initial', date: run.createdAt }));
       const template = run.snapshot.steps.find(step => step.id === 'dossier-validation')?.template;
-      const artifact = await renderAuditFile(localStore, run, 'dossier-validation', template, dossier.name, content, 'body{font:16px/1.55 system-ui;max-width:820px;margin:0 auto;padding:24px;color:#20211f;background:#f5f5f2}header{padding:clamp(28px,6vw,64px);background:#173024;color:#eef4ec}header p{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:28px 0}h1,h2{letter-spacing:-.04em}li{margin:6px 0}');
+      const artifact = await renderAuditFile(localStore, run, 'dossier-validation', template, dossier.name, content, auditReportStyles());
       return { dossierId: input.dossierId, business: dossier, story, menu, assets: dossier.assets ?? [], ...(artifact ? { artifactPath: artifact.artifactPath, artifactHash: artifact.artifactHash, templateId: artifact.templateId, templateVersionId: artifact.templateVersionId } : {}) };
     },
     'simulation-content-plan': async ({ input }) => {
@@ -48,9 +50,9 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     },
     'simulation-gmb-audit-report': async ({ input, run, store: localStore }) => {
       const facts = input['dossier-validation'];
-      const body = `<section><h2>Établissement</h2><p>${esc(facts.business.name)} · ${esc(facts.business.city)}</p></section><section><h2>Éléments fournis</h2><ul><li>Adresse : ${esc(facts.business.address || 'À confirmer')}</li><li>Contact : ${esc(facts.business.contact || 'À confirmer')}</li><li>Menu : ${facts.menu.length ? 'présent' : 'absent'}</li></ul></section><section><h2>Périmètre</h2><p>Rapport initial fondé sur le dossier fourni. Les données publiques GMB restent à confirmer avant toute conclusion.</p></section>`;
+      const body = renderAuditDocumentContent(buildDossierAuditDocument({ business: facts.business, story: facts.story, menu: facts.menu, kind: 'gmb', date: run.createdAt }));
       const template = run.snapshot.steps.find(step => step.id === 'gmb-audit-report')?.template;
-      const artifact = await renderAuditFile(localStore, run, 'gmb-audit-report', template, facts.business.name, body, 'body{font:16px/1.55 system-ui;max-width:820px;margin:0 auto;padding:24px;color:#20211f;background:#f5f5f2}header{padding:clamp(28px,6vw,64px);background:#173024;color:#eef4ec}header p{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:28px 0}h1,h2{letter-spacing:-.04em}li{margin:6px 0}.evidence{color:#5a635c}');
+      const artifact = await renderAuditFile(localStore, run, 'gmb-audit-report', template, facts.business.name, body, auditReportStyles());
       return { reportKind: 'gmb', status: 'READY_FOR_REVIEW', dossierId: facts.dossierId, artifactPath: artifact.artifactPath, artifactHash: artifact.artifactHash, templateId: artifact.templateId, templateVersionId: artifact.templateVersionId, availableAt: new Date().toISOString(), durationMs: 0 };
     },
     'simulation-site-build': async ({ input, run, store: localStore }) => {
@@ -77,10 +79,10 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
     'simulation-seo-competition-report': async ({ input, run, store: localStore }) => {
       const gmb = input['gmb-audit-report'];
       const facts = await localStore.readJson(`${dossierPaths(gmb.dossierId)}/dossier.json`, null);
-      const body = `<section><h2>Audit SEO</h2><ul><li>Site : non généré à ce stade du parcours</li><li>Base locale : identité et rapport GMB disponibles</li></ul></section><section><h2>Mots-clés locaux</h2><ul><li>${esc(facts.name)} ${esc(facts.city)}</li><li>${esc(facts.name)} menu</li><li>${esc(facts.name)} contact</li></ul></section><section><h2>Pistes concurrentielles</h2><p>Les établissements comparables restent des pistes à corroborer par une source publique autorisée.</p></section><section><h2>Relation avec le premier rapport</h2><p>Ce rapport approfondi complète le rapport GMB ${esc(gmb.artifactHash)}.</p></section>`;
+      const body = renderAuditDocumentContent(buildDossierAuditDocument({ business: facts, kind: 'final', date: run.createdAt }));
       const template = run.snapshot.steps.find(step => step.id === 'seo-competition-report')?.template;
-      const artifact = await renderAuditFile(localStore, run, 'seo-competition-report', template, facts.name, body, 'body{font:16px/1.55 system-ui;max-width:820px;margin:0 auto;padding:24px;color:#20211f;background:#f5f5f2}header{padding:clamp(28px,6vw,64px);background:#173024;color:#eef4ec}header p{color:#b8ce98}section{border-top:1px solid #d9dbd5;padding:28px 0}h1,h2{letter-spacing:-.04em}li{margin:6px 0}.evidence{color:#5a635c}');
-      return { reportKind: 'seo-competition', status: 'READY_FOR_REVIEW', dossierId: gmb.dossierId, artifactPath: artifact.artifactPath, artifactHash: artifact.artifactHash, templateId: artifact.templateId, templateVersionId: artifact.templateVersionId, availableAt: new Date().toISOString(), durationMs: 0 };
+      const artifact = await renderAuditFile(localStore, run, 'seo-competition-report', template, facts.name, body, auditReportStyles());
+      return { reportKind: 'seo-competition', sourceReportHash: gmb.artifactHash, status: 'READY_FOR_REVIEW', dossierId: gmb.dossierId, artifactPath: artifact.artifactPath, artifactHash: artifact.artifactHash, templateId: artifact.templateId, templateVersionId: artifact.templateVersionId, availableAt: new Date().toISOString(), durationMs: 0 };
     },
     'simulation-quality-gate': async ({ input, store: localStore }) => {
       if (faults.has('quality-gate')) return null;
@@ -95,7 +97,7 @@ export function createSimulationImplementations({ store, faults = new Set() }) {
         ['site-content', siteHtml.includes('<h1>') && siteHtml.includes('ANCRAGE')],
         ['gmb-report-artifact', Boolean(gmb?.artifactHash)],
         ['seo-report-artifact', Boolean(report?.artifactHash && reportHtml.includes('<!doctype html>'))],
-        ['seo-report-provenance', reportHtml.includes('rapport GMB')],
+        ['seo-report-provenance', Boolean(report?.sourceReportHash && report.sourceReportHash === gmb?.artifactHash)],
       ];
       const failed = checks.filter(([, passed]) => !passed).map(([id]) => id);
       if (failed.length) throw Object.assign(new Error(`Contrôle qualité bloqué : ${failed.join(', ')}`), { code: 'QUALITY_BLOCKED' });

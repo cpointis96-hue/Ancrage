@@ -10,13 +10,15 @@ export const STANDARD_AUDIT_BUDGET = Object.freeze({
   endpointCosts: Object.freeze({
     serpMaps: 0.01,
     serpOrganicLiveAdvanced: 0.01,
-    businessListings: 0.005,
+    businessListings: 0.016,
+    myBusinessInfo: 0.006,
     onPage: 0.01,
     keywordSearchVolume: 0.005,
     keywordIdeas: 0.02,
     keywordOverview: 0.015,
     serpCompetitors: 0.02,
     serpLocalFinder: 0.01,
+    rankedKeywords: 0.018,
   }),
 });
 

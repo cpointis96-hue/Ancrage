@@ -10,6 +10,57 @@ const photoInput = document.querySelector('#photo');
 const preview = document.querySelector('#photo-preview');
 const dossierState = document.querySelector('#dossier-state');
 
+function setupAutocomplete(input, list, mode, onSelect) {
+  let controller; let sequence = 0; let suggestions = []; let activeIndex = -1;
+  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); activeIndex = -1; };
+  const render = items => {
+    suggestions = items; list.replaceChildren();
+    items.forEach((item, index) => {
+      const option = document.createElement('li'); option.id = `${list.id}-option-${index}`; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false'); option.textContent = item.label;
+      option.addEventListener('pointerdown', event => { event.preventDefault(); onSelect(item); close(); }); list.append(option);
+    });
+    list.hidden = items.length === 0; input.setAttribute('aria-expanded', String(items.length > 0));
+  };
+  const search = async () => {
+    const query = input.value.trim(); sequence += 1; const current = sequence; controller?.abort();
+    if (query.length < 2) return close();
+    controller = new AbortController();
+    try {
+      const result = await api.placesAutocomplete({ input: query, mode, signal: controller.signal });
+      if (current !== sequence) return;
+      render(result.suggestions ?? []);
+      if (result.status === 'PARTIAL') auditState.textContent = 'Suggestions indisponibles. Vérifiez Google Places dans Providers.';
+      else if (!result.suggestions?.length) auditState.textContent = 'Aucune suggestion trouvée. Complétez votre recherche.';
+      else auditState.textContent = '';
+      auditState.classList.toggle('show', Boolean(auditState.textContent));
+    } catch (error) {
+      if (error.name !== 'AbortError' && current === sequence) {
+        close();
+        auditState.textContent = 'La recherche de lieux a échoué. Vérifiez Google Places dans Providers.';
+        auditState.classList.add('show');
+      }
+    }
+  };
+  let timer;
+  input.addEventListener('input', () => { auditState.textContent = ''; auditState.classList.remove('show'); clearTimeout(timer); timer = setTimeout(search, 250); });
+  input.addEventListener('keydown', event => {
+    if (list.hidden || !suggestions.length) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); activeIndex = (activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length; [...list.children].forEach((option, index) => option.setAttribute('aria-selected', String(index === activeIndex))); input.setAttribute('aria-activedescendant', `${list.id}-option-${activeIndex}`); }
+    if (event.key === 'Enter' && activeIndex >= 0) { event.preventDefault(); onSelect(suggestions[activeIndex]); close(); }
+    if (event.key === 'Escape') close();
+  });
+  input.addEventListener('blur', () => setTimeout(close, 120));
+}
+
+const establishmentInput = document.querySelector('#establishment');
+const locationInput = document.querySelector('#location');
+setupAutocomplete(establishmentInput, document.querySelector('#establishment-suggestions'), 'establishment', async suggestion => {
+  establishmentInput.value = suggestion.primaryText || suggestion.label; establishmentInput.dataset.placeId = suggestion.placeId || '';
+  if (!suggestion.placeId) return;
+  try { const result = await api.placeDetails(suggestion.placeId); if (result.establishment?.cityLabel) locationInput.value = result.establishment.cityLabel; } catch { /* the selected name remains usable */ }
+});
+setupAutocomplete(locationInput, document.querySelector('#location-suggestions'), 'city', suggestion => { locationInput.value = suggestion.primaryText || suggestion.label; });
+
 function imageData(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,17 +85,16 @@ menuButton?.addEventListener('click', () => {
   menuButton.setAttribute('aria-expanded', String(open));
 });
 
-auditForm.addEventListener('submit', event => {
+auditForm.addEventListener('submit', async event => {
   event.preventDefault();
   const data = new FormData(auditForm);
   const name = String(data.get('name')).trim();
   const city = String(data.get('city')).trim();
   if (!name || !city) return;
-  dossierSection.hidden = false;
-  auditState.textContent = 'Votre établissement est identifié. Complétez votre dossier pour préparer la suite.';
-  auditState.classList.add('show');
-  dossierSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  dossierForm.querySelector('[name="country"]').focus();
+  const selected = establishmentInput.dataset.placeId;
+  if (!selected) { auditState.textContent = 'Sélectionnez un établissement proposé.'; auditState.classList.add('show'); return; }
+  const params = new URLSearchParams({ placeId: selected, name, city, auto: '1' });
+  window.location.href = `/demo.html?${params}`;
 });
 
 photoInput.addEventListener('change', async () => {
