@@ -16,6 +16,7 @@ async function cockpit() {
     classList: { toggle() {}, remove() {} },
     addEventListener(type, listener) { this.listeners[type] = listener; },
     focus() {},
+    querySelectorAll() { return []; },
   }]));
   const api = { dossiers: async () => [], runs: async () => [], publicDemoRequests: async () => [], publicRequests: async () => [] };
   const document = {

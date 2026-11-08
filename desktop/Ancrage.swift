@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var reportWindows: [NSWindow] = []
@@ -43,11 +43,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
         if url.scheme == "https" && url.host == origin.host {
-            decisionHandler(.allow)
+            decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
         } else {
             if ["https", "http", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
         }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let response = navigationResponse.response as? HTTPURLResponse
+        let attachment = response?.value(forHTTPHeaderField: "Content-Disposition")?.hasPrefix("attachment") == true
+        decisionHandler(attachment ? .download : .allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        if let response = response as? HTTPURLResponse, response.statusCode != 200 {
+            completionHandler(nil)
+            showDownloadError()
+            return
+        }
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let filename = (suggestedFilename as NSString).lastPathComponent
+        let original = folder.appendingPathComponent(filename)
+        var destination = original
+        var index = 1
+        while FileManager.default.fileExists(atPath: destination.path) {
+            destination = folder.appendingPathComponent("\(original.deletingPathExtension().lastPathComponent) (\(index))").appendingPathExtension(original.pathExtension)
+            index += 1
+        }
+        completionHandler(destination)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        if (error as NSError).code != NSURLErrorCancelled { showDownloadError() }
+    }
+
+    private func showDownloadError() {
+        let alert = NSAlert()
+        alert.messageText = "Téléchargement impossible"
+        alert.informativeText = "Le fichier n’est pas disponible ou n’a pas pu être enregistré dans Téléchargements."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {

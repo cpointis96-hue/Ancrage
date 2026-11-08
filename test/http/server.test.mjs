@@ -261,3 +261,22 @@ test('expose un audit SEO local, son rapport, puis le recharge', async () => {
     await reloadedServer.close();
   }
 });
+
+
+test('télécharge HTML et PDF sur demande et conserve la lecture intégrée', async () => {
+  const route = createRouter({
+    publicControlPlane: { async readReport(requestId, reportId, format) {
+      assert.equal(requestId, 'request-1'); assert.equal(reportId, 'report-1');
+      return { value: format === 'pdf' ? '%PDF-fixture' : '<html>rapport</html>', contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8' };
+    } }, providers: {}, prompts: {}, workflows: {}, runs: {},
+  });
+  for (const format of ['html', 'pdf']) for (const download of [false, true]) {
+    let response;
+    const url = new URL(`http://localhost/api/public/requests/request-1/reports/report-1${format === 'pdf' ? '/pdf' : ''}${download ? '?download=1' : ''}`);
+    await route({ method: 'GET' }, { writeHead(status, headers) { response = { status, headers }; }, end(value) { response.value = value; } }, url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers['Content-Disposition'], download ? `attachment; filename="report-1.${format}"` : undefined);
+    assert.match(response.headers['Content-Security-Policy'], /default-src 'none'/);
+    assert.equal(response.value, format === 'pdf' ? '%PDF-fixture' : '<html>rapport</html>');
+  }
+});

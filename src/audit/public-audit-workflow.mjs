@@ -91,6 +91,10 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     const run = await get(id); if (!['gmb', 'final'].includes(kind)) throw new ValidationError('Rapport invalide.', { field: 'kind' });
     const report = run.reports?.find(item => item.kind === kind); if (!report) throw new NotFoundError('Rapport introuvable.');
     if (!['html', 'pdf'].includes(format) || (format === 'pdf' && run.status !== 'SUCCEEDED' && run.status !== 'PARTIAL' && kind === 'final')) throw new ValidationError('Format de rapport invalide.');
+    if (format === 'pdf' && !report.pdfPath) {
+      const packet = run.auditPacket?.snapshotRef ? await store.readJson(run.auditPacket.snapshotRef, null) : null;
+      return { value: renderAuditDocumentPdf(buildPublicAuditDocument(run, kind, packet)), contentType: 'application/pdf', report };
+    }
     const path = format === 'pdf' ? report.pdfPath : report.path; if (!path) throw new NotFoundError('Rapport introuvable.');
     const value = await store.readText(path, null); if (value === null) throw new NotFoundError('Rapport introuvable.');
     return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8', report };

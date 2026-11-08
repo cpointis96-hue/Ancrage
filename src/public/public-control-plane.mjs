@@ -122,7 +122,7 @@ function preparationDraft(request, preparation) {
   };
 }
 
-export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, siteSpecComposer = null, pipelineStarter = null, pipelineReconciler = null, demoPresenter = null, startLockTimeoutMs = 60_000 } = {}) {
+export function createPublicControlPlane({ store, contracts = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()), auditStarter = null, auditReportReader = null, siteSpecComposer = null, pipelineStarter = null, pipelineReconciler = null, demoPresenter = null, startLockTimeoutMs = 60_000 } = {}) {
   const starts = new Map();
   if (!Number.isInteger(startLockTimeoutMs) || startLockTimeoutMs < 1 || startLockTimeoutMs > 300_000) throw new ValidationError('startLockTimeoutMs est invalide.', { field: 'startLockTimeoutMs' });
   const lockPath = id => store.resolveSafe(`public-control-plane/preparations/${id}.start.lock`);
@@ -350,6 +350,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function listReports(requestId) { const request = await readRequest(requestId); return { requestId, state: request.state, reports: request.reports.map(({ id, kind, status, createdAt, expiresAt }) => ({ id, kind, status, createdAt, expiresAt })) }; }
   async function readReport(requestId, reportId, format = 'html') {
     const request = await readRequest(requestId); const report = request.reports.find(item => item.id === reportId); if (!report) throw new NotFoundError(); if (report.revokedAt) throw new AppError('Le rapport a été révoqué.', { code: 'REPORT_REVOKED', status: 410 }); if (report.expiresAt && new Date(report.expiresAt).getTime() <= clock().getTime()) throw new AppError('Le rapport a expiré.', { code: 'REPORT_EXPIRED', status: 410 });
+    if (format === 'pdf' && !report.pdfPath && request.audit?.id && auditReportReader && (report.kind === 'gmb' || request.state === 'FINAL_REPORT_READY')) return auditReportReader(request.audit.id, report.kind, 'pdf');
     if (format === 'pdf' && (!report.pdfPath || (report.kind === 'final' && request.state !== 'FINAL_REPORT_READY'))) throw new AppError('Le PDF n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 });
     const path = format === 'pdf' ? report.pdfPath : report.htmlPath; const value = await store.readText(path, null); if (value === null) throw new NotFoundError(); return { value, contentType: format === 'pdf' ? 'application/pdf' : 'text/html; charset=utf-8' };
   }

@@ -167,6 +167,7 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
   };
   const publicControlPlane = providedPublicControlPlane ?? createPublicControlPlane({
     store,
+    auditReportReader: (id, kind, format) => publicAudits.readReport(id, kind, format),
     contracts,
     auditStarter: async ({ request, decision }) => {
       const audit = await publicAudits.create({
@@ -266,6 +267,21 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
     await workflows.ensure(domainResearch);
     await workflows.ensure(localSeoResearch);
     await workflows.ensure(JSON.parse(await readFile(new URL('workflows/public-observation-audit.json', defaultsRoot), 'utf8')));
+    // Upgrade only the shipped v1 analysis limits, preserving operator customizations.
+    const observationWorkflow = await workflows.get('public-observation-audit');
+    const observationStep = observationWorkflow.steps[0];
+    if (observationWorkflow.steps.length === 1 && observationStep.id === 'observation-analysis'
+      && observationStep.model === 'gpt-5.4-mini' && observationStep.budget === 0.18
+      && observationStep.timeoutMs === 60000 && observationStep.maxOutputTokens === 3500) {
+      const active = await workflows.resolveActive('public-observation-audit');
+      if (active.definition.steps[0].timeoutMs === 60000 && active.definition.steps[0].maxOutputTokens === 3500) {
+        const { hash, activeVersionId, versions, ...definition } = observationWorkflow;
+        definition.steps[0] = { ...observationStep, timeoutMs: 150000, maxOutputTokens: 8000 };
+        const saved = await workflows.save(definition.id, definition, { expectedHash: hash });
+        const version = await workflows.createVersion(definition.id, { expectedDraftHash: saved.hash });
+        await workflows.activate(definition.id, version.id);
+      }
+    }
     await workflows.ensure(clientSiteWorkflow);
     await seedTemplate(store, templates, 'site-preview');
     await seedTemplate(store, templates, 'audit-initial');

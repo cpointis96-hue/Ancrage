@@ -93,3 +93,20 @@ test('refuse de publier un snapshot incompatible avec le contrat actif', async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('rend les PDF des anciens rapports sans relancer de fournisseur', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-legacy-pdf-'));
+  try {
+    const store = createAtomicStore(root);
+    const run = await fixture('complete-audit-run.json');
+    run.reports = ['gmb', 'final'].map(kind => ({ kind, path: `legacy/${kind}.html`, pdfPath: null }));
+    await store.writeJson(`audit-runs/${run.id}/run.json`, run);
+    const workflow = createPublicAuditWorkflow({ store });
+    for (const kind of ['gmb', 'final']) {
+      const report = await workflow.readReport(run.id, kind, 'pdf');
+      assert.equal(report.contentType, 'application/pdf');
+      assert.match(report.value, /^%PDF/);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

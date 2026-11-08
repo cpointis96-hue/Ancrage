@@ -345,3 +345,17 @@ test('préremplit le PreparationDraft depuis le snapshot AuditPacket et conserve
   assert.deepEqual(receivedDraft.values.find(item => item.field === 'address'), { field: 'address', value: '1 rue du Port', source: 'GOOGLE_PLACES', confirmation: 'CONFIRMED' });
   assert.deepEqual(receivedDraft.values.find(item => item.field === 'contact'), { field: 'contact', value: 'contact@example.test', source: 'GOOGLE_BUSINESS_PROFILE', confirmation: 'CONFIRMED' });
 });
+
+
+test('sert le PDF manquant d’un rapport existant depuis son audit enregistré', async () => {
+  const calls = [];
+  const { controlPlane } = await fixture({
+    auditStarter: async () => ({ audit: { id: 'audit-existing' }, gmb: { html: '<h1>GMB existant</h1>' } }),
+    auditReportReader: async (...args) => { calls.push(args); return { value: '%PDF-legacy', contentType: 'application/pdf' }; },
+  });
+  const request = await controlPlane.createRequest({ name: 'Maison Sillage', city, identity: { source: 'manual', address: '1 rue du Port, Nantes' }, idempotencyKey: 'legacy-pdf' });
+  const ready = await controlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
+  const report = await controlPlane.readReport(request.id, ready.reports[0].id, 'pdf');
+  assert.equal(report.value, '%PDF-legacy');
+  assert.deepEqual(calls, [['audit-existing', 'gmb', 'pdf']]);
+});
