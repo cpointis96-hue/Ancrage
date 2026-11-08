@@ -103,6 +103,18 @@ export function renderAuditDocumentPdf(document) {
         paragraph(`À faire : ${block.action}`, { gap: 14 });
       }
       if (block.type === 'comparison') { heading(block.title, 3); paragraph(`${block.text}${block.source ? ` [${block.source}]` : ''}`); }
+      if (block.type === 'coverage') {
+        ensure(100);
+        paragraph(block.title, { size: 11, font: 'F2' });
+        const cellWidth = (right - margin) / block.items.length;
+        block.items.forEach((item, index) => {
+          const x = margin + index * cellWidth;
+          current.commands.push(`.83 .86 .82 RG .7 w ${x} ${y - 32} ${cellWidth - 12} 42 re S`);
+          draw(item.label, x + 8, y - 5, 10, 'F2');
+          draw(item.status === 'SUCCEEDED' ? 'Collecte effectuée' : item.status === 'BLOCKED' ? 'Collecte indisponible' : 'Collecte partielle', x + 8, y - 20, 8.5);
+        });
+        y -= 52;
+      }
       if (block.type === 'table') renderTable(block);
       if (block.type === 'source') {
         ensure(38);

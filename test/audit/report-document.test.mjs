@@ -136,3 +136,39 @@ test('le démarrage migre les anciennes consignes standard et préserve un promp
   const prompt = await preserved.prompts.get('audit-analyst');
   assert.equal(await preserved.prompts.resolveRevision('audit-analyst', prompt.activeVersionId), custom);
 });
+
+// Regression: useful verified facts were omitted unless attached to a correction.
+test('un point fort sourcé reste visible sans priorité associée en HTML et PDF', async () => {
+  const run = await fixture();
+  run.modules.observation = {
+    observations: [{ id: 'web-1', fact: 'La carte propose un menu enfant.', url: 'https://fixture.example/carte' }],
+    priorities: [], competitors: [], queries: [], limitations: [], conclusion: null,
+  };
+  const document = buildPublicAuditDocument(run);
+  assert.match(renderAuditDocumentHtml(document), /La carte propose un menu enfant/);
+  assert.match(renderAuditDocumentPdf(document), /La carte propose un menu enfant/);
+  assert.ok(document.sections.flatMap(section => section.blocks).some(block => block.type === 'source' && block.url === 'https://fixture.example/carte'));
+});
+
+test('le démarrage active le nouveau contrat standard sans écraser un contrat personnalisé', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ancrage-contract-migration-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await app.ready;
+  const current = await app.contracts.get('public-observation-analysis');
+  const old = structuredClone(current.schema);
+  delete old.properties.observations.items.properties.topic;
+  delete old.properties.priorities.items.properties.topic;
+  old.properties.observations.maxItems = 12; old.properties.priorities.maxItems = 3; old.properties.queries.maxItems = 3;
+  const draft = await app.contracts.save(current.id, { schema: old }, { expectedHash: current.draftHash });
+  const version = await app.contracts.createVersion(current.id, { expectedDraftHash: draft.draftHash });
+  await app.contracts.activate(current.id, version.id);
+  const migrated = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await migrated.ready;
+  const active = await migrated.contracts.getActiveVersion(current.id);
+  assert.equal(active.schema.properties.observations.maxItems, 32);
+  assert.deepEqual(active.schema.properties.priorities.items.properties.topic.enum, ['LOCAL', 'SITE', 'MARKET']);
+  const custom = structuredClone(active.schema); custom.title = 'Contrat personnalisé';
+  const next = await migrated.contracts.save(current.id, { schema: custom }, { expectedHash: (await migrated.contracts.get(current.id)).draftHash });
+  const customVersion = await migrated.contracts.createVersion(current.id, { expectedDraftHash: next.draftHash }); await migrated.contracts.activate(current.id, customVersion.id);
+  const preserved = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await preserved.ready;
+  assert.equal((await preserved.contracts.getActiveVersion(current.id)).schema.title, custom.title);
+});

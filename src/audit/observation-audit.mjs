@@ -3,7 +3,7 @@ import { createEvidenceSnapshot } from './evidence.mjs';
 
 const stage = (id, status, cause = null, execution = 'not-run') => ({ id, status, cause, execution });
 
-export async function runObservationAudit({ result, ledger, analyst, fetchImpl, lookup, publishReport, publishPacket, save, clock, waitForGmb }) {
+export async function runObservationAudit({ result, ledger, analyst, profileReader = async () => ({ status: 'PARTIAL', cause: 'GOOGLE_PROFILE_NOT_CONFIGURED' }), fetchImpl, lookup, publishReport, publishPacket, save, clock, waitForGmb }) {
   const { name, city, identity, domain, profile, address, mode } = result.input;
   const observedAt = result.startedAt;
   const confirmed = identity?.source === 'google-places' && Boolean(identity.placeId);
@@ -34,7 +34,35 @@ export async function runObservationAudit({ result, ledger, analyst, fetchImpl, 
     checkpoint.observations = observations;
     checkpoint.identityReady = true;
   }
+  if (confirmed && !checkpoint.profile) {
+    if (checkpoint.profileStarted) checkpoint.profile = { status: 'PARTIAL', cause: 'GOOGLE_PROFILE_COST_RECONCILIATION_REQUIRED' };
+    else {
+      checkpoint.profileStarted = true;
+      await save();
+      checkpoint.profile = await profileReader({ placeId: identity.placeId, ledger });
+      await save();
+    }
+  }
+  const google = checkpoint.profile;
+  const googleProfile = google?.profile;
+  if (googleProfile) {
+    result.modules.gmb.candidates = [{ ...googleProfile, observedAt }];
+    if (!checkpoint.profileEvidenceReady) {
+      result.evidence.push(createEvidenceSnapshot({ sourceType: 'google-places-details', provider: 'google-places', canonicalUrl: googleProfile.url ?? identityUrl, observedAt, rawPayload: JSON.stringify(googleProfile), ruleVersion: result.workflowVersion }));
+      checkpoint.profileEvidenceReady = true;
+    }
+  }
+  const gmbStage = result.stages.find(item => item.id === 'gmb-audit');
+  if (confirmed) Object.assign(gmbStage, stage('gmb-audit', google?.status ?? 'PARTIAL', google?.cause ?? null, googleProfile ? 'google-places-details' : 'not-run'));
   const observations = [...checkpoint.observations];
+  if (googleProfile) {
+    const add = (id, fact) => observations.push({ id: `google-${id}`, url: googleProfile.url ?? identityUrl, fact, classification: 'OBSERVED' });
+    add('contact', `Google Maps : ${googleProfile.title}, ${googleProfile.address}. Téléphone : ${googleProfile.phone ?? 'non retourné'}. Site : ${googleProfile.website ?? 'non retourné'}. Statut : ${googleProfile.businessStatus ?? 'non retourné'}.`);
+    if (googleProfile.hours.length) add('hours', `Horaires habituels Google : ${googleProfile.hours.join(' ; ')}`);
+    if (googleProfile.currentHours.length) add('current-hours', `Horaires courants Google : ${googleProfile.currentHours.join(' ; ')}`);
+    if (googleProfile.rating !== null) add('rating', `Note Google : ${googleProfile.rating}/5 sur ${googleProfile.reviewCount ?? 'un nombre non retourné de'} avis.`);
+    googleProfile.reviews.forEach((review, index) => add(`review-${index + 1}`, `Avis Google, ${review.publishedAt ?? 'date inconnue'}, ${review.rating ?? 'note inconnue'}/5 : ${review.text}`));
+  }
   const sampleProfile = { ...profile, maxPages: Math.min(profile.maxPages, 6), timeoutMs: Math.min(profile.timeoutMs, 30000), prioritizeClientPages: true };
   const crawl = checkpoint.seo ? Promise.resolve(checkpoint.seo) : domain ? runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile: sampleProfile }).catch(error => ({ status: 'PARTIAL', cause: error.code ?? 'CRAWL_FAILED', pages: [], findings: [] })) : Promise.resolve({ status: 'SUCCEEDED', pages: [], findings: [], summary: { pagesAnalyzed: 0 }, execution: 'not-run' });
   if (!result.reports.some(report => report.kind === 'gmb')) {
@@ -78,6 +106,7 @@ export async function runObservationAudit({ result, ledger, analyst, fetchImpl, 
     result.stages.push(stage('competitor-keywords', analysis.status, analysis.cause, analysis.execution), stage('strategy', analysis.status, analysis.cause, analysis.execution));
     result.status = result.stages.some(item => item.status !== 'SUCCEEDED') ? 'PARTIAL' : 'SUCCEEDED';
     result.budget = ledger.snapshot(); result.updatedAt = clock().toISOString();
+    if (!preview) await publishReport(result, 'gmb');
     await publishReport(result, 'final'); await save();
     return result;
   };

@@ -12,6 +12,7 @@ import { renderPublicAuditReport } from './public-audit-report.mjs';
 import { assembleAuditPacket, projectAuditPacket } from './audit-packet.mjs';
 import { validateJsonSchema } from '../core/json-schema.mjs';
 import { runObservationAudit } from './observation-audit.mjs';
+import { createGoogleProfileReader } from './google-profile.mjs';
 
 const INDEX_PATH = 'audit-runs/index.json';
 const IDEMPOTENCY_PATH = key => `audit-runs/idempotency/${createHash('sha256').update(key).digest('hex')}.json`;
@@ -40,6 +41,7 @@ export function renderPublicAuditPdf(result, auditPacket = null) {
 }
 
 export function createPublicAuditWorkflow({ store, providers, adapters, secretStore, lookup, fetchImpl, contracts = null, seoResearchPlanner = null, observationAnalyst = null, clock = () => new Date(), idFactory = prefix => createId(prefix, clock()) } = {}) {
+  const profileReader = createGoogleProfileReader({ providers, adapters, secretStore });
   async function get(id) {
     const run = await store.readJson(pathFor(id), null);
     if (!run) throw new NotFoundError(`Run d’audit introuvable : ${id}`);
@@ -80,8 +82,8 @@ export function createPublicAuditWorkflow({ store, providers, adapters, secretSt
     return writeReport(result, kind);
   }
   async function writeReport(result, kind) {
-    const path = reportPath(result.id, kind);
-    const pdfPath = reportPath(result.id, kind).replace(/\.html$/, '.pdf');
+    const path = kind === 'gmb' && result.modules.observation ? reportPath(result.id, 'gmb-analyzed') : reportPath(result.id, kind);
+    const pdfPath = path.replace(/\.html$/, '.pdf');
     const packet = await publishPacket(result, kind === 'gmb' ? { gmbReport: path } : { finalReport: path, pdf: pdfPath });
     await store.writeText(path, renderPublicAuditReport(result, kind, packet), { immutable: true });
     if (pdfPath) await store.writeText(pdfPath, renderAuditDocumentPdf(buildPublicAuditDocument(result, kind, packet)), { immutable: true });
@@ -265,7 +267,7 @@ function findLabsPair(result, country, preferred = 'en') {
       }
       await store.writeJson(pathFor(id), result, { immutable: true }); await addIndex(id);
       if (key) await store.writeJson(IDEMPOTENCY_PATH(key.trim()), { fingerprint: fp, runId: id }, { immutable: true });
-      return runObservationAudit({ result, ledger: actualLedger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: options.waitFor === 'gmb' });
+      return runObservationAudit({ result, ledger: actualLedger, analyst: observationAnalyst, profileReader, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: options.waitFor === 'gmb' });
     }
     const ready = await dataForSeoReady();
     const costs = budget.endpointCosts ?? {};
@@ -440,7 +442,7 @@ function findLabsPair(result, country, preferred = 'en') {
     if (result.workflowVersion !== 'observation-audit-v1') throw new ConflictError('La reprise de cette version d’audit n’est pas disponible.');
     const ledger = createCostLedger({ store, runId: id, envelope: { hardLimit: result.input.budget.hardLimit, currency: result.input.budget.currency ?? 'USD' }, clock });
     await ledger.ready;
-    return runObservationAudit({ result, ledger, analyst: observationAnalyst, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: false });
+    return runObservationAudit({ result, ledger, analyst: observationAnalyst, profileReader, fetchImpl, lookup, publishReport, publishPacket, save: () => store.writeJson(pathFor(id), result), clock, waitForGmb: false });
   }
   async function workPending({ limit = 1 } = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new ValidationError('Limite de traitement invalide.');

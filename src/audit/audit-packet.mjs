@@ -117,7 +117,7 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
     },
     evidenceRefs,
     findings: [
-      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null, phone: item?.phone ?? null, category: item?.category ?? null, rating: item?.rating ?? null, observedAt: item?.observedAt ?? null })), evidenceRefs },
+      { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null, phone: item?.phone ?? null, category: item?.category ?? null, rating: item?.rating ?? null, reviewCount: item?.reviewCount ?? null, hours: item?.hours ?? [], currentHours: item?.currentHours ?? [], reviews: item?.reviews ?? [], reviewScope: item?.reviewScope ?? null, url: item?.url ?? null, businessStatus: item?.businessStatus ?? null, observedAt: item?.observedAt ?? null })), evidenceRefs },
       { ref: 'finding:SEO_PAGES_ANALYZED', code: 'SEO_PAGES_ANALYZED', count: auditRun.modules?.seo?.pages ? auditRun.modules.seo.pages.filter(item => item.crawlStatus === 'complete').length : auditRun.modules?.seo?.summary?.pagesAnalyzed ?? 0, evidenceRefs },
       { ref: 'finding:STAGES', code: 'STAGES', items: (auditRun.stages ?? []).map(item => ({ id: item.id, status: item.status, cause: item.cause ?? null })), evidenceRefs: [] },
       { ref: 'finding:EVIDENCE', code: 'EVIDENCE', items: evidence.slice(0, 200).map(item => ({ ref: item.id, provider: item.provider ?? 'crawl HTML', canonicalUrl: item.canonicalUrl ?? null })), evidenceRefs },

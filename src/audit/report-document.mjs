@@ -92,11 +92,31 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
       : 'Les données disponibles ne permettent pas de confirmer la fiche de cet établissement.';
     const rows = p.report.gmbCandidates.map(item => [item.title ?? 'Nom non fourni', item.address ?? 'Non fournie', item.phone ?? 'Non fourni', item.category ?? 'Non précisée']);
     if (rows.length) observations.push(table('Informations relevées', ['Établissement', 'Adresse', 'Téléphone', 'Activité'], rows));
+    for (const profile of p.report.gmbCandidates) {
+      const reference = sourceId(profile.url);
+      if (profile.rating !== null && profile.rating !== undefined) observations.push(table('Avis Google', ['Note publique', 'Nombre total d’avis', 'Avis disponibles pour analyse'], [[`${profile.rating}/5`, String(profile.reviewCount ?? 'Non retourné'), String(profile.reviews?.length ?? 0)]]));
+      if (profile.hours?.length) observations.push(table('Horaires habituels publiés sur Google', ['Jour et horaires'], profile.hours.map(value => [value])));
+      else observations.push(paragraph('Les horaires habituels n’ont pas été retournés par Google. Leur absence dans ce rapport ne prouve pas leur absence sur la fiche.'));
+      if (!profile.reviews?.length) observations.push(paragraph('Aucun texte d’avis n’a été retourné pour cette collecte. Aucun diagnostic des thèmes clients ne peut être établi à partir de cette collecte.'));
+      if (profile.currentHours?.length && JSON.stringify(profile.currentHours) !== JSON.stringify(profile.hours)) observations.push(table('Horaires courants publiés sur Google', ['Jour et horaires'], profile.currentHours.map(value => [value])));
+      if (profile.reviews?.length) {
+        observations.push({ type: 'facts', items: profile.reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : ${review.text}`, source: sourceId(review.url ?? profile.url) ?? reference })) });
+        scope.push(profile.reviewScope);
+      }
+    }
+    if (audit) {
+      actions = distinctActions((audit.priorities ?? []).filter(item => item.topic === 'LOCAL').map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 6);
+      for (const action of actions) action.facts = factsFor(action.observationIds);
+      const localFacts = factsFor((audit.observations ?? []).filter(item => item.topic === 'LOCAL').map(item => item.id));
+      if (localFacts.length) observations.unshift({ type: 'facts', items: localFacts });
+      if (actions.length) summary = 'Les informations de la fiche et les sources collectées font ressortir les actions ci-dessous. Les constats citent les informations à confirmer ou à corriger.';
+      else if (localFacts.length) summary = 'Le diagnostic ci-dessous rapproche les informations publiques et les avis consultés. Aucun défaut supplémentaire n’a été établi dans ce périmètre.';
+    }
     for (const item of result.evidence ?? []) if (item.sourceType === 'google-places-selection') sourceId(item.canonicalUrl);
-    scope.push('L’identification du lieu ne vérifie ni les horaires, ni la propriété de la fiche, ni sa visibilité dans Google.');
+    scope.push('Les données publiques Google ne vérifient ni la propriété de la fiche, ni son classement. Les horaires retournés doivent être confirmés par le propriétaire.');
   } else if (audit) {
     summary = audit.conclusion?.reason ?? 'Les éléments disponibles ne permettent pas encore de décider si le site doit être modifié.';
-    actions = distinctActions((audit.priorities ?? []).map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 3);
+    actions = distinctActions((audit.priorities ?? []).map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 6);
     for (const action of actions) {
       action.facts = factsFor(action.observationIds);
       action.sources = unique(action.observationIds.map(id => sourceId(audit.observations.find(item => item.id === id)?.url)));
@@ -104,10 +124,12 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     if (!actions.length) actions = technicalActions(p.report.technicalFindings).slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
     const remaining = factsFor(audit.conclusion?.observationIds ?? []);
     if (remaining.length) observations.push({ type: 'facts', items: remaining });
+    const additionalFacts = factsFor((audit.observations ?? []).filter(item => !item.id.startsWith('local-')).map(item => item.id));
+    if (additionalFacts.length) observations.push({ type: 'facts', items: additionalFacts });
     for (const item of audit.competitors ?? []) {
       observations.push({ type: 'comparison', title: item.title, text: item.comparison, source: sourceId(item.url) });
     }
-    const queries = (audit.queries ?? []).slice(0, 3);
+    const queries = (audit.queries ?? []).slice(0, 6);
     if (queries.length) observations.push(table('Contenus à travailler', ['Recherche envisagée', 'Page à enrichir', 'Intérêt'], queries.map(item => [item.query, item.targetPage, item.reason])));
     const limits = unique([...actions.map(item => item.limitation), ...additionalLimits(audit.limitations ?? [], { hasWebsite: Boolean(p.values.website.value), hasComparisons: Boolean(audit.competitors?.length) })]);
     if (limits.length) scope.push(...limits);
@@ -136,6 +158,8 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     }
     scope.push('Les sources publiques peuvent évoluer. Cette analyse ne mesure ni le trafic, ni les ventes, ni les performances privées de l’établissement.');
   }
+  const coverageItems = (local ? [['localPresence', 'Fiche Google']] : [['localPresence', 'Fiche Google'], ['siteAudit', 'Site officiel'], ['market', 'Marché local']]).map(([key, label]) => ({ label, status: p.coverage[key]?.status ?? 'PARTIAL' }));
+  observations.unshift({ type: 'coverage', title: 'Périmètre documenté', items: coverageItems });
   const causes = p.report.limitations.map(readableLimit);
   scope.push(...unique(causes));
   return documentFor({ name: p.subject.name, city: p.values.address.value ?? p.subject.city, date: packet.createdAt, kind, status: local ? p.coverage.localPresence.status : p.status, summary, actions, observations, sources, scope });

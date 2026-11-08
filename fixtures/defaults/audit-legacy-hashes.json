@@ -3,12 +3,18 @@
   "prompts/public-observation-analyst.md": [
     "sha256:515f322f44ccb97ec2538e63a22bb864a6a4361a66d9973475b9c99e532a3f06",
     "sha256:60a704f8d8d6053c0855d3ae9f4fba846be7da52159ef06a7c7d769198c6fed1",
-    "sha256:951cb1e402697856df71d81f376364983e4ce72cba54f76ff81908234fe52322"
+    "sha256:951cb1e402697856df71d81f376364983e4ce72cba54f76ff81908234fe52322",
+    "sha256:3e49186d44cda4dd9745350d7e5d36b9eb28d3e900bd77d6e05c102847708ac9",
+    "sha256:e99e9631af852173005e9aa616f36a44cc04d022413e82f9c3233c6ed12070cb"
   ],
   "prompts/local-seo-research-planner.md": "sha256:8efdc15eb42fff3f9234eacb0914409e0b657b7c5b73055245d6b9e632c32347",
   "templates/audit-initial.html": "sha256:397196249a8faddf8102d5c90a8e10f8dd86948c0206c9ba68654db7fe5cce4e",
   "templates/audit-gmb.html": "sha256:f9589cd414e6235c2c64b69f43b1dda298483fff449e4079302dd1970ae79dda",
   "templates/audit-seo.html": "sha256:d14252a256aacfe9973578b448059705d28a347d2ee0571d2df60204b5339959",
-  "contracts/public-observation-analysis.schema.json": "sha256:2f196c56311bb243606c89fd2def86ca6cc42205fb4f77ae8b798e60b41ca547",
+  "contracts/public-observation-analysis.schema.json": [
+    "sha256:2f196c56311bb243606c89fd2def86ca6cc42205fb4f77ae8b798e60b41ca547",
+    "sha256:6153af6350df122d6ceb05d58c3458533509398510c2fb5211c193bf2d45b178",
+    "sha256:0505b61b9824c36868fbc036cfdb7020d81e0705f281f6b809276a2c60740496"
+  ],
   "contracts/audit-report.schema.json": "sha256:ff37f3f1848d3a8f141b945664ea3be8b827cd67bca98d5fe48d8d3d9c506cb2"
 }

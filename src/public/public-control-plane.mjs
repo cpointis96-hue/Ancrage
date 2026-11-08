@@ -317,7 +317,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (reports?.audit) request.audit = response(reports.audit);
       if (reports?.gmb?.html) await publishReport(request, { kind: 'gmb', html: reports.gmb.html, pdf: reports.gmb.pdf });
       if (reports?.final?.html) await publishReport(request, { kind: 'final', html: reports.final.html, pdf: reports.final.pdf });
-      if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.audit) request.audit = response(finalReport.audit); if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
+      if (reports?.completion instanceof Promise) reports.completion.then(async finalReport => { if (finalReport?.audit) request.audit = response(finalReport.audit); if (finalReport?.gmb?.html) await publishReport(request, { kind: 'gmb', html: finalReport.gmb.html, pdf: finalReport.gmb.pdf, replace: true }); if (finalReport?.html) await publishReport(request, { kind: 'final', html: finalReport.html, pdf: finalReport.pdf }); }).catch(async error => { request.status = 'PARTIAL'; request.errors.push({ code: error.code ?? 'AUDIT_COMPLETION_FAILED' }); await saveRequest(request); });
       if (!reports?.deferred && !reports?.gmb?.html && !reports?.final?.html && !(reports?.completion instanceof Promise)) { request.status = reports?.audit?.status === 'BLOCKED' ? 'BLOCKED' : 'PARTIAL'; request.errors.push({ code: reports?.audit?.status === 'BLOCKED' ? 'AUDIT_BLOCKED' : 'AUDIT_REPORT_NOT_AVAILABLE' }); }
     }
     return saveRequest(request);
@@ -328,7 +328,7 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
       if (!request.matchDecision || request.reports.some(item => item.kind === 'final') || typeof auditStarter !== 'function') return projectRequest(request);
       const reports = await auditStarter({ request: response(request), decision: request.matchDecision });
       if (reports?.audit) request.audit = response(reports.audit);
-      for (const kind of ['gmb', 'final']) if (reports?.[kind]?.html && !request.reports.some(item => item.kind === kind)) await publishReport(request, { kind, html: reports[kind].html, pdf: reports[kind].pdf });
+      for (const kind of ['gmb', 'final']) if (reports?.[kind]?.html && (!request.reports.some(item => item.kind === kind) || (kind === 'gmb' && reports.final?.html))) await publishReport(request, { kind, html: reports[kind].html, pdf: reports[kind].pdf, replace: kind === 'gmb' && Boolean(reports.final?.html) });
       if (reports?.audit?.status === 'BLOCKED') { request.status = 'BLOCKED'; request.errors.push({ code: 'AUDIT_BLOCKED' }); }
       return saveRequest(request);
     };
@@ -337,10 +337,11 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   async function seedSyntheticReport(requestId, { kind, html, pdf = null } = {}) {
     return publishReport(await readRequest(requestId), { kind, html, pdf });
   }
-  async function publishReport(request, { kind, html, pdf = null } = {}) {
+  async function publishReport(request, { kind, html, pdf = null, replace = false } = {}) {
     if (!['gmb', 'final'].includes(kind) || typeof html !== 'string') throw new ValidationError('Rapport invalide.');
     const reportId = idFactory(`${kind}-report`); const htmlPath = `public-control-plane/reports/${reportId}.html`; await store.writeText(htmlPath, html, { immutable: true });
     let pdfPath = null; if (typeof pdf === 'string') { pdfPath = `public-control-plane/reports/${reportId}.pdf`; await store.writeText(pdfPath, pdf, { immutable: true }); }
+    if (replace) request.reports = request.reports.filter(report => report.kind !== kind);
     const createdAt = clock(); request.reports.push({ id: reportId, kind, status: kind === 'gmb' ? 'GMB_REPORT_READY' : 'FINAL_REPORT_READY', htmlPath, pdfPath, createdAt: createdAt.toISOString(), expiresAt: new Date(createdAt.getTime() + reportTtlMs).toISOString(), revokedAt: null }); const finalReady = request.reports.some(report => report.kind === 'final'); request.checkpoints = [...(request.checkpoints ?? []).filter(item => item.key !== `${kind}-report`), checkpoint(`${kind}-report`, 'SUCCEEDED', { reportId })]; request.state = finalReady ? 'FINAL_REPORT_READY' : 'GMB_REPORT_READY'; const auditStatus = request.audit?.status; request.status = finalReady ? (auditStatus === 'BLOCKED' ? 'BLOCKED' : auditStatus === 'PARTIAL' ? 'PARTIAL' : 'SUCCEEDED') : 'RUNNING'; request.nextAction = finalReady ? nextAction('PREPARE_SITE', 'FINAL_REPORT_READY') : nextAction('WAIT', 'SEO_MODULES_PENDING');
     return saveRequest(request);
   }

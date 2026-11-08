@@ -13,10 +13,12 @@ async function setup(t, { research = async () => observationResponse(), configur
   t.after(() => rm(root, { recursive: true, force: true }));
   let calls = 0;
   const openai = Object.assign(async () => ({}), { research: async input => { calls += 1; return research(input); } });
+  const googlePlaces = Object.assign(async () => ({}), { auditDetails: async ({ placeId }) => ({ id: placeId, displayName: { text: 'Maison Sauge' }, formattedAddress: '12 rue Fixture, Nantes', googleMapsUri: 'https://maps.google.com/?cid=fixture', regularOpeningHours: { weekdayDescriptions: ['lundi: 12:00–14:00'] }, rating: 4.5, userRatingCount: 123, reviews: [{ rating: 4, originalText: { text: 'Accueil attentif.' }, publishTime: '2026-10-01T12:00:00Z' }] }) });
   const dataforseo = new Proxy(() => {}, { get() { throw new Error('Aucune capacité DataForSEO autorisée'); } });
-  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), adapters: { openai, dataforseo }, auditFetchImpl: fetchImpl, auditLookup: async () => ['93.184.216.34'] });
+  const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), adapters: { openai, dataforseo, googlePlaces, 'google-places': googlePlaces }, auditFetchImpl: fetchImpl, auditLookup: async () => ['93.184.216.34'] });
   await app.ready;
   if (configured) {
+    await app.providers.saveSecret('google-places', 'fixture-only'); await app.providers.testConnection('google-places'); await app.providers.setEnabled('google-places', true);
     await app.providers.saveSecret('openai', 'fixture-only'); await app.providers.testConnection('openai'); await app.providers.setEnabled('openai', true);
   }
   return { app, calls: () => calls };
@@ -30,8 +32,13 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
   assert.equal(result.modules.seo.pages[0].contactLinks[0], 'tel:+33000000000');
   assert.equal(result.modules.observation.priorities.length, 3);
   assert.equal(result.modules.observation.conclusion.decision, 'KEEP_SITE');
-  assert.ok(Math.abs(result.budget.spent - 0.013) < 1e-9);
+  assert.ok(Math.abs(result.budget.spent - 0.038) < 1e-9);
   assert.equal(result.budget.reserved, 0);
+  assert.equal(result.modules.gmb.candidates[0].reviewCount, 123);
+  const localReport = (await app.publicAudits.readReport(result.id, 'gmb')).value;
+  assert.match(localReport, /Accueil attentif/);
+  assert.match(localReport, /lundi: 12:00/);
+  assert.match(localReport, /ne représente pas tous les avis/);
   const html = (await app.publicAudits.readReport(result.id)).value;
   assert.match(html, /ne justifient pas une refonte/);
   assert.match(html, /https:\/\/voisin.example\/menu/);
@@ -47,7 +54,7 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
 
 test('garde le rapport local progressif et ne demande l’e-mail qu’après le final', async t => {
   let release; const pending = new Promise(resolve => { release = resolve; });
-  const { app } = await setup(t, { research: async () => { await pending; return observationResponse(); } });
+  const { app } = await setup(t, { research: async () => { await pending; const response = observationResponse(); response.output.priorities[0].topic = 'LOCAL'; return response; } });
   const request = await app.publicControlPlane.createRequest({ ...observationInput, city: { id: 'fr-nantes', label: 'Nantes', countryCode: 'FR' }, idempotencyKey: 'public-observation-request' });
   const local = await app.publicControlPlane.decideMatch(request.id, { decision: 'CONFIRM' });
   assert.equal(local.state, 'GMB_REPORT_READY');
@@ -62,6 +69,11 @@ test('garde le rapport local progressif et ne demande l’e-mail qu’après le 
   }
   assert.equal(final.state, 'FINAL_REPORT_READY'); assert.equal(final.status, 'SUCCEEDED');
   assert.equal(final.nextAction.kind, 'PREPARE_SITE');
+  assert.equal(final.reports.filter(report => report.kind === 'gmb').length, 1);
+  const enrichedLocal = await app.publicControlPlane.readReport(request.id, final.reports.find(report => report.kind === 'gmb').id);
+  assert.match(enrichedLocal.value, /Faciliter le contact/);
+  const enrichedPdf = await app.publicControlPlane.readReport(request.id, final.reports.find(report => report.kind === 'gmb').id, 'pdf');
+  assert.match(enrichedPdf.value, /Faciliter le contact/);
   assert.ok((await app.publicControlPlane.createPreparation(request.id, { email: 'fixture@example.com', idempotencyKey: 'after-final' })).id);
 });
 
@@ -153,7 +165,7 @@ test('timeout et coût inconnu conservent la réservation, budget insuffisant em
   for (const research of [async () => { throw new Error('timeout'); }, async () => ({ ...observationResponse(), usage: null })]) {
     const { app } = await setup(t, { research });
     const result = await app.publicAudits.create(observationInput);
-    assert.equal(result.status, 'PARTIAL'); assert.equal(result.budget.reserved, 0.18); assert.equal(result.budget.spent, 0);
+    assert.equal(result.status, 'PARTIAL'); assert.equal(result.budget.reserved, 0.18); assert.equal(result.budget.spent, 0.025);
   }
   const { app, calls } = await setup(t);
   const result = await app.publicAudits.create({ ...observationInput, budget: { hardLimit: 0.01 } });
@@ -170,4 +182,15 @@ test('adaptateur Responses borne la recherche et conserve citations et usage mê
   assert.equal(sent.max_tool_calls, 2); assert.equal(sent.store, false); assert.equal(result.searchCalls, 1);
   assert.equal(sent.text, undefined);
   assert.equal(result.sources.length, 2); assert.equal(result.output, null); assert.equal(result.usage.output_tokens, 1);
+});
+
+test('collecte Google dédiée inclut horaires et avis sans modifier la sélection légère', async () => {
+  const calls = [];
+  const adapters = createDefaultProviderAdapters({ fetchImpl: async (url, options) => { calls.push({ url, mask: options.headers['x-goog-fieldmask'] }); return new Response(JSON.stringify({ id: 'fixture' })); } });
+  await adapters.googlePlaces.details({ secret: 'fixture-only', placeId: 'fixture' });
+  await adapters.googlePlaces.auditDetails({ secret: 'fixture-only', placeId: 'fixture' });
+  assert.doesNotMatch(calls[0].mask, /reviews/);
+  assert.match(calls[1].mask, /reviews/);
+  assert.match(calls[1].mask, /regularOpeningHours/);
+  assert.throws(() => adapters.googlePlaces.auditDetails({ secret: 'fixture-only', placeId: '../private' }), /Invalid place ID/);
 });

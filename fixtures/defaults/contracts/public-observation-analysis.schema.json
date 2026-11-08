@@ -11,7 +11,7 @@
   "properties": {
     "observations": {
       "type": "array",
-      "maxItems": 12,
+      "maxItems": 32,
       "items": {
         "type": "object",
         "required": [
@@ -40,6 +40,14 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 240
+          },
+          "topic": {
+            "type": "string",
+            "enum": [
+              "LOCAL",
+              "SITE",
+              "MARKET"
+            ]
           }
         },
         "additionalProperties": false
@@ -47,7 +55,7 @@
     },
     "priorities": {
       "type": "array",
-      "maxItems": 3,
+      "maxItems": 6,
       "items": {
         "type": "object",
         "required": [
@@ -86,6 +94,14 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "topic": {
+            "type": "string",
+            "enum": [
+              "LOCAL",
+              "SITE",
+              "MARKET"
+            ]
           }
         },
         "additionalProperties": false
@@ -123,7 +139,7 @@
     },
     "queries": {
       "type": "array",
-      "maxItems": 3,
+      "maxItems": 6,
       "items": {
         "type": "object",
         "required": [

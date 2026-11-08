@@ -84,11 +84,17 @@ async function seedPrompt(store, prompts, id) {
 
 async function seedContract(store, contracts, id) {
   const current = await store.readText(`config/contracts/${id}.schema.json`, null);
+  const previousActive = current === null ? null : await contracts.getActiveVersion(id).catch(() => null);
+  const migrateActive = previousActive && bundledAuditDefault(`contracts/${id}.schema.json`, previousActive.hash);
   if (current === null || bundledAuditDefault(`contracts/${id}.schema.json`, store.hashText(current))) {
     const schema = JSON.parse(await readFile(new URL(`contracts/${id}.schema.json`, defaultsRoot), 'utf8'));
     await store.writeJson(`config/contracts/${id}.schema.json`, schema, { expectedHash: current === null ? null : store.hashText(current) });
   }
-  await contracts.ensure(id, id);
+  const contract = await contracts.ensure(id, id);
+  if (migrateActive && previousActive.hash !== contract.draftHash && (current === null || bundledAuditDefault(`contracts/${id}.schema.json`, store.hashText(current)))) {
+    const version = await contracts.createVersion(id, { expectedDraftHash: contract.draftHash });
+    await contracts.activate(id, version.id);
+  }
 }
 
 async function seedTemplate(store, templates, id) {
@@ -187,7 +193,7 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
         if (report?.pdfPath) reports[kind].pdf = (await publicAudits.readReport(audit.id, kind, 'pdf')).value;
       }
       if (!reports.final && audit.completion) {
-        reports.completion = audit.completion.then(async completed => ({ audit: await summary(completed), html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
+        reports.completion = audit.completion.then(async completed => ({ audit: await summary(completed), gmb: completed.reports.some(report => report.kind === 'gmb') ? { html: (await publicAudits.readReport(completed.id, 'gmb')).value, pdf: (await publicAudits.readReport(completed.id, 'gmb', 'pdf')).value } : null, html: (await publicAudits.readReport(completed.id, 'final')).value, pdf: (await publicAudits.readReport(completed.id, 'final', 'pdf')).value }));
       }
       return reports;
     },
@@ -267,6 +273,21 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
     await workflows.ensure(domainResearch);
     await workflows.ensure(localSeoResearch);
     await workflows.ensure(JSON.parse(await readFile(new URL('workflows/public-observation-audit.json', defaultsRoot), 'utf8')));
+    // Upgrade only the shipped v1 analysis limits, preserving operator customizations.
+    const observationWorkflow = await workflows.get('public-observation-audit');
+    const observationStep = observationWorkflow.steps[0];
+    if (observationWorkflow.steps.length === 1 && observationStep.id === 'observation-analysis'
+      && observationStep.model === 'gpt-5.4-mini' && observationStep.budget === 0.18
+      && observationStep.timeoutMs === 60000 && observationStep.maxOutputTokens === 3500) {
+      const active = await workflows.resolveActive('public-observation-audit');
+      if (active.definition.steps[0].timeoutMs === 60000 && active.definition.steps[0].maxOutputTokens === 3500) {
+        const { hash, activeVersionId, versions, ...definition } = observationWorkflow;
+        definition.steps[0] = { ...observationStep, timeoutMs: 150000, maxOutputTokens: 8000 };
+        const saved = await workflows.save(definition.id, definition, { expectedHash: hash });
+        const version = await workflows.createVersion(definition.id, { expectedDraftHash: saved.hash });
+        await workflows.activate(definition.id, version.id);
+      }
+    }
     await workflows.ensure(clientSiteWorkflow);
     await seedTemplate(store, templates, 'site-preview');
     await seedTemplate(store, templates, 'audit-initial');

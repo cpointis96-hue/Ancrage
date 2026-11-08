@@ -43,7 +43,7 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
     let result;
     try {
       const researchPlan = { firstQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} horaires téléphone site officiel`, secondQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} mairie annuaire` };
-      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, researchPlan, pages: pages.slice(0, 6), observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 3500, 3500), timeoutMs: Math.min(step.timeoutMs ?? 60000, 60000) });
+      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, researchPlan, pages: pages.slice(0, 6), observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 8000, 10000), maxToolCalls: 8, timeoutMs: Math.min(step.timeoutMs ?? 150000, 180000) });
     } catch (error) {
       // A timeout or an ambiguous network error does not prove that the call was free.
       if (/^HTTP_4\d\d$/.test(error.code ?? '')) await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code });

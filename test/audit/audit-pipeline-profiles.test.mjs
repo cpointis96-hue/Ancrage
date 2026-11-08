@@ -38,7 +38,9 @@ test('le même pipeline et le même template produisent des diagnostics distinct
   const styles = [];
   for (const scenario of cases) {
     const run = await app.publicAudits.create({ name: scenario.name, city: { id: scenario.slug, label: scenario.city, country: 'FR' }, domain: `https://${scenario.slug}.example`, identity: { source: 'google-places', placeId: `fixture-${scenario.slug}`, primaryTypeDisplayName: scenario.category } });
-    assert.equal(run.status, 'SUCCEEDED', scenario.slug);
+    assert.equal(run.status, 'PARTIAL', scenario.slug);
+    assert.equal(run.modules.observation.status, 'SUCCEEDED', scenario.slug);
+    assert.equal(run.stages.find(stage => stage.id === 'gmb-audit').cause, 'GOOGLE_PROFILE_NOT_CONFIGURED');
     assert.equal(run.modules.seo.pages.length, 1);
     assert.equal(run.modules.observation.priorities.length, scenario.issue ? 1 : 0);
     const html = (await app.publicAudits.readReport(run.id)).value;
