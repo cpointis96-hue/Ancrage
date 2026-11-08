@@ -7,7 +7,9 @@ import { decodeHtmlText } from './html-text.mjs';
 export function publicSource(value) {
   try {
     const url = new URL(value);
-    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
+    if (url.hostname === 'maps.google.com' && url.searchParams.has('cid')) url.searchParams.delete('g_mp');
+    return url.href;
   } catch { return null; }
 }
 
@@ -93,7 +95,22 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     const webObservations = output.observations.filter(item => /^web-source-\d+$/.test(item.id) && !seen.has(item.id) && seen.add(item.id) && (urls.has(publicSource(item.url)) || capturedQuote(item))).map((item, index) => ({ ...item, url: publicSource(item.url), id: `web-${index + 1}`, classification: 'AI_INTERPRETED', sourceKind: urls.has(publicSource(item.url)) ? 'web-search' : 'captured-page', originalId: item.id }));
     const ids = new Map([...observations.map(item => [item.id, item.id]), ...webObservations.map(item => [item.originalId, item.id])]);
     const corrections = new Set();
-    const supportedPriorities = output.priorities.filter(item => item.observationIds.length && item.observationIds.every(id => ids.has(id)));
+    const hoursConflictSupported = item => {
+      if (!/horaires/.test(normalize(item.title)) || !/align|harmonis|contradic|incoher/.test(normalize(item.title))) return true;
+      const byDay = new Map();
+      for (const id of item.observationIds) {
+        const evidence = [...observations, ...webObservations].find(value => value.id === id || value.originalId === id);
+        const content = normalize(`${evidence?.fact ?? ''} ${evidence?.quote ?? ''}`);
+        for (const match of content.matchAll(/(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)[a-z ]{0,40}(\d{1,2}) (\d{2}) (\d{1,2}) (\d{2})/g)) {
+          const range = match.slice(2).map(Number).join(':');
+          const entries = byDay.get(match[1]) ?? [];
+          if (entries.some(entry => entry.url !== evidence.url && entry.range !== range)) return true;
+          entries.push({ url: evidence.url, range }); byDay.set(match[1], entries);
+        }
+      }
+      return false;
+    };
+    const supportedPriorities = output.priorities.filter(item => item.observationIds.length && item.observationIds.every(id => ids.has(id)) && hoursConflictSupported(item));
     const priorities = supportedPriorities.filter(item => {
       const correction = normalize(item.correction);
       if (corrections.has(correction)) return false;

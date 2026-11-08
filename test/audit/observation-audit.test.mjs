@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { qualifyObservationResearch } from '../../src/audit/observation-analyst.mjs';
 import { createApp } from '../../src/app.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
 import { createDefaultProviderAdapters } from '../../src/providers/http-adapters.mjs';
@@ -216,4 +217,15 @@ test('accepte plusieurs extraits exacts séparés par une ellipse mais refuse un
   const retained = run.modules.observation.observations.some(item => item.originalId === 'web-source-2');
   assert.equal(retained, true);
   assert.equal(run.modules.observation.observations.some(item => item.originalId === 'web-source-3'), false);
+});
+
+test('une recommandation d’aligner les horaires exige deux valeurs contradictoires pour le même jour', () => {
+  for (const closing of ['20:30', '21:00']) {
+    const response = observationResponse();
+    response.output.priorities = [{ ...response.output.priorities[0], title: 'Aligner les horaires publics', observationIds: ['google-hours', 'directory-hours'] }];
+    response.output.conclusion.observationIds = ['google-hours'];
+    const observations = [{ id: 'google-hours', url: 'https://maps.google.com/?cid=1', fact: 'lundi: 07:00 – 20:30' }, { id: 'directory-hours', url: 'https://directory.example/fixture', fact: `Lundi 07:00 – ${closing}` }];
+    const output = qualifyObservationResearch({ result: response, subject: observationInput, observations, observedAt: '2026-11-08T12:00:00Z', provider: 'fixture', execution: 'fixture', source: {} });
+    assert.equal(output.priorities.length, closing === '20:30' ? 0 : 1);
+  }
 });

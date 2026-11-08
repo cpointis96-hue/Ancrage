@@ -92,7 +92,7 @@ export async function runObservationAudit({ result, ledger, analyst, profileRead
     if (!analysis) {
       checkpoint.analysisStarted = true;
       await save();
-      try { analysis = analyst ? await analyst({ subject: { name, city: city.label, country: city.country, address, domain, category: identity?.primaryTypeDisplayName ?? identity?.primaryType ?? null }, pages: seo.pages ?? [], observations, ledger, observedAt, costEventsRef: `runs/${result.id}/cost-events.jsonl` }) : null; }
+      try { analysis = analyst ? await analyst({ subject: { name, city: city.label, country: city.country, address, domain, category: identity?.primaryTypeDisplayName ?? identity?.primaryType ?? null, businessTypes: identity?.types ?? [] }, pages: seo.pages ?? [], observations, ledger, observedAt, costEventsRef: `runs/${result.id}/cost-events.jsonl` }) : null; }
       catch { analysis = null; }
       analysis ??= { status: 'PARTIAL', cause: 'AI_WEB_RESEARCH_UNAVAILABLE', execution: 'not-run', observations: [], priorities: [], competitors: [], queries: [], evidence: [] };
       checkpoint.analysis = analysis;

@@ -104,7 +104,7 @@ export function createDefaultProviderAdapters({ fetchImpl = globalThis.fetch, en
   openai.research = async ({ secret, model, system, input, maxOutputTokens = 2400, maxToolCalls = 2, timeoutMs: researchTimeout = 60000 }) => {
     const body = await requestJson(fetchImpl, 'https://api.openai.com/v1/responses', {
       method: 'POST', headers: jsonHeaders({ authorization: `Bearer ${credential(secret).key}` }),
-      body: JSON.stringify({ model, store: false, service_tier: 'default', instructions: system, input: JSON.stringify(input), ...(input.outputSchema ? { text: { format: { type: 'json_schema', name: 'audit_analysis', strict: true, schema: strictSchema(input.outputSchema) } } } : {}), reasoning: { effort: 'low' }, tools: [{ type: 'web_search', search_context_size: 'low' }], tool_choice: 'required', max_tool_calls: Math.max(1, Math.min(8, maxToolCalls)), include: ['web_search_call.action.sources'], max_output_tokens: maxOutputTokens }),
+      body: JSON.stringify({ model, store: false, service_tier: 'default', instructions: system, input: JSON.stringify(input), ...(input.outputSchema ? { text: { format: { type: 'json_schema', name: 'audit_analysis', strict: true, schema: strictSchema(input.outputSchema) } } } : {}), reasoning: { effort: 'medium' }, tools: [{ type: 'web_search', search_context_size: 'low' }], tool_choice: 'required', max_tool_calls: Math.max(1, Math.min(8, maxToolCalls)), include: ['web_search_call.action.sources'], max_output_tokens: maxOutputTokens }),
     }, researchTimeout);
     const content = (body?.output ?? []).filter(item => item.type === 'message').flatMap(item => item.content ?? []);
     const calls = (body?.output ?? []).filter(item => item.type === 'web_search_call');

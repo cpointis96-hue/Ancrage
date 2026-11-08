@@ -8,6 +8,7 @@ const normalized = value => text(value).toLocaleLowerCase('fr').normalize('NFD')
 const unique = values => [...new Set(values.filter(Boolean))];
 const paragraph = value => ({ type: 'paragraph', text: value });
 const table = (title, columns, rows) => ({ type: 'table', title, columns, rows });
+const reviewExcerpt = value => { const words = String(value ?? '').trim().split(/\s+/); return words.slice(0, 25).join(' ') + (words.length > 25 ? '…' : ''); };
 
 function additionalLimits(values, { hasWebsite, hasComparisons }) {
   return values.filter(value => {
@@ -100,7 +101,7 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
       if (!profile.reviews?.length) observations.push(paragraph('Aucun texte d’avis n’a été retourné pour cette collecte. Aucun diagnostic des thèmes clients ne peut être établi à partir de cette collecte.'));
       if (profile.currentHours?.length && JSON.stringify(profile.currentHours) !== JSON.stringify(profile.hours)) observations.push(table('Horaires courants publiés sur Google', ['Jour et horaires'], profile.currentHours.map(value => [value])));
       if (profile.reviews?.length) {
-        observations.push({ type: 'facts', items: profile.reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : ${review.text}`, source: sourceId(review.url ?? profile.url) ?? reference })) });
+        observations.push({ type: 'facts', items: profile.reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : « ${reviewExcerpt(review.text)} »`, source: sourceId(review.url ?? profile.url) ?? reference })) });
         scope.push(profile.reviewScope);
       }
     }

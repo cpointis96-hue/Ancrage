@@ -1,5 +1,5 @@
 // ASCII PDF streams with WinAnsi octal escapes preserve French text through the text store.
-const extraCharacters = { '€': 128, 'Œ': 140, 'œ': 156, '‘': 145, '’': 146, '“': 147, '”': 148, '–': 150, '—': 151, '…': 133, ' ': 32, ' ': 32 };
+const extraCharacters = { '€': 128, 'Œ': 140, 'œ': 156, '‘': 145, '’': 146, '“': 147, '”': 148, '–': 150, '—': 151, '…': 133, ' ': 32, ' ': 32, ' ': 32 };
 function pdfString(value) {
   return [...String(value ?? '')].map(char => {
     const code = extraCharacters[char] ?? char.charCodeAt(0);
