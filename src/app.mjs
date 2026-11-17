@@ -207,7 +207,7 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
         provenance: { auditPacketRef: preparationDraft.auditPacketRef, preparationDraftRef: preparationDraft.id },
         confirmation: { status: 'CONFIRMED', confirmedAt },
         template: { id: template.id, versionId: template.versionId, hash: template.hash.replace(/^sha256:/, '') },
-        pages: [{ path: '/', title: request.input.name, sections: ['identity', 'story', 'menu', 'contact'], provenanceRefs: [preparationDraft.auditPacketRef, preparationDraft.id], confirmation: 'CONFIRMED' }],
+        pages: [{ path: '/', title: request.input.name, sections: ['identity', ...(preparation.intake?.story ? ['story'] : []), ...(preparation.intake?.menu?.length ? ['menu'] : []), 'gallery', 'contact'], provenanceRefs: [preparationDraft.auditPacketRef, preparationDraft.id], confirmation: 'CONFIRMED' }],
         assets: preparation.assets.map(asset => ({ id: asset.assetId, artifactRef: asset.assetPath, rightsStatus: asset.rightsStatus, provenanceRefs: [asset.hash], confirmation: 'CONFIRMED' })),
       };
     },
@@ -225,9 +225,9 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
         contact: intake.contact ?? '',
         story: intake.story ?? '',
         menu: Array.isArray(intake.menu) ? intake.menu : [],
-        photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, alt: request.input.name, category: asset.category, rightsStatus: asset.rightsStatus })),
+        photos: photoFiles.map(({ asset, value }) => ({ dataUrl: `data:${asset.mimeType};base64,${value.toString('base64')}`, category: asset.category, rightsStatus: asset.rightsStatus })),
       }, { source: 'public-demo-intake' });
-      const run = await simulation.startDossier(dossier.id, { siteSpec, pipelineReservation });
+      const run = await simulation.startDossier(dossier.id, { siteSpec, pipelineReservation, hours: intake.hours });
       if (run.status !== 'SUCCEEDED') throw new Error('Le pipeline de démo n’est pas terminé.');
       return {
         runId: run.id,
@@ -272,21 +272,18 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
     const localSeoResearch = JSON.parse(await readFile(new URL('workflows/local-seo-research.json', defaultsRoot), 'utf8'));
     await workflows.ensure(domainResearch);
     await workflows.ensure(localSeoResearch);
-    await workflows.ensure(JSON.parse(await readFile(new URL('workflows/public-observation-audit.json', defaultsRoot), 'utf8')));
-    // Upgrade only the shipped v1 analysis limits, preserving operator customizations.
-    const observationWorkflow = await workflows.get('public-observation-audit');
-    const observationStep = observationWorkflow.steps[0];
-    if (observationWorkflow.steps.length === 1 && observationStep.id === 'observation-analysis'
-      && observationStep.model === 'gpt-5.4-mini' && observationStep.budget === 0.18
-      && observationStep.timeoutMs === 60000 && observationStep.maxOutputTokens === 3500) {
-      const active = await workflows.resolveActive('public-observation-audit');
-      if (active.definition.steps[0].timeoutMs === 60000 && active.definition.steps[0].maxOutputTokens === 3500) {
-        const { hash, activeVersionId, versions, ...definition } = observationWorkflow;
-        definition.steps[0] = { ...observationStep, timeoutMs: 150000, maxOutputTokens: 8000 };
-        const saved = await workflows.save(definition.id, definition, { expectedHash: hash });
-        const version = await workflows.createVersion(definition.id, { expectedDraftHash: saved.hash });
-        await workflows.activate(definition.id, version.id);
-      }
+    const observationPath = 'workflows/public-observation-audit.json';
+    const observationDefault = JSON.parse(await readFile(new URL(observationPath, defaultsRoot), 'utf8'));
+    const observationWorkflow = await workflows.ensure(observationDefault);
+    const updatedHash = store.hashText(`${JSON.stringify(observationDefault, null, 2)}\n`);
+    const activeObservation = await workflows.resolveActive(observationDefault.id);
+    if (bundledAuditDefault(observationPath, activeObservation.hash)
+      && [activeObservation.hash, updatedHash].includes(observationWorkflow.hash)) {
+      const saved = observationWorkflow.hash === updatedHash ? observationWorkflow
+        : await workflows.save(observationDefault.id, observationDefault, { expectedHash: observationWorkflow.hash });
+      const version = saved.versions.find(item => item.hash === updatedHash)
+        ?? await workflows.createVersion(saved.id, { expectedDraftHash: saved.hash });
+      await workflows.activate(saved.id, version.id);
     }
     await workflows.ensure(clientSiteWorkflow);
     await seedTemplate(store, templates, 'site-preview');

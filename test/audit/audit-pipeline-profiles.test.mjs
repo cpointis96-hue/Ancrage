@@ -53,7 +53,9 @@ test('le même pipeline et le même template produisent des diagnostics distinct
     assert.equal(sent.subject.category, scenario.category);
     assert.ok(sent.researchPlan.firstQuery.includes(JSON.stringify(scenario.name)));
     assert.ok(sent.researchPlan.firstQuery.includes(JSON.stringify(scenario.city)));
-    assert.ok(sent.pages[0].text.includes(scenario.text));
+    assert.equal(sent.coverage.pagesCaptured, 1);
+    assert.equal(Object.hasOwn(sent, 'pages'), false);
+    assert.equal(sent.observations.filter(item => item.id.startsWith('local-page-') && item.fact.includes(scenario.text)).length, 1);
   }
   assert.equal(new Set(styles).size, 1);
   assert.equal(new Set(captured.map(request => request.system)).size, 1);

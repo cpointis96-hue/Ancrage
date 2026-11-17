@@ -1,7 +1,7 @@
 {
   "id": "public-observation-audit",
   "name": "Audit public par observations",
-  "version": 1,
+  "version": 2,
   "steps": [
     {
       "id": "observation-analysis",
@@ -14,7 +14,7 @@
       ],
       "implementation": "provider-chat",
       "provider": "openai",
-      "model": "gpt-5.4-mini",
+      "model": "gpt-6.1-terra",
       "promptRef": "public-observation-analyst",
       "contractRef": "public-observation-analysis",
       "timeoutMs": 150000,
@@ -23,15 +23,16 @@
       "approval": "none",
       "pricing": {
         "provider": "openai",
-        "model": "gpt-5.4-mini",
+        "model": "gpt-6.1-terra",
         "currency": "USD",
-        "inputPerMillion": 0.75,
-        "cachedInputPerMillion": 0.075,
-        "outputPerMillion": 4.5,
+        "inputPerMillion": 1,
+        "cachedInputPerMillion": 0.05,
+        "outputPerMillion": 5,
         "webSearchPerCall": 0.01,
-        "checkedAt": "2026-10-24",
+        "checkedAt": "2026-11-17",
         "source": "https://developers.openai.com/api/docs/pricing"
-      }
+      },
+      "maxToolCalls": 6
     }
   ]
 }

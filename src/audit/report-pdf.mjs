@@ -1,3 +1,5 @@
+import { coverageLabel } from './report-sections.mjs';
+
 // ASCII PDF streams with WinAnsi octal escapes preserve French text through the text store.
 const extraCharacters = { '€': 128, 'Œ': 140, 'œ': 156, '‘': 145, '’': 146, '“': 147, '”': 148, '–': 150, '—': 151, '…': 133, ' ': 32, ' ': 32, ' ': 32 };
 function pdfString(value) {
@@ -59,7 +61,7 @@ export function renderAuditDocumentPdf(document) {
   const facts = items => {
     for (const fact of items ?? []) {
       const references = (fact.sources ?? [fact.source]).filter(Boolean);
-      paragraph(`${fact.text}${references.length ? ` [${references.join(', ')}]` : ''}`, { indent: 10, gap: 6 });
+      paragraph(`${fact.label ? fact.label + ' — ' : ''}${fact.text}${references.length ? ` [${references.join(', ')}]` : ''}`, { indent: 10, gap: 6 });
     }
   };
   function renderTable(block) {
@@ -100,7 +102,8 @@ export function renderAuditDocumentPdf(document) {
         if (estimated < 640) ensure(estimated);
         heading(`${block.title}${!block.facts?.length && block.sources?.length ? ` [${block.sources.join(', ')}]` : ''}`, 3); facts(block.facts);
         paragraph(`Pour vos clients : ${block.impact}`);
-        paragraph(`À faire : ${block.action}`, { gap: 14 });
+        paragraph(`À faire : ${block.action}`, { gap: block.limitation ? 7 : 14 });
+        if (block.limitation) paragraph(`Limite : ${block.limitation}`, { size: 9.5, color: '.32 .38 .34', gap: 14 });
       }
       if (block.type === 'comparison') { heading(block.title, 3); paragraph(`${block.text}${block.source ? ` [${block.source}]` : ''}`); }
       if (block.type === 'coverage') {
@@ -111,7 +114,7 @@ export function renderAuditDocumentPdf(document) {
           const x = margin + index * cellWidth;
           current.commands.push(`.83 .86 .82 RG .7 w ${x} ${y - 32} ${cellWidth - 12} 42 re S`);
           draw(item.label, x + 8, y - 5, 10, 'F2');
-          draw(item.status === 'SUCCEEDED' ? 'Collecte effectuée' : item.status === 'BLOCKED' ? 'Collecte indisponible' : 'Collecte partielle', x + 8, y - 20, 8.5);
+          draw(coverageLabel(item.status), x + 8, y - 20, 8.5);
         });
         y -= 52;
       }

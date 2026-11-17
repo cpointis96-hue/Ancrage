@@ -65,20 +65,20 @@ function optionalText(value, field, max = 4000) {
 }
 
 function normalizeMenu(value) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 100) throw new ValidationError('menu est invalide.', { field: 'menu' });
+  if (!Array.isArray(value) || value.length > 100) throw new ValidationError('menu est invalide.', { field: 'menu' });
   return value.map((item, index) => {
     if (!item || typeof item !== 'object') throw new ValidationError('Plat invalide.', { field: `menu.${index}` });
     const name = optionalText(item.name, `menu.${index}.name`, 160);
     const priceText = String(item.price ?? '').trim().replace(',', '.');
     const price = Number(priceText.match(/^\d+(?:\.\d+)?/)?.[0] ?? NaN);
     if (!name || !Number.isFinite(price) || price < 0 || price > 100000) throw new ValidationError('Chaque plat doit avoir un nom et un prix valide.', { field: `menu.${index}` });
-    return { name, price };
+    return { name, price, ...(item.description ? { description: optionalText(item.description, `menu.${index}.description`, 500) } : {}) };
   });
 }
 
 function hasCriticalIntake(preparation) {
   const intake = preparation.intake ?? {};
-  return Boolean(optionalText(intake.address, 'address', 500) && optionalText(intake.contact, 'contact', 320) && Array.isArray(intake.menu) && intake.menu.length > 0 && intake.menu.every(item => item?.name && Number.isFinite(item.price)));
+  return Boolean(optionalText(intake.address, 'address', 500) && optionalText(intake.contact, 'contact', 320) && Array.isArray(intake.menu) && (intake.menu.length ? intake.menu.every(item => item?.name && Number.isFinite(item.price)) : intake.story?.trim()));
 }
 
 function normalizeHours(value) {
@@ -117,6 +117,7 @@ function preparationDraft(request, preparation) {
       value('contact', intake.contact),
       value('hours', intake.hours),
       value('menu', intake.menu),
+      ...(intake.story ? [value('story', intake.story)] : []),
       ...preparation.assets.map(asset => ({ field: `photo:${asset.category}`, value: asset.assetId, source: 'OWNER_AUTHORIZED_ASSET', confirmation: 'CONFIRMED' })),
     ],
   };
@@ -281,8 +282,9 @@ export function createPublicControlPlane({ store, contracts = null, clock = () =
   function requireKey(key) { return text(key, 'Idempotency-Key', 200); }
   function requireFinalReport(request) { if (request.state !== 'FINAL_REPORT_READY') throw new AppError('Le rapport final n’est pas disponible.', { code: 'REPORT_NOT_READY', status: 409 }); }
   function checklist(preparation) {
-    const photos = [...categories].every(category => preparation.assets.some(asset => asset.category === category));
-    const rights = photos && preparation.assets.length === 5 && preparation.assets.every(asset => knownRights.has(asset.rightsStatus));
+    const requiredPhotos = [...categories].filter(category => preparation.intake?.menu?.length !== 0 || !category.startsWith('signature-dish-'));
+    const photos = requiredPhotos.every(category => preparation.assets.some(asset => asset.category === category));
+    const rights = photos && preparation.assets.every(asset => knownRights.has(asset.rightsStatus));
     return { ...preparation.checklist, criticalComplete: hasCriticalIntake(preparation), locale: Boolean(preparation.locale), hours: Array.isArray(preparation.intake?.hours) && preparation.intake.hours.length > 0, ownerConfirmation: preparation.ownerConfirmed === true, photos, rights };
   }
   async function createRequest(input = {}) {

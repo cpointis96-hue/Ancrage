@@ -45,7 +45,8 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
     let result;
     try {
       const researchPlan = { firstQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} horaires téléphone site officiel`, secondQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} mairie annuaire` };
-      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, researchPlan, pages: pages.slice(0, 6), observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 8000, 10000), maxToolCalls: 8, timeoutMs: Math.min(step.timeoutMs ?? 150000, 180000) });
+      const coverage = { siteProvided: Boolean(subject.domain), pagesCaptured: pages.filter(page => page.crawlStatus === 'complete').length, pagesUnavailable: pages.filter(page => page.crawlStatus !== 'complete').length };
+      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, observedAt, researchPlan, coverage, observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 8000, 10000), maxToolCalls: step.maxToolCalls ?? 8, timeoutMs: Math.min(step.timeoutMs ?? 150000, 180000) });
     } catch (error) {
       // A timeout or an ambiguous network error does not prove that the call was free.
       if (/^HTTP_4\d\d$/.test(error.code ?? '')) await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code });
@@ -53,6 +54,13 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
     }
     const cost = costOf(result, step);
     if (cost === null) return failed('AI_COST_UNAVAILABLE_AFTER_CALL');
+    provenance.usage = {
+      inputTokens: result.usage?.input_tokens ?? null,
+      cachedInputTokens: result.usage?.input_tokens_details?.cached_tokens ?? null,
+      outputTokens: result.usage?.output_tokens ?? null,
+      searchCalls: result.searchCalls ?? null,
+      costUsd: cost,
+    };
     try {
       const settled = await ledger.settle({ authorizationId: authorization.authorizationId, actualCost: cost });
       if (settled.overLimit) return failed('BUDGET_EXCEEDED_AFTER_CALL');
@@ -84,29 +92,55 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     const urls = new Set((result.sources ?? []).map(item => publicSource(item.url)).filter(Boolean));
     const output = result.output;
     const seen = new Set();
-    const capturedQuote = item => {
-      const text = observations.filter(observation => publicSource(observation.url) === publicSource(item.url)).map(observation => observation.fact).join(' ');
+    const captured = Map.groupBy(observations.filter(item => publicSource(item.url)), item => publicSource(item.url));
+    const capturedQuote = (item, records) => {
       const quotes = [...item.quote.matchAll(/"([^"]+)"/g)].map(match => match[1]);
       if (!quotes.length) quotes.push(item.quote);
       const excerpts = quotes.flatMap(quote => quote.split(/\s*(?:…|\.{3})\s*/)).filter(Boolean);
-      return excerpts.length && excerpts.every(quote => normalize(decodeHtmlText(quote)).length >= 4 && normalize(decodeHtmlText(text)).includes(normalize(decodeHtmlText(quote))));
+      return excerpts.length && excerpts.every(quote => {
+        const excerpt = normalize(decodeHtmlText(quote));
+        return excerpt.length >= 4 && records.some(record => normalize(decodeHtmlText(record.fact)).includes(excerpt));
+      });
     };
-    const rejectedObservations = output.observations.filter(item => !urls.has(publicSource(item.url)) && !capturedQuote(item)).map(item => ({ id: item.id, url: publicSource(item.url), reason: 'QUOTE_NOT_CAPTURED' }));
-    const webObservations = output.observations.filter(item => /^web-source-\d+$/.test(item.id) && !seen.has(item.id) && seen.add(item.id) && (urls.has(publicSource(item.url)) || capturedQuote(item))).map((item, index) => ({ ...item, url: publicSource(item.url), id: `web-${index + 1}`, classification: 'AI_INTERPRETED', sourceKind: urls.has(publicSource(item.url)) ? 'web-search' : 'captured-page', originalId: item.id }));
+    const rejectedObservations = [];
+    const webObservations = [];
+    for (const item of output.observations) {
+      const url = publicSource(item.url);
+      const records = captured.get(url);
+      const sourceKind = records ? (capturedQuote(item, records) ? 'captured-page' : null) : (urls.has(url) ? 'web-search' : null);
+      const reason = !/^web-source-\d+$/.test(item.id) || seen.has(item.id) ? 'INVALID_OBSERVATION_ID' : !sourceKind ? 'QUOTE_NOT_CAPTURED' : null;
+      if (reason) {
+        rejectedObservations.push({ id: item.id, url, reason });
+        continue;
+      }
+      seen.add(item.id);
+      webObservations.push({ ...item, url, id: `web-${webObservations.length + 1}`, classification: 'AI_INTERPRETED', sourceKind, originalId: item.id });
+    }
     const ids = new Map([...observations.map(item => [item.id, item.id]), ...webObservations.map(item => [item.originalId, item.id])]);
     const corrections = new Set();
     const hoursConflictSupported = item => {
       if (!/horaires/.test(normalize(item.title)) || !/align|harmonis|contradic|incoher/.test(normalize(item.title))) return true;
-      const byDay = new Map();
+      const schedules = new Map();
+      const weekdays = /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/;
       for (const id of item.observationIds) {
         const evidence = [...observations, ...webObservations].find(value => value.id === id || value.originalId === id);
-        const content = normalize(`${evidence?.fact ?? ''} ${evidence?.quote ?? ''}`);
-        for (const match of content.matchAll(/(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)[a-z ]{0,40}(\d{1,2}) (\d{2}) (\d{1,2}) (\d{2})/g)) {
-          const range = match.slice(2).map(Number).join(':');
-          const entries = byDay.get(match[1]) ?? [];
-          if (entries.some(entry => entry.url !== evidence.url && entry.range !== range)) return true;
-          entries.push({ url: evidence.url, range }); byDay.set(match[1], entries);
+        if (!evidence?.url || evidence.id === 'google-current-hours') continue;
+        const parts = normalize(evidence.quote ?? evidence.fact).split(weekdays);
+        for (let index = 1; index < parts.length; index += 2) {
+          const day = parts[index];
+          const range = parts[index + 1].trim();
+          const slots = [...range.matchAll(/\b([01]?\d|2[0-3]) ([0-5]\d)(?: a)? ([01]?\d|2[0-3]) ([0-5]\d)\b/g)]
+            .map(match => match.slice(1).map(Number).join(':'));
+          if (range === 'ferme') slots.push('CLOSED');
+          if (!slots.length) continue;
+          const bySource = schedules.get(day) ?? new Map();
+          bySource.set(evidence.url, new Set([...(bySource.get(evidence.url) ?? []), ...slots]));
+          schedules.set(day, bySource);
         }
+      }
+      for (const bySource of schedules.values()) {
+        const entries = [...bySource.values()];
+        if (entries.some((left, index) => entries.slice(index + 1).some(right => left.size === right.size && [...left].some(slot => !right.has(slot))))) return true;
       }
       return false;
     };
@@ -127,8 +161,8 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     }).map(item => ({ title: item.name, url: publicSource(item.url), domain: null, comparison: item.comparison, scope: 'public-web', classification: 'AI_INTERPRETED' }));
     const evidence = webObservations.map(item => createEvidenceSnapshot({ sourceType: item.sourceKind === 'web-search' ? 'ai-web-research' : 'ai-crawl-interpretation', provider, canonicalUrl: item.url, observedAt, rawPayload: JSON.stringify(item), ruleVersion: 'observation-audit-v1', requestParameters: { model: source.model } }));
     const supportedConclusion = output.conclusion.observationIds.length && output.conclusion.observationIds.every(id => ids.has(id));
-    const complete = (priorities.length > 0 || output.conclusion.decision === 'KEEP_SITE') && supportedPriorities.length === output.priorities.length && webObservations.some(item => item.sourceKind === 'web-search') && supportedConclusion;
+    const complete = (priorities.length > 0 || output.conclusion.decision === 'KEEP_SITE') && supportedPriorities.length === output.priorities.length && webObservations.some(item => urls.has(item.url)) && supportedConclusion && !rejectedObservations.length;
     const observedWords = new Set(normalize(decodeHtmlText([subject.name, subject.city, subject.category, ...observations.map(item => item.fact), ...webObservations.map(item => item.fact)].join(' '))).split(' '));
     const queries = output.queries.filter(item => normalize(item.query).includes(normalize(subject.city)) && normalize(item.query).split(' ').every(word => word.length < 3 || observedWords.has(word)));
-    return { status: complete ? 'SUCCEEDED' : 'PARTIAL', cause: complete ? null : 'AI_OBSERVATIONS_INSUFFICIENT', execution, source, qualification: { rejectedObservations, rejectedPriorities: output.priorities.filter(item => !item.observationIds.length || !item.observationIds.every(id => ids.has(id))).map(item => ({ title: item.title, missingObservationIds: item.observationIds.filter(id => !ids.has(id)) })), unsupportedConclusionIds: output.conclusion.observationIds.filter(id => !ids.has(id)) }, observations: webObservations, priorities, competitors, queries, conclusion: supportedConclusion ? { ...output.conclusion, observationIds: output.conclusion.observationIds.map(id => ids.get(id)), classification: 'AI_INTERPRETED' } : null, limitations: output.limitations, evidence };
+    return { status: complete ? 'SUCCEEDED' : 'PARTIAL', cause: complete ? null : 'AI_OBSERVATIONS_INSUFFICIENT', execution, source, qualification: { rejectedObservations, rejectedPriorities: output.priorities.filter(item => !supportedPriorities.includes(item)).map(item => ({ title: item.title, missingObservationIds: item.observationIds.filter(id => !ids.has(id)) })), unsupportedConclusionIds: output.conclusion.observationIds.filter(id => !ids.has(id)) }, observations: webObservations, priorities, competitors, queries, conclusion: supportedConclusion ? { ...output.conclusion, observationIds: output.conclusion.observationIds.map(id => ids.get(id)), classification: 'AI_INTERPRETED' } : null, limitations: output.limitations, evidence };
 }

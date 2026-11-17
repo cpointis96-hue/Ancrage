@@ -226,7 +226,11 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
           current = redirectTarget(response, current.href);
         }
         const status = Number(response.status ?? 200);
-        if (status >= 400) throw crawlerError(`Réponse HTTP ${status}.`, `HTTP_${status}`);
+        if (status >= 400) {
+          await cancelBody(response, signal);
+          pages.push({ url: current.href, status, crawlStatus: 'blocked', html: '', errorCode: `HTTP_${status}` });
+          continue;
+        }
         const contentType = header(response, 'content-type');
         if (contentType && !contentType.toLowerCase().includes('text/html')) throw crawlerError('Ressource non HTML.', 'NOT_HTML');
         const html = await readHtml(response, { signal, remainingBytes: () => maxBytes - usedBytes, consumeBytes: size => { usedBytes += size; } });

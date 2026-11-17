@@ -55,6 +55,18 @@ export function createHostedHandler({ getApp, sessionSecret, workerSecret, opera
           return;
         }
       }
+      if (method === 'GET' && /^\/demo\/[a-zA-Z0-9_-]{43}$/.test(url.pathname)) {
+        const preparationId = url.searchParams.get('preparation');
+        if (!preparationId || !/^[a-z0-9-]{1,64}$/.test(preparationId) || !authorize(request, preparationId)) {
+          return sendJson(response, 404, { error: { code: 'NOT_FOUND' } });
+        }
+        const app = await getApp();
+        const preparation = await app.publicControlPlane.getDemoRequest(preparationId);
+        if (preparation.status !== 'READY_FOR_PROSPECT' || preparation.presentation?.href !== url.pathname) {
+          return sendJson(response, 404, { error: { code: 'NOT_FOUND' } });
+        }
+        return createRouter(app)(request, response, url);
+      }
       if (!url.pathname.startsWith('/api/')) {
         const files = { '/': ['intake.html', 'text/html'], '/intake.html': ['intake.html', 'text/html'], '/intake.css': ['intake.css', 'text/css'], '/intake.mjs': ['intake.mjs', 'text/javascript'], '/api.mjs': ['api.mjs', 'text/javascript'], '/assets/brand-rock.png': ['assets/brand-rock.png', 'image/png'], '/assets/jet.woff2': ['assets/jet.woff2', 'font/woff2'] };
         files['/cockpit'] = ['operator-login.html', 'text/html'];

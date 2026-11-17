@@ -11,13 +11,13 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       await ready;
       if (parts[0] === 'demo' && parts.length === 2 && demos) {
         const demo = await demos.read(parts[1]);
-        return sendContent(response, 200, demo.value.replace(/<head>/i, '<head><meta name="robots" content="noindex,nofollow">'), demo.contentType, { 'X-Robots-Tag': 'noindex, nofollow' });
+        return sendContent(response, 200, demo.value.replace(/<head>/i, '<head><meta name="robots" content="noindex,nofollow">'), demo.contentType, { 'X-Robots-Tag': 'noindex, nofollow', 'Content-Security-Policy': REPORT_CONTENT_SECURITY_POLICY });
       }
       if (parts[0] !== 'api') throw new NotFoundError();
       if (parts[1] === 'demo' && parts[2] === 'workbench' && parts[3] === 'audits' && demoWorkbench) {
         if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await demoWorkbench.list());
         if (parts.length === 4 && method === 'POST') return sendJson(response, 201, await demoWorkbench.create(await readJsonBody(request)));
-        if (parts.length === 6 && method === 'GET' && ['report', 'site'].includes(parts[5])) return sendContent(response, 200, (await demoWorkbench.readArtifact(id(parts[4]), parts[5])).value, 'text/html; charset=utf-8');
+        if (parts.length === 6 && method === 'GET' && ['report', 'site'].includes(parts[5])) return sendContent(response, 200, (await demoWorkbench.readArtifact(id(parts[4]), parts[5])).value, 'text/html; charset=utf-8', { 'X-Robots-Tag': 'noindex, nofollow', 'Content-Security-Policy': REPORT_CONTENT_SECURITY_POLICY });
       }
       if (parts[1] === 'public' && publicControlPlane) {
         if (parts[2] === 'requests' && parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listRequests());

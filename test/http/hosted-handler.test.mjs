@@ -37,7 +37,9 @@ test('le cockpit authentifié consulte les demandes hébergées et refuse les mu
 
 test('isole les demandes publiques et bloque les routes privées avant initialisation', async () => {
   let initialized = 0; let worked = 0;
-  const app = { publicControlPlane: { createRequest: async () => ({ id: 'request-fixture' }), getRequest: async id => ({ id }), createPreparation: async () => ({ id: 'preparation-fixture' }), getDemoRequest: async id => ({ id }) }, workPublicAudits: async () => { worked++; return []; } };
+  const demoHref = '/demo/' + 'a'.repeat(43);
+  let demoReady = false;
+  const app = { publicControlPlane: { createRequest: async () => ({ id: 'request-fixture' }), getRequest: async id => ({ id }), createPreparation: async () => ({ id: 'preparation-fixture' }), getDemoRequest: async id => ({ id, status: demoReady ? 'READY_FOR_PROSPECT' : 'READY_FOR_OWNER_REVIEW', presentation: { href: demoHref } }) }, demos: { read: async () => ({ value: '<html><head></head><body>Démo validée</body></html>', contentType: 'text/html' }) }, workPublicAudits: async () => { worked++; return []; } };
   const background = [];
   const handler = createHostedHandler({ origin: 'https://fixture.example', sessionSecret: 'x'.repeat(32), workerSecret: 'worker-secret', getApp: async () => { initialized++; return app; }, waitUntil: promise => background.push(promise) });
   const invoke = async (url, method = 'GET', headers = {}, body = '') => {
@@ -61,6 +63,17 @@ test('isole les demandes publiques et bloque les routes privées avant initialis
   const prepCookie = prep.headers['set-cookie'].split(';')[0];
   assert.equal((await invoke('/api/public/demo-requests/preparation-fixture', 'GET', { cookie: prepCookie })).statusCode, 200);
   assert.equal((await invoke('/api/public/demo-requests/preparation-fixture', 'GET', { cookie })).statusCode, 403);
+  const demoUrl = `${demoHref}?preparation=preparation-fixture`;
+  assert.equal((await invoke(demoUrl, 'GET', { cookie: prepCookie })).statusCode, 404);
+  demoReady = true;
+  assert.equal((await invoke(demoUrl, 'GET', { cookie })).statusCode, 404);
+  assert.equal((await invoke(`/demo/${'b'.repeat(43)}?preparation=preparation-fixture`, 'GET', { cookie: prepCookie })).statusCode, 404);
+  const demo = await invoke(demoUrl, 'GET', { cookie: prepCookie });
+  assert.equal(demo.statusCode, 200);
+  assert.match(demo.body, /Démo validée/);
+  assert.equal(demo.headers['x-robots-tag'], 'noindex, nofollow');
+  assert.match(demo.headers['content-security-policy'], /default-src 'none'/);
+
   assert.equal((await invoke('/api/internal/work', 'GET', { authorization: 'Bearer worker-secret' })).statusCode, 200);
   await Promise.all(background);
   assert.ok(worked >= 2);

@@ -18,6 +18,28 @@ const publicReports = document.querySelector('#public-reports');
 const preparationForm = document.querySelector('#preparation-form');
 const intakeForm = document.querySelector('#intake-form');
 const publicDemo = document.querySelector('#public-demo');
+const hoursFields = document.querySelector('#intake-hours');
+const days = Object.entries({ MONDAY: 'Lundi', TUESDAY: 'Mardi', WEDNESDAY: 'Mercredi', THURSDAY: 'Jeudi', FRIDAY: 'Vendredi', SATURDAY: 'Samedi', SUNDAY: 'Dimanche' });
+const generalPhotos = ['facade', 'interior-or-terrace', 'team-or-service'];
+const dishPhotos = ['signature-dish-1', 'signature-dish-2'];
+for (const [day, label] of days) {
+  const row = document.createElement('div');
+  row.className = 'hours-row';
+  row.innerHTML = `<span>${label}</span><label>Ouvre<input type="time" name="${day}-opens" aria-label="${label} · Ouverture"></label><label>Ferme<input type="time" name="${day}-closes" aria-label="${label} · Fermeture"></label>`;
+  hoursFields.append(row);
+}
+function syncIntakeFields() {
+  const hasMenu = Boolean(intakeForm.elements.menu.value.trim());
+  intakeForm.elements.story.required = !hasMenu;
+  const uploaded = new Set((demoRequest?.assets ?? []).map(asset => asset.category));
+  for (const category of [...generalPhotos, ...dishPhotos]) {
+    const field = intakeForm.elements[`photo-${category}`];
+    const show = generalPhotos.includes(category) || hasMenu;
+    field.closest('label').hidden = !show || uploaded.has(category);
+    field.required = show && !uploaded.has(category);
+  }
+}
+intakeForm.elements.menu.addEventListener('input', syncIntakeFields);
 let suggestedEstablishments = [];
 let suggestedCities = [];
 let selectedEstablishment = null;
@@ -137,16 +159,77 @@ form.addEventListener('submit', async event => {
   } catch (error) { state.hidden = false; state.textContent = error.message; } finally { button.disabled = false; }
 });
 
+function showDemoPreparation() {
+  intakeForm.hidden = true;
+  publicDemo.hidden = false;
+  publicDemo.replaceChildren();
+  publicFlowState.hidden = false;
+  if (demoRequest.status === 'READY_FOR_PROSPECT' && /^\/demo\/[a-zA-Z0-9_-]{43}$/.test(demoRequest.presentation?.href ?? '')) {
+    publicFlowState.textContent = 'Votre démonstration est prête.';
+    const link = document.createElement('a');
+    link.href = `${demoRequest.presentation.href}?preparation=${encodeURIComponent(demoRequest.id)}`;
+    link.textContent = 'Ouvrir ma démonstration';
+    publicDemo.append(link);
+    return;
+  }
+  publicFlowState.textContent = demoRequest.status === 'NEEDS_CORRECTION' ? 'La démonstration doit être corrigée avant présentation.' : 'Démo en attente de validation.';
+  const refresh = document.createElement('button');
+  refresh.type = 'button';
+  refresh.textContent = 'Vérifier la validation';
+  refresh.addEventListener('click', async () => {
+    refresh.disabled = true;
+    try {
+      demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}`);
+      showDemoPreparation();
+    } catch (error) {
+      publicFlowState.textContent = error.message;
+      refresh.disabled = false;
+    }
+  });
+  publicDemo.append(refresh);
+}
+
 preparationForm.addEventListener('submit', async event => {
   event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = true;
-  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body; preparationForm.hidden = true; intakeForm.hidden = false; if (detectedEstablishment) { intakeForm.elements.address.value = detectedEstablishment.formattedAddress || ''; intakeForm.elements.locale.value = detectedEstablishment.countryCode === 'FR' ? 'fr-FR' : 'en'; } publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+  try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body;
+    preparationForm.hidden = true;
+    if (demoRequest.pipelineRunId) return showDemoPreparation();
+    intakeForm.hidden = false; if (detectedEstablishment) { intakeForm.elements.address.value = detectedEstablishment.formattedAddress || ''; intakeForm.elements.locale.value = detectedEstablishment.countryCode === 'FR' ? 'fr-FR' : 'en-GB'; }
+    const saved = demoRequest.intake ?? {};
+    for (const field of ['address', 'contact', 'story']) if (saved[field]) intakeForm.elements[field].value = saved[field];
+    if (demoRequest.locale) intakeForm.elements.locale.value = demoRequest.locale === 'en' ? 'en-GB' : demoRequest.locale;
+    if (saved.menu?.length) intakeForm.elements.menu.value = saved.menu.map(item => `${item.name} — ${item.price}`).join('\n');
+    for (const item of saved.hours ?? []) {
+      if (!intakeForm.elements[`${item.day}-opens`]) continue;
+      intakeForm.elements[`${item.day}-opens`].value = item.opens;
+      intakeForm.elements[`${item.day}-closes`].value = item.closes;
+    }
+    syncIntakeFields();
+    publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });
 
 intakeForm.addEventListener('submit', async event => {
   event.preventDefault(); const button = intakeForm.querySelector('button'); button.disabled = true;
   try {
-    const data = new FormData(intakeForm); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/intake`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ criticalComplete: true, locale: data.get('locale'), address: data.get('address'), contact: data.get('contact'), story: data.get('story'), menu: parseMenu(String(data.get('menu') ?? '')) }) });
-    for (const category of ['facade', 'signature-dish-1', 'signature-dish-2', 'interior-or-terrace', 'team-or-service']) { const file = data.get(`photo-${category}`); if (!(file instanceof File) || !file.size) throw new Error('Sélectionnez les cinq photos.'); await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/assets`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: `${category}-${file.name}`, category, rightsStatus: 'AUTHORIZED', hash: await digest(file), size: file.size, dataUrl: await dataUrl(file) }) }); }
-    demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); intakeForm.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'Démo prête pour validation opérateur.';
+    const data = new FormData(intakeForm);
+    const menu = parseMenu(String(data.get('menu') ?? ''));
+    const hours = days.flatMap(([day, label]) => {
+      const opens = data.get(`${day}-opens`);
+      const closes = data.get(`${day}-closes`);
+      if (Boolean(opens) !== Boolean(closes)) throw new Error(`Indiquez l’ouverture et la fermeture pour ${label.toLowerCase()}.`);
+      return opens ? [{ day, opens, closes }] : [];
+    });
+    if (!hours.length) throw new Error('Indiquez au moins une plage d’ouverture.');
+    const base = `/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}`;
+    const headers = { 'content-type': 'application/json' };
+    demoRequest = await jsonRequest(`${base}/intake`, { method: 'PUT', headers, body: JSON.stringify({ locale: data.get('locale'), address: data.get('address'), contact: data.get('contact'), story: data.get('story'), ownerConfirmed: data.get('ownerConfirmed') === 'on', hours, menu }) });
+    for (const category of [...generalPhotos, ...(menu.length ? dishPhotos : [])]) {
+      if (demoRequest.assets.some(asset => asset.category === category)) continue;
+      const file = data.get(`photo-${category}`);
+      if (!(file instanceof File) || !file.size) throw new Error('Sélectionnez les photos demandées.');
+      demoRequest = await jsonRequest(`${base}/assets`, { method: 'POST', headers, body: JSON.stringify({ assetId: category, category, rightsStatus: 'AUTHORIZED', hash: await digest(file), size: file.size, dataUrl: await dataUrl(file) }) });
+      syncIntakeFields();
+    }
+    demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); showDemoPreparation();
   } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
 });

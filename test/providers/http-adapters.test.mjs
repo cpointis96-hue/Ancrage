@@ -202,5 +202,6 @@ test('la recherche applique le schéma strict au format Responses sans modifier 
   assert.equal(sent.text.format.type, 'json_schema'); assert.equal(sent.text.format.strict, true);
   assert.deepEqual(sent.text.format.schema.properties.observations.items.required, ['topic']);
   assert.equal(sent.text.format.schema.$id, undefined);
+  assert.equal(Object.hasOwn(JSON.parse(sent.input), 'outputSchema'), false);
   assert.deepEqual(schema.properties.observations.items.required, []); assert.equal(sent.max_tool_calls, 8);
 });

@@ -32,8 +32,10 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
   assert.equal(result.status, 'SUCCEEDED');
   assert.equal(result.modules.seo.pages[0].contactLinks[0], 'tel:+33000000000');
   assert.equal(result.modules.observation.priorities.length, 3);
+  assert.equal(result.modules.observation.source.model, 'gpt-6.1-terra');
+  assert.equal(result.modules.observation.source.usage.searchCalls, 1);
   assert.equal(result.modules.observation.conclusion.decision, 'KEEP_SITE');
-  assert.ok(Math.abs(result.budget.spent - 0.038) < 1e-9);
+  assert.ok(Math.abs(result.budget.spent - 0.0385) < 1e-9);
   assert.equal(result.budget.reserved, 0);
   assert.equal(result.modules.gmb.candidates[0].reviewCount, 123);
   const localReport = (await app.publicAudits.readReport(result.id, 'gmb')).value;
@@ -139,6 +141,7 @@ test('refuse une citation inventée sur une page capturée et conserve plusieurs
   const response = observationResponse();
   response.output.observations.push({ id: 'web-source-2', url: 'https://sillage.example/', fact: 'Spécialité inventée.', quote: 'Des sushis préparés chaque matin' });
   response.output.priorities[0].observationIds = ['web-source-2'];
+  response.sources.push({ url: 'https://sillage.example/' });
   response.output.competitors.push({ name: 'Un autre établissement', url: 'https://voisin.example/menu', comparison: 'Source commune à deux établissements distincts.' });
   const { app } = await setup(t, { research: async () => response });
   const run = await app.publicAudits.create(observationInput);
@@ -159,6 +162,7 @@ test('sans site fourni, conserve une décision étayée sans inventer de contrô
   const html = (await app.publicAudits.readReport(result.id)).value;
   assert.match(html, /Actions prioritaires/);
   assert.match(html, /Aucun site officiel n’a été confirmé/);
+  assert.match(html, /Aucun site confirmé/);
   assert.doesNotMatch(html, /Aucune anomalie remontée/);
 });
 
@@ -220,12 +224,17 @@ test('accepte plusieurs extraits exacts séparés par une ellipse mais refuse un
 });
 
 test('une recommandation d’aligner les horaires exige deux valeurs contradictoires pour le même jour', () => {
-  for (const closing of ['20:30', '21:00']) {
+  for (const [regular, directory, expected] of [
+    ['07:00 – 20:30', '07:00 – 20:30', 0],
+    ['07:00 – 20:30', '07:00 – 21:00', 1],
+    ['12:00 – 14:00, 19:00 – 22:00', '19:00 – 22:00, 12:00 – 14:00', 0],
+    ['12:00 – 14:00, 19:00 – 22:00', '19:00 – 22:00', 0],
+  ]) {
     const response = observationResponse();
     response.output.priorities = [{ ...response.output.priorities[0], title: 'Aligner les horaires publics', observationIds: ['google-hours', 'directory-hours'] }];
     response.output.conclusion.observationIds = ['google-hours'];
-    const observations = [{ id: 'google-hours', url: 'https://maps.google.com/?cid=1', fact: 'lundi: 07:00 – 20:30' }, { id: 'directory-hours', url: 'https://directory.example/fixture', fact: `Lundi 07:00 – ${closing}` }];
+    const observations = [{ id: 'google-hours', url: 'https://maps.google.com/?cid=1', fact: `lundi: ${regular}` }, { id: 'directory-hours', url: 'https://directory.example/fixture', fact: `Lundi ${directory}` }];
     const output = qualifyObservationResearch({ result: response, subject: observationInput, observations, observedAt: '2026-11-08T12:00:00Z', provider: 'fixture', execution: 'fixture', source: {} });
-    assert.equal(output.priorities.length, closing === '20:30' ? 0 : 1);
+    assert.equal(output.priorities.length, expected);
   }
 });

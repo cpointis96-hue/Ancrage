@@ -67,7 +67,9 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     if (!url) return null;
     let source = sources.find(item => item.url === url);
     if (!source) {
-      source = { id: `source-${sources.length + 1}`, number: sources.length + 1, url, label: new URL(url).hostname.replace(/^www\./, '') };
+      const parsed = new URL(url);
+      const label = parsed.hostname.replace(/^www\./, '') + (parsed.pathname === '/' ? '' : parsed.pathname);
+      source = { id: `source-${sources.length + 1}`, number: sources.length + 1, url, label };
       sources.push(source);
     }
     return source.number;
@@ -79,7 +81,9 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     used.add(id);
     const values = fact.quote?.match(/\d+(?::\d+)?/g) ?? [];
     const proof = values.some(value => !fact.fact.includes(value)) ? `« ${fact.quote} »` : fact.fact;
-    return [{ text: id.startsWith('local-page-') ? `Page examinée : ${fact.fact.split(' — ')[0]}` : proof, source: sourceId(fact.url) }];
+    const interpreted = fact.classification === 'AI_INTERPRETED';
+    const excerpt = interpreted && fact.quote && proof === fact.fact ? ` Extrait cité « ${fact.quote} »` : '';
+    return [{ text: id.startsWith('local-page-') ? `Page examinée : ${fact.fact.split(' — ')[0]}` : proof + excerpt, ...(interpreted && { label: 'Interprétation' }), source: sourceId(fact.url) }];
   });
   let actions = [];
   let summary;
@@ -95,19 +99,27 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     if (rows.length) observations.push(table('Informations relevées', ['Établissement', 'Adresse', 'Téléphone', 'Activité'], rows));
     for (const profile of p.report.gmbCandidates) {
       const reference = sourceId(profile.url);
-      if (profile.rating !== null && profile.rating !== undefined) observations.push(table('Avis Google', ['Note publique', 'Nombre total d’avis', 'Avis disponibles pour analyse'], [[`${profile.rating}/5`, String(profile.reviewCount ?? 'Non retourné'), String(profile.reviews?.length ?? 0)]]));
+      const reviews = (profile.reviews ?? []).filter(review => text(review.text));
+      if (profile.placeId) {
+        const status = { OPERATIONAL: 'En activité', CLOSED_TEMPORARILY: 'Fermé temporairement', CLOSED_PERMANENTLY: 'Fermé définitivement', FUTURE_OPENING: 'Ouverture à venir' }[profile.businessStatus];
+        observations.push(table('Informations pratiques sur Google', ['Site renseigné', 'Statut publié'], [[profile.website ?? 'Non retourné', status ?? 'Non retourné']]));
+      }
+      if (profile.rating !== null && profile.rating !== undefined) observations.push(table('Avis Google', ['Note publique', 'Nombre total d’avis', 'Avis disponibles pour analyse'], [[`${profile.rating}/5`, String(profile.reviewCount ?? 'Non retourné'), String(reviews.length)]]));
       if (profile.hours?.length) observations.push(table('Horaires habituels publiés sur Google', ['Jour et horaires'], profile.hours.map(value => [value])));
       else observations.push(paragraph('Les horaires habituels n’ont pas été retournés par Google. Leur absence dans ce rapport ne prouve pas leur absence sur la fiche.'));
-      if (!profile.reviews?.length) observations.push(paragraph('Aucun texte d’avis n’a été retourné pour cette collecte. Aucun diagnostic des thèmes clients ne peut être établi à partir de cette collecte.'));
+      if (!reviews.length) observations.push(paragraph('Aucun texte d’avis n’a été retourné pour cette collecte. Aucun diagnostic des thèmes clients ne peut être établi à partir de cette collecte.'));
       if (profile.currentHours?.length && JSON.stringify(profile.currentHours) !== JSON.stringify(profile.hours)) observations.push(table('Horaires courants publiés sur Google', ['Jour et horaires'], profile.currentHours.map(value => [value])));
-      if (profile.reviews?.length) {
-        observations.push({ type: 'facts', items: profile.reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : « ${reviewExcerpt(review.text)} »`, source: sourceId(review.url ?? profile.url) ?? reference })) });
+      if (reviews.length) {
+        observations.push({ type: 'facts', items: reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : « ${reviewExcerpt(review.text)} »`, source: sourceId(review.url ?? profile.url) ?? reference })) });
         scope.push(profile.reviewScope);
       }
     }
     if (audit) {
       actions = distinctActions((audit.priorities ?? []).filter(item => item.topic === 'LOCAL').map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 6);
-      for (const action of actions) action.facts = factsFor(action.observationIds);
+      for (const action of actions) {
+        action.facts = factsFor(action.observationIds);
+        action.sources = unique(action.observationIds.map(id => sourceId(audit.observations.find(item => item.id === id)?.url)));
+      }
       const localFacts = factsFor((audit.observations ?? []).filter(item => item.topic === 'LOCAL').map(item => item.id));
       if (localFacts.length) observations.unshift({ type: 'facts', items: localFacts });
       if (actions.length) summary = 'Les informations de la fiche et les sources collectées font ressortir les actions ci-dessous. Les constats citent les informations à confirmer ou à corriger.';
@@ -122,7 +134,10 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
       action.facts = factsFor(action.observationIds);
       action.sources = unique(action.observationIds.map(id => sourceId(audit.observations.find(item => item.id === id)?.url)));
     }
-    if (!actions.length) actions = technicalActions(p.report.technicalFindings).slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
+    const technical = technicalActions(p.report.technicalFindings).filter(item => !actions.length || item.code === 'HTTP_ERROR');
+    const verifiedActions = technical.slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
+    actions = distinctActions([...verifiedActions, ...actions]).slice(0, 6);
+    if (!audit.conclusion && verifiedActions.length) summary = 'Les pages examinées font ressortir des corrections ciblées. Le reste du diagnostic dépend des données disponibles.';
     const remaining = factsFor(audit.conclusion?.observationIds ?? []);
     if (remaining.length) observations.push({ type: 'facts', items: remaining });
     const additionalFacts = factsFor((audit.observations ?? []).filter(item => !item.id.startsWith('local-')).map(item => item.id));
@@ -132,7 +147,7 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     }
     const queries = (audit.queries ?? []).slice(0, 6);
     if (queries.length) observations.push(table('Contenus à travailler', ['Recherche envisagée', 'Page à enrichir', 'Intérêt'], queries.map(item => [item.query, item.targetPage, item.reason])));
-    const limits = unique([...actions.map(item => item.limitation), ...additionalLimits(audit.limitations ?? [], { hasWebsite: Boolean(p.values.website.value), hasComparisons: Boolean(audit.competitors?.length) })]);
+    const limits = unique(additionalLimits(audit.limitations ?? [], { hasWebsite: Boolean(p.values.website.value), hasComparisons: Boolean(audit.competitors?.length) }));
     if (limits.length) scope.push(...limits);
   } else {
     actions = technicalActions(p.report.technicalFindings).slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
@@ -159,7 +174,7 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     }
     scope.push('Les sources publiques peuvent évoluer. Cette analyse ne mesure ni le trafic, ni les ventes, ni les performances privées de l’établissement.');
   }
-  const coverageItems = (local ? [['localPresence', 'Fiche Google']] : [['localPresence', 'Fiche Google'], ['siteAudit', 'Site officiel'], ['market', 'Marché local']]).map(([key, label]) => ({ label, status: p.coverage[key]?.status ?? 'PARTIAL' }));
+  const coverageItems = (local ? [['localPresence', 'Fiche Google']] : [['localPresence', 'Fiche Google'], ['siteAudit', 'Site officiel'], ['market', audit ? 'Recherche publique' : 'Marché local']]).map(([key, label]) => ({ label, status: key === 'siteAudit' && !p.values.website.value ? 'NOT_MEASURED' : p.coverage[key]?.status ?? 'PARTIAL' }));
   observations.unshift({ type: 'coverage', title: 'Périmètre documenté', items: coverageItems });
   const causes = p.report.limitations.map(readableLimit);
   scope.push(...unique(causes));
@@ -184,7 +199,7 @@ export function buildSeoAuditDocument(audit) {
     return { ...item, facts: [{ text: item.detail, sources: references }] };
   });
   return documentFor({ name: audit.target, city: '', date: audit.observedAt, kind: 'seo', status: audit.status,
-    summary: !pagesExamined ? 'Le site n’a pas pu être examiné. Aucun diagnostic technique ne peut être établi.' : actions.length ? 'Les vérifications ont relevé des corrections sur le site. Les actions ci-dessous sont classées par priorité.' : 'Les contrôles effectués n’ont pas relevé de correction prioritaire.',
+    summary: actions.length ? 'Les vérifications ont relevé des corrections sur le site. Les actions ci-dessous sont classées par priorité.' : !pagesExamined ? 'Le site n’a pas pu être examiné. Aucun diagnostic technique ne peut être établi.' : 'Les contrôles effectués n’ont pas relevé de correction prioritaire.',
     actions, observations: [paragraph(`${pagesExamined} ${pagesExamined === 1 ? 'page examinée' : 'pages examinées'}.`)], sources,
     scope: ['Les contrôles portent sur le contenu HTML collecté. Ils ne valident ni l’affichage mobile, ni l’indexation dans Google, ni le fonctionnement des formulaires.'],
   });

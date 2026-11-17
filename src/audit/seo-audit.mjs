@@ -45,10 +45,11 @@ function finding(code, severity, url, observedAt, detail, rawPayload = '') {
 function analyzePage(page, observedAt) {
   const url = requiredUrl(page.url, 'page.url');
   if (page.crawlStatus === 'blocked') {
-    return {
-      page: { url, status: page.status ?? null, crawlStatus: 'blocked', findingsCount: 1 },
-      findings: [finding('CRAWL_BLOCKED', 'WARN', url, observedAt, 'La page n’a pas pu être analysée.', '')],
-    };
+    const missing = [404, 410].includes(page.status);
+    const detail = page.status ? `La collecte a reçu une réponse HTTP ${page.status}.` : 'La page n’a pas pu être analysée.';
+    const findings = [finding('CRAWL_BLOCKED', 'WARN', url, observedAt, detail, JSON.stringify({ status: page.status ?? null, cause: page.errorCode ?? null }))];
+    if (missing) findings.push({ ...findings[0], code: 'HTTP_ERROR', severity: 'ERROR' });
+    return { page: { url, status: page.status ?? null, crawlStatus: 'blocked', findingsCount: findings.length }, findings };
   }
   if (typeof page.html !== 'string') throw new ValidationError('page.html est invalide.', { field: 'page.html' });
   const html = page.html;
@@ -84,7 +85,7 @@ export function analyzeSeoAudit({ target, pages, observedAt, maxPages = DEFAULT_
   const analyzed = pages.slice(0, maxPages).map(page => analyzePage(page, observedAt));
   const findings = analyzed.flatMap(item => item.findings);
   const skipped = Math.max(0, pages.length - analyzed.length);
-  if (skipped || limitReached) findings.push(finding('PAGE_LIMIT_REACHED', 'WARN', normalizedTarget, observedAt, `${Math.max(skipped, 1)} page(s) ignorée(s) après la limite du profil.`));
+  if (skipped || limitReached) findings.push(finding('PAGE_LIMIT_REACHED', 'WARN', normalizedTarget, observedAt, skipped ? `${skipped} page(s) ignorée(s) après la limite du profil.` : 'La collecte a atteint la limite de pages du profil.'));
   if (!pages.length) findings.push(finding('NO_PAGES_CAPTURED', 'WARN', normalizedTarget, observedAt, 'Aucune page n’a été capturée.'));
   const counts = findings.reduce((result, item) => ({ ...result, [item.code]: (result[item.code] ?? 0) + 1 }), {});
   return {

@@ -59,9 +59,9 @@ export async function runObservationAudit({ result, ledger, analyst, profileRead
     const add = (id, fact) => observations.push({ id: `google-${id}`, url: googleProfile.url ?? identityUrl, fact, classification: 'OBSERVED' });
     add('contact', `Google Maps : ${googleProfile.title}, ${googleProfile.address}. Téléphone : ${googleProfile.phone ?? 'non retourné'}. Site : ${googleProfile.website ?? 'non retourné'}. Statut : ${googleProfile.businessStatus ?? 'non retourné'}.`);
     if (googleProfile.hours.length) add('hours', `Horaires habituels Google : ${googleProfile.hours.join(' ; ')}`);
-    if (googleProfile.currentHours.length) add('current-hours', `Horaires courants Google : ${googleProfile.currentHours.join(' ; ')}`);
+    if (googleProfile.currentHours.length && JSON.stringify(googleProfile.currentHours) !== JSON.stringify(googleProfile.hours)) add('current-hours', `Horaires courants Google : ${googleProfile.currentHours.join(' ; ')}`);
     if (googleProfile.rating !== null) add('rating', `Note Google : ${googleProfile.rating}/5 sur ${googleProfile.reviewCount ?? 'un nombre non retourné de'} avis.`);
-    googleProfile.reviews.forEach((review, index) => add(`review-${index + 1}`, `Avis Google, ${review.publishedAt ?? 'date inconnue'}, ${review.rating ?? 'note inconnue'}/5 : ${review.text}`));
+    googleProfile.reviews.forEach((review, index) => review.text.trim() && add(`review-${index + 1}`, `Avis Google, ${review.publishedAt ?? 'date inconnue'}, ${review.rating ?? 'note inconnue'}/5 : ${review.text}`));
   }
   const sampleProfile = { ...profile, maxPages: Math.min(profile.maxPages, 6), timeoutMs: Math.min(profile.timeoutMs, 30000), prioritizeClientPages: true };
   const crawl = checkpoint.seo ? Promise.resolve(checkpoint.seo) : domain ? runSeoAudit({ target: domain, observedAt, fetchImpl, lookup, profile: sampleProfile }).catch(error => ({ status: 'PARTIAL', cause: error.code ?? 'CRAWL_FAILED', pages: [], findings: [] })) : Promise.resolve({ status: 'SUCCEEDED', pages: [], findings: [], summary: { pagesAnalyzed: 0 }, execution: 'not-run' });
@@ -86,7 +86,8 @@ export async function runObservationAudit({ result, ledger, analyst, profileRead
       observations.push({ id: `local-page-${index + 1}`, url: page.url, fact, contactLinks: page.contactLinks, viewport: page.viewport, classification: 'OBSERVED' });
       if (!checkpoint.evidenceReady) result.evidence.push(createEvidenceSnapshot({ canonicalUrl: page.url, observedAt, rawPayload: JSON.stringify(page), ruleVersion: result.workflowVersion }));
     }
-    for (const [index, finding] of (seo.findings ?? []).filter(item => item.code !== 'PAGE_LIMIT_REACHED').slice(0, 20).entries()) observations.push({ id: `local-check-${index + 1}`, url: finding.evidence.canonicalUrl, fact: finding.detail, classification: 'CALCULATED' });
+    for (const [index, finding] of (seo.findings ?? []).filter(item => !['PAGE_LIMIT_REACHED', 'CRAWL_BLOCKED'].includes(item.code)).slice(0, 20).entries()) observations.push({ id: `local-check-${index + 1}`, url: finding.evidence.canonicalUrl, fact: finding.detail, classification: 'CALCULATED' });
+    if (!checkpoint.evidenceReady) result.evidence.push(...(seo.findings ?? []).filter(item => item.code === 'CRAWL_BLOCKED').map(item => item.evidence));
     checkpoint.evidenceReady = true;
     let analysis = checkpoint.analysis ?? (checkpoint.analysisStarted ? { status: 'PARTIAL', cause: 'AI_COST_RECONCILIATION_REQUIRED', execution: 'not-run', observations: [], priorities: [], competitors: [], queries: [], evidence: [] } : null);
     if (!analysis) {
