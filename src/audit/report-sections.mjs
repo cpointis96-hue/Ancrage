@@ -21,7 +21,10 @@ export function technicalActions(findings) {
     .sort(([left], [right]) => order.indexOf(left) - order.indexOf(right))
     .map(([code, rows]) => {
       const [title, action, impact] = corrections[code];
-      return { type: 'action', code, title, action, impact, detail: [...new Set(rows.map(item => item.detail).filter(Boolean))].join(' ') || title, urls: [...new Set(rows.map(item => item.url).filter(Boolean))] };
+      const verification = code === 'HTTP_ERROR'
+        ? 'Ouvrez l’adresse concernée dans une fenêtre privée et vérifiez que la page attendue s’affiche.'
+        : 'Relancez les contrôles du site après la mise en ligne et vérifiez que ce constat a disparu pour la page concernée.';
+      return { type: 'action', code, title, action, impact, verification, detail: [...new Set(rows.map(item => item.detail).filter(Boolean))].join(' ') || title, urls: [...new Set(rows.map(item => item.url).filter(Boolean))] };
     });
 }
 

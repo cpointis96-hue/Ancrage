@@ -44,9 +44,13 @@ export function createObservationAnalyst({ providers, adapters, workflows, promp
     const failed = cause => ({ ...unavailable(cause), execution, source: provenance });
     let result;
     try {
-      const researchPlan = { firstQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} horaires téléphone site officiel`, secondQuery: `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)} mairie annuaire` };
+      const business = `${JSON.stringify(subject.name)} ${JSON.stringify(subject.city)}`;
+      const researchPlan = { firstQuery: `${business} site officiel horaires contact`, secondQuery: `${business} fiche établissement annuaire` };
       const coverage = { siteProvided: Boolean(subject.domain), pagesCaptured: pages.filter(page => page.crawlStatus === 'complete').length, pagesUnavailable: pages.filter(page => page.crawlStatus !== 'complete').length };
-      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, observedAt, researchPlan, coverage, observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 8000, 10000), maxToolCalls: step.maxToolCalls ?? 8, timeoutMs: Math.min(step.timeoutMs ?? 150000, 180000) });
+      const reviews = observations.filter(item => /^google-review-\d+$/.test(item.id));
+      const reviewDates = reviews.map(item => item.fact.match(/^Avis Google, (\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean).sort();
+      const reviewSample = { count: reviews.length, earliest: reviewDates[0] ?? null, latest: reviewDates.at(-1) ?? null, selection: 'GOOGLE_RELEVANCE' };
+      result = await adapter.research({ secret: context.secret, model: step.model, system, input: { subject, observedAt, researchPlan, coverage, reviewSample, observations, outputSchema: contract.schema }, maxOutputTokens: Math.min(step.maxOutputTokens ?? 8000, 10000), maxToolCalls: step.maxToolCalls ?? 8, timeoutMs: Math.min(step.timeoutMs ?? 150000, 180000) });
     } catch (error) {
       // A timeout or an ambiguous network error does not prove that the call was free.
       if (/^HTTP_4\d\d$/.test(error.code ?? '')) await ledger.cancel({ authorizationId: authorization.authorizationId, reason: error.code });
@@ -107,7 +111,10 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     for (const item of output.observations) {
       const url = publicSource(item.url);
       const records = captured.get(url);
-      const sourceKind = records ? (capturedQuote(item, records) ? 'captured-page' : null) : (urls.has(url) ? 'web-search' : null);
+      const reviewRecords = records?.filter(record => /^google-review-\d+$/.test(record.id)) ?? [];
+      const sourceKind = records
+        ? capturedQuote(item, records) && (reviewRecords.length && capturedQuote(item, reviewRecords) ? 'google-review' : 'captured-page')
+        : urls.has(url) ? 'web-search' : null;
       const reason = !/^web-source-\d+$/.test(item.id) || seen.has(item.id) ? 'INVALID_OBSERVATION_ID' : !sourceKind ? 'QUOTE_NOT_CAPTURED' : null;
       if (reason) {
         rejectedObservations.push({ id: item.id, url, reason });
@@ -118,6 +125,7 @@ export function qualifyObservationResearch({ result, subject, observations, obse
     }
     const ids = new Map([...observations.map(item => [item.id, item.id]), ...webObservations.map(item => [item.originalId, item.id])]);
     const corrections = new Set();
+    const reviewIds = new Set([...observations.filter(item => /^google-review-\d+$/.test(item.id)), ...webObservations.filter(item => item.sourceKind === 'google-review')].map(item => item.id));
     const hoursConflictSupported = item => {
       if (!/horaires/.test(normalize(item.title)) || !/align|harmonis|contradic|incoher/.test(normalize(item.title))) return true;
       const schedules = new Map();
@@ -150,7 +158,11 @@ export function qualifyObservationResearch({ result, subject, observations, obse
       if (corrections.has(correction)) return false;
       corrections.add(correction);
       return true;
-    }).map(item => ({ ...item, observationIds: item.observationIds.map(id => ids.get(id)), classification: 'AI_INTERPRETED' }));
+    }).map(item => {
+      const observationIds = [...new Set(item.observationIds.map(id => ids.get(id)))];
+      const reviewOnly = observationIds.every(id => reviewIds.has(id));
+      return { ...item, ...(reviewOnly && { confidence: 'TO_VERIFY' }), observationIds, classification: 'AI_INTERPRETED' };
+    });
     const competitorNames = new Set();
     const competitors = output.competitors.filter(item => {
       const domain = domainOf(item.url);
@@ -159,7 +171,7 @@ export function qualifyObservationResearch({ result, subject, observations, obse
       competitorNames.add(name);
       return true;
     }).map(item => ({ title: item.name, url: publicSource(item.url), domain: null, comparison: item.comparison, scope: 'public-web', classification: 'AI_INTERPRETED' }));
-    const evidence = webObservations.map(item => createEvidenceSnapshot({ sourceType: item.sourceKind === 'web-search' ? 'ai-web-research' : 'ai-crawl-interpretation', provider, canonicalUrl: item.url, observedAt, rawPayload: JSON.stringify(item), ruleVersion: 'observation-audit-v1', requestParameters: { model: source.model } }));
+    const evidence = webObservations.map(item => createEvidenceSnapshot({ sourceType: item.sourceKind === 'web-search' ? 'ai-web-research' : item.sourceKind === 'google-review' ? 'ai-review-interpretation' : 'ai-crawl-interpretation', provider, canonicalUrl: item.url, observedAt, rawPayload: JSON.stringify(item), ruleVersion: 'observation-audit-v1', requestParameters: { model: source.model } }));
     const supportedConclusion = output.conclusion.observationIds.length && output.conclusion.observationIds.every(id => ids.has(id));
     const complete = (priorities.length > 0 || output.conclusion.decision === 'KEEP_SITE') && supportedPriorities.length === output.priorities.length && webObservations.some(item => urls.has(item.url)) && supportedConclusion && !rejectedObservations.length;
     const observedWords = new Set(normalize(decodeHtmlText([subject.name, subject.city, subject.category, ...observations.map(item => item.fact), ...webObservations.map(item => item.fact)].join(' '))).split(' '));

@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Ancrage — démo locale</title>
+  <title>Audit local · Ancrage</title>
   <link rel="stylesheet" href="/demo.css">
 </head>
 <body>
   <main class="demo-shell">
-    <header class="demo-header"><a href="/">ANCRAGE</a><span>Démo locale</span></header>
-    <section class="demo-intro"><p class="eyebrow">Essai opérateur</p><h1>Tester un établissement</h1><p>Choisissez l’établissement à rechercher.</p></section>
+    <header class="demo-header"><a href="/">ANCRAGE</a><button type="button" id="new-audit" hidden>Nouvel audit</button></header>
+    <section class="demo-intro" id="demo-intro"><h1>Auditer votre établissement</h1></section>
     <form id="demo-form" class="demo-form">
       <label class="autocomplete-field">Nom de l’établissement<input name="name" required maxlength="160" autocomplete="off" placeholder="Commencer à taper" aria-autocomplete="list" aria-controls="establishment-options" aria-expanded="false"><div id="establishment-options" class="suggestions" role="listbox" hidden></div></label>
       <button class="fallback-toggle" type="button" id="manual-toggle" aria-expanded="false">Mon établissement n’est pas présent</button>
@@ -26,15 +26,15 @@
     <section id="demo-result" class="demo-result" hidden></section>
     <section id="public-flow" class="public-flow" hidden>
       <p id="public-flow-state" role="status" aria-live="polite" hidden></p>
-      <div id="final-progress" class="report-progress" hidden aria-live="polite">
-        <div class="report-progress-track"><div id="final-progress-fill" class="report-progress-fill"></div></div>
-        <p id="final-progress-label">Rapport final en préparation.</p>
-      </div>
-      <div id="public-reports"></div>
-      <form id="preparation-form" hidden>
-        <label>Votre e-mail<input name="email" type="email" autocomplete="email" required></label>
-        <button type="submit">Préparer mon site</button>
-      </form>
+      <p id="final-progress" class="report-progress" role="status" hidden>Audit en cours…</p>
+      <div id="public-reports" aria-live="polite"></div>
+      <details id="site-preparation" hidden>
+        <summary>Préparer un site</summary>
+        <form id="preparation-form">
+          <label>Votre e-mail<input name="email" type="email" autocomplete="email" required></label>
+          <button type="submit">Continuer</button>
+        </form>
+      </details>
       <form id="intake-form" hidden>
         <label>Adresse<input name="address" autocomplete="street-address" required></label>
         <label>Téléphone ou e-mail professionnel<input name="contact" required></label>

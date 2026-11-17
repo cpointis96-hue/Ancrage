@@ -8,14 +8,19 @@ const normalized = value => text(value).toLocaleLowerCase('fr').normalize('NFD')
 const unique = values => [...new Set(values.filter(Boolean))];
 const paragraph = value => ({ type: 'paragraph', text: value });
 const table = (title, columns, rows) => ({ type: 'table', title, columns, rows });
-const reviewExcerpt = value => { const words = String(value ?? '').trim().split(/\s+/); return words.slice(0, 25).join(' ') + (words.length > 25 ? '…' : ''); };
+const editorialText = value => text(value)
+  .replace(/\s*\(\[[^\]]*\]\(https?:\/\/[^)]+\)\)/g, '')
+  .replace(/【[^】]*】|\[\[?\d+\]?\]\(https?:\/\/[^)]+\)/g, '')
+  .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, '$1')
+  .replace(/(\*\*|__|~~|`)(.+?)\1/g, '$2')
+  .replace(/\s*\(\s*\)|\s+([,.])/g, '$1')
+  .trim();
 
 function additionalLimits(values, { hasWebsite, hasComparisons }) {
   return values.filter(value => {
     const line = normalized(value);
     if (!hasComparisons && /^aucune comparaison concurrentielle\b/.test(line)) return false;
     if (!hasWebsite && /^aucun(?:e)? (?:page propre au site|site officiel)\b.*\bfourni/.test(line)) return false;
-    // The document already states that public sources can change; dated caveats stay specific.
     if (!/\d/.test(line) && /\bpeuvent\b.*\b(?:change|evolu)/.test(line)) return false;
     return true;
   });
@@ -43,15 +48,15 @@ export function distinctActions(actions) {
   });
 }
 
-function documentFor({ name, city, date, kind, status, summary, actions, observations, sources, scope }) {
+function documentFor({ name, city, date, kind, status, summary, summarySources, actions, observations, sources, scope }) {
   const titles = { initial: 'Premier bilan', gmb: 'Présence locale', final: 'Audit de visibilité', seo: 'Audit du site' };
   return {
     format: REPORT_FORMAT, name, city, date: reportDate(date), title: titles[kind] ?? titles.final, status,
     sections: [
-      { title: REPORT_SECTIONS[0], blocks: [paragraph(summary)] },
+      { title: REPORT_SECTIONS[0], blocks: [{ ...paragraph(summary), sources: summarySources }] },
       { title: REPORT_SECTIONS[1], blocks: actions.length ? actions : [paragraph('Aucune correction prioritaire ne peut être établie avec les éléments disponibles.')] },
-      { title: REPORT_SECTIONS[2], blocks: observations.length ? observations : [paragraph('Les informations recueillies ne permettent pas de compléter le diagnostic.')] },
-      { title: REPORT_SECTIONS[3], blocks: [...sources.map(source => ({ type: 'source', ...source })), ...unique(scope).map(paragraph)] },
+      { title: REPORT_SECTIONS[2], blocks: observations.length ? observations : [paragraph('Les éléments recueillis ne permettent pas de compléter le diagnostic.')] },
+      { title: REPORT_SECTIONS[3], blocks: [...unique(scope).map(paragraph), ...sources.map(source => ({ type: 'source', ...source }))] },
     ],
   };
 }
@@ -60,6 +65,7 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
   const packet = auditPacket ?? assembleAuditPacket({ auditRun: result }).packet;
   const p = projectAuditPacket(packet);
   const audit = p.report.observation;
+  const legacyAudit = !audit && result.workflowVersion !== 'observation-audit-v1';
   const local = kind === 'gmb';
   const sources = [];
   const sourceId = value => {
@@ -74,84 +80,76 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     }
     return source.number;
   };
+  const factsById = new Map((audit?.observations ?? []).map(fact => [fact.id, fact]));
+  const rawReviews = p.report.gmbCandidates.flatMap(item => item.reviews ?? []);
+  const googleSourceUrls = new Set([...p.report.gmbCandidates, ...rawReviews].map(item => safeReportUrl(item.url)).filter(Boolean));
+  const reviewText = rawReviews.map(item => normalized(item.text)).filter(Boolean);
+  const containsReview = value => {
+    const line = normalized(value);
+    return reviewText.some(review => line === review || (review.length >= 32 && ` ${line} `.includes(` ${review} `)));
+  };
   const used = new Set();
+  const publishedFacts = new Set();
   const factsFor = ids => unique(ids).flatMap(id => {
-    const fact = audit?.observations?.find(item => item.id === id);
+    const fact = factsById.get(id);
     if (!fact || used.has(id)) return [];
     used.add(id);
+    if (/^(?:google-(?:review-|contact$|rating$|(?:current-)?hours$)|local-(?:page-|identity$))/.test(id)) return [];
+    if (containsReview(fact.fact) || /^avis google,\s*\d{4}-\d{2}/i.test(fact.fact)) return [];
     const values = fact.quote?.match(/\d+(?::\d+)?/g) ?? [];
-    const proof = values.some(value => !fact.fact.includes(value)) ? `« ${fact.quote} »` : fact.fact;
-    const interpreted = fact.classification === 'AI_INTERPRETED';
-    const excerpt = interpreted && fact.quote && proof === fact.fact ? ` Extrait cité « ${fact.quote} »` : '';
-    return [{ text: id.startsWith('local-page-') ? `Page examinée : ${fact.fact.split(' — ')[0]}` : proof + excerpt, ...(interpreted && { label: 'Interprétation' }), source: sourceId(fact.url) }];
+    const quoteAddsValues = values.some(value => !fact.fact.includes(value));
+    const reviewQuote = fact.sourceKind === 'google-review' || containsReview(fact.quote) || googleSourceUrls.has(safeReportUrl(fact.url));
+    const proof = editorialText(quoteAddsValues && !reviewQuote && fact.quote.length <= 180 ? `« ${fact.quote} »` : fact.fact);
+    if (!proof) return [];
+    const key = `${safeReportUrl(fact.url) ?? ''}\n${normalized(proof)}`;
+    if (publishedFacts.has(key)) return [];
+    publishedFacts.add(key);
+    const label = { 'web-search': 'Recherche publique', 'captured-page': 'Source collectée', 'google-review': 'Échantillon d’avis Google' }[fact.sourceKind];
+    return [{ text: proof, label, source: sourceId(fact.url) }];
   });
+  const auditActions = (audit?.priorities ?? []).filter(item => !local || item.topic === 'LOCAL').map(item => ({
+    type: 'action',
+    title: editorialText(item.title),
+    impact: editorialText(item.consequence),
+    action: editorialText(item.correction),
+    verification: editorialText(item.verification),
+    confidence: item.confidence === 'TO_VERIFY' ? 'À confirmer' : item.confidence === 'SUPPORTED' ? 'Constat étayé' : '',
+    observationIds: item.observationIds,
+    limitation: /^aucune[.!]?$/i.test(text(item.limitation)) ? '' : editorialText(item.limitation),
+  }));
   let actions = [];
   let summary;
+  let summarySources;
   const observations = [];
   const scope = [];
+  const technical = local ? [] : technicalActions(p.report.technicalFindings)
+    .filter(item => !auditActions.length || item.code === 'HTTP_ERROR').slice(0, 3);
   if (local) {
-    summary = p.report.gmbCandidates.length > 1
-      ? 'Plusieurs fiches correspondent à la recherche. Confirmez l’établissement avant de retenir leurs coordonnées.'
-      : p.report.gmbCandidates.length
-      ? 'L’établissement a été retrouvé. Les informations ci-dessous permettent de vérifier qu’il s’agit de la bonne adresse.'
-      : 'Les données disponibles ne permettent pas de confirmer la fiche de cet établissement.';
-    const rows = p.report.gmbCandidates.map(item => [item.title ?? 'Nom non fourni', item.address ?? 'Non fournie', item.phone ?? 'Non fourni', item.category ?? 'Non précisée']);
-    if (rows.length) observations.push(table('Informations relevées', ['Établissement', 'Adresse', 'Téléphone', 'Activité'], rows));
-    for (const profile of p.report.gmbCandidates) {
-      const reference = sourceId(profile.url);
-      const reviews = (profile.reviews ?? []).filter(review => text(review.text));
-      if (profile.placeId) {
-        const status = { OPERATIONAL: 'En activité', CLOSED_TEMPORARILY: 'Fermé temporairement', CLOSED_PERMANENTLY: 'Fermé définitivement', FUTURE_OPENING: 'Ouverture à venir' }[profile.businessStatus];
-        observations.push(table('Informations pratiques sur Google', ['Site renseigné', 'Statut publié'], [[profile.website ?? 'Non retourné', status ?? 'Non retourné']]));
-      }
-      if (profile.rating !== null && profile.rating !== undefined) observations.push(table('Avis Google', ['Note publique', 'Nombre total d’avis', 'Avis disponibles pour analyse'], [[`${profile.rating}/5`, String(profile.reviewCount ?? 'Non retourné'), String(reviews.length)]]));
-      if (profile.hours?.length) observations.push(table('Horaires habituels publiés sur Google', ['Jour et horaires'], profile.hours.map(value => [value])));
-      else observations.push(paragraph('Les horaires habituels n’ont pas été retournés par Google. Leur absence dans ce rapport ne prouve pas leur absence sur la fiche.'));
-      if (!reviews.length) observations.push(paragraph('Aucun texte d’avis n’a été retourné pour cette collecte. Aucun diagnostic des thèmes clients ne peut être établi à partir de cette collecte.'));
-      if (profile.currentHours?.length && JSON.stringify(profile.currentHours) !== JSON.stringify(profile.hours)) observations.push(table('Horaires courants publiés sur Google', ['Jour et horaires'], profile.currentHours.map(value => [value])));
-      if (reviews.length) {
-        observations.push({ type: 'facts', items: reviews.map(review => ({ text: `${review.author ?? 'Auteur non retourné'} · ${review.publishedAt?.slice(0, 10) ?? 'Date non retournée'} · ${review.rating ?? 'Note non retournée'}/5 : « ${reviewExcerpt(review.text)} »`, source: sourceId(review.url ?? profile.url) ?? reference })) });
-        scope.push(profile.reviewScope);
-      }
+    const candidates = p.report.gmbCandidates;
+    summary = candidates.length > 1
+      ? 'Plusieurs fiches correspondent à la recherche. Confirmez votre établissement avant de modifier une fiche.'
+      : candidates.length
+      ? 'La fiche de votre établissement a été retrouvée.'
+      : 'Les sources disponibles ne permettent pas de confirmer la fiche de cet établissement.';
+    if (legacyAudit && candidates.length === 1 && candidates[0].phone) {
+      observations.push(paragraph(`Numéro indiqué sur la fiche Google : ${candidates[0].phone}.`));
     }
-    if (audit) {
-      actions = distinctActions((audit.priorities ?? []).filter(item => item.topic === 'LOCAL').map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 6);
-      for (const action of actions) {
-        action.facts = factsFor(action.observationIds);
-        action.sources = unique(action.observationIds.map(id => sourceId(audit.observations.find(item => item.id === id)?.url)));
-      }
-      const localFacts = factsFor((audit.observations ?? []).filter(item => item.topic === 'LOCAL').map(item => item.id));
-      if (localFacts.length) observations.unshift({ type: 'facts', items: localFacts });
-      if (actions.length) summary = 'Les informations de la fiche et les sources collectées font ressortir les actions ci-dessous. Les constats citent les informations à confirmer ou à corriger.';
-      else if (localFacts.length) summary = 'Le diagnostic ci-dessous rapproche les informations publiques et les avis consultés. Aucun défaut supplémentaire n’a été établi dans ce périmètre.';
+    if (candidates.length > 1) {
+      observations.push(table('Fiches à départager', ['Établissement', 'Adresse'], candidates.map(item => [item.title ?? 'Nom non fourni', item.address ?? 'Adresse non fournie'])));
     }
-    for (const item of result.evidence ?? []) if (item.sourceType === 'google-places-selection') sourceId(item.canonicalUrl);
-    scope.push('Les données publiques Google ne vérifient ni la propriété de la fiche, ni son classement. Les horaires retournés doivent être confirmés par le propriétaire.');
+    for (const item of candidates) sourceId(item.url);
+    for (const item of result.evidence ?? []) if (item.sourceType === 'google-places-selection' && !candidates.some(candidate => candidate.url)) sourceId(item.canonicalUrl);
+    if (p.coverage.localPresence.status !== 'SUCCEEDED') scope.push('Les détails de la fiche Google sont partiellement disponibles.');
   } else if (audit) {
-    summary = audit.conclusion?.reason ?? 'Les éléments disponibles ne permettent pas encore de décider si le site doit être modifié.';
-    actions = distinctActions((audit.priorities ?? []).map(item => ({ type: 'action', title: item.title, impact: item.consequence, action: item.correction, observationIds: item.observationIds, limitation: item.limitation }))).slice(0, 6);
-    for (const action of actions) {
-      action.facts = factsFor(action.observationIds);
-      action.sources = unique(action.observationIds.map(id => sourceId(audit.observations.find(item => item.id === id)?.url)));
-    }
-    const technical = technicalActions(p.report.technicalFindings).filter(item => !actions.length || item.code === 'HTTP_ERROR');
-    const verifiedActions = technical.slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
-    actions = distinctActions([...verifiedActions, ...actions]).slice(0, 6);
-    if (!audit.conclusion && verifiedActions.length) summary = 'Les pages examinées font ressortir des corrections ciblées. Le reste du diagnostic dépend des données disponibles.';
-    const remaining = factsFor(audit.conclusion?.observationIds ?? []);
-    if (remaining.length) observations.push({ type: 'facts', items: remaining });
-    const additionalFacts = factsFor((audit.observations ?? []).filter(item => !item.id.startsWith('local-')).map(item => item.id));
-    if (additionalFacts.length) observations.push({ type: 'facts', items: additionalFacts });
+    summary = editorialText(audit.conclusion?.reason) || (technical.length
+      ? 'Commencez par les corrections relevées sur les pages examinées.'
+      : 'Les éléments disponibles ne suffisent pas pour décider d’une modification du site.');
     for (const item of audit.competitors ?? []) {
-      observations.push({ type: 'comparison', title: item.title, text: item.comparison, source: sourceId(item.url) });
+      observations.push({ type: 'comparison', title: editorialText(item.title), text: editorialText(item.comparison), source: sourceId(item.url) });
     }
-    const queries = (audit.queries ?? []).slice(0, 6);
-    if (queries.length) observations.push(table('Contenus à travailler', ['Recherche envisagée', 'Page à enrichir', 'Intérêt'], queries.map(item => [item.query, item.targetPage, item.reason])));
-    const limits = unique(additionalLimits(audit.limitations ?? [], { hasWebsite: Boolean(p.values.website.value), hasComparisons: Boolean(audit.competitors?.length) }));
-    if (limits.length) scope.push(...limits);
+    scope.push(...additionalLimits((audit.limitations ?? []).map(editorialText), { hasWebsite: Boolean(p.values.website.value), hasComparisons: Boolean(audit.competitors?.length) }));
   } else {
-    actions = technicalActions(p.report.technicalFindings).slice(0, 3).map(item => ({ ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] }));
-    summary = actions.length ? 'Les vérifications ont relevé des corrections sur le site. Commencez par les actions ci-dessous.' : 'Les contrôles disponibles ne permettent pas d’identifier une correction prioritaire sur le site.';
+    summary = technical.length ? 'Les vérifications ont relevé des corrections sur le site.' : 'Les contrôles disponibles ne permettent pas d’identifier une correction prioritaire sur le site.';
     const ranks = p.report.rankedKeywords;
     if (ranks.length) {
       observations.push(table('Présence dans les résultats de recherche', ['Recherche', 'Position observée', 'Page'], ranks.map(item => [item.keyword, item.position ?? 'Non mesurée', item.url])));
@@ -165,20 +163,38 @@ export function buildPublicAuditDocument(result, kind = 'final', auditPacket = n
     const competitors = p.market.selectedCompetitors.filter(item => item.comparison);
     for (const item of competitors) observations.push({ type: 'comparison', title: item.title, text: item.comparison, source: sourceId(item.url) });
   }
+  actions = distinctActions([...technical, ...auditActions]).slice(0, 3).map(item => {
+    if (item.urls) return { ...item, facts: [{ text: item.detail, sources: item.urls.map(sourceId).filter(Boolean) }] };
+    return {
+      ...item,
+      facts: factsFor(item.observationIds),
+      sources: unique(item.observationIds.map(id => sourceId(factsById.get(id)?.url))),
+    };
+  });
+  const usefulFacts = factsFor([...factsById.values()]
+    .filter(fact => fact.usefulOnItsOwn && (!local || fact.topic === 'LOCAL') && !used.has(fact.id))
+    .slice(0, 2).map(fact => fact.id));
+  if (usefulFacts.length) observations.unshift({ type: 'facts', items: usefulFacts });
   if (!local) {
-    if (!p.values.website.value) observations.unshift(paragraph('Aucun site officiel n’a été confirmé pour l’analyse technique.'));
-    if (p.values.website.value) {
-      observations.unshift(table('Site examiné', ['Site', 'Pages examinées'], [[p.values.website.value, String(p.metrics.sitePages)]]));
-      if (p.metrics.sitePages) scope.push('L’examen porte sur les pages collectées. L’affichage et les actions sur mobile n’ont pas été testés dans un navigateur.');
-      else scope.push('Aucune page du site n’a pu être examinée ; aucun diagnostic technique ne peut être conclu.');
-    }
-    scope.push('Les sources publiques peuvent évoluer. Cette analyse ne mesure ni le trafic, ni les ventes, ni les performances privées de l’établissement.');
+    const decisionFacts = factsFor(audit?.conclusion?.observationIds ?? []);
+    if (decisionFacts.length) observations.unshift({ type: 'facts', items: decisionFacts });
+    summarySources = unique((audit?.conclusion?.observationIds ?? []).map(id => sourceId(factsById.get(id)?.url)))
+      .filter(number => !actions.some(action => action.sources?.includes(number)) && !decisionFacts.some(fact => fact.source === number));
+    const sitePages = p.metrics.sitePages;
+    if (!p.values.website.value) observations.push(paragraph('Aucun site officiel n’a été confirmé pour les contrôles du site.'));
+    else if (sitePages) {
+      observations.push(paragraph(`Contrôles techniques sur ${sitePages} ${sitePages === 1 ? 'page collectée' : 'pages collectées'}.`));
+      scope.unshift('L’affichage et les actions sur mobile n’ont pas été testés dans un navigateur.');
+    } else observations.push(paragraph(audit?.observations?.some(fact => fact.sourceKind === 'web-search')
+      ? 'Aucune page collectée pour les contrôles techniques. Les constats issus de la recherche publique sont signalés dans le rapport.'
+      : 'Aucune page collectée pour les contrôles techniques du site.'));
   }
-  const coverageItems = (local ? [['localPresence', 'Fiche Google']] : [['localPresence', 'Fiche Google'], ['siteAudit', 'Site officiel'], ['market', audit ? 'Recherche publique' : 'Marché local']]).map(([key, label]) => ({ label, status: key === 'siteAudit' && !p.values.website.value ? 'NOT_MEASURED' : p.coverage[key]?.status ?? 'PARTIAL' }));
-  observations.unshift({ type: 'coverage', title: 'Périmètre documenté', items: coverageItems });
-  const causes = p.report.limitations.map(readableLimit);
-  scope.push(...unique(causes));
-  return documentFor({ name: p.subject.name, city: p.values.address.value ?? p.subject.city, date: packet.createdAt, kind, status: local ? p.coverage.localPresence.status : p.status, summary, actions, observations, sources, scope });
+  const coverageItems = (local ? [['localPresence', 'Fiche Google']] : [['siteAudit', 'Contrôles du site'], ['market', audit ? 'Recherche publique' : 'Marché local']]).map(([key, label]) => ({ label, status: key === 'siteAudit' && !p.values.website.value ? 'NOT_MEASURED' : p.coverage[key]?.status ?? 'PARTIAL' }));
+  if (local || !audit || !p.values.website.value) observations.unshift({ type: 'coverage', title: 'Périmètre documenté', items: coverageItems });
+  const causes = p.report.limitations.filter(code => !/(?:CRAWL_|REDIRECT_|GOOGLE_)/.test(code) || (!local && p.metrics.sitePages && /CRAWL_/.test(code)));
+  if (!local) scope.push(...unique(causes.map(readableLimit)));
+  if (local && !sources.length && !scope.length) scope.push('La source consultée ne fournit aucun lien direct vers une fiche.');
+  return documentFor({ name: p.subject.name, city: (legacyAudit && p.values.address.value) || p.subject.city, date: packet.createdAt, kind, status: local ? p.coverage.localPresence.status : p.status, summary, summarySources, actions, observations, sources, scope });
 }
 
 function pageName(value) {

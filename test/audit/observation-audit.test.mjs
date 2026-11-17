@@ -26,7 +26,25 @@ async function setup(t, { research = async () => observationResponse(), configur
 }
 
 test('audit complet sans DataForSEO, preuves, trois priorités et site conservé', async t => {
-  const { app, calls } = await setup(t);
+  const { app, calls } = await setup(t, { research: async ({ input }) => {
+    assert.deepEqual(input.reviewSample, { count: 1, earliest: '2026-10-01', latest: '2026-10-01', selection: 'GOOGLE_RELEVANCE' });
+    const reply = observationResponse();
+    reply.output.priorities[0].verification = 'Ouvrez la page sur un téléphone et touchez le numéro.';
+    reply.output.observations.push({
+      id: 'web-source-2', topic: 'LOCAL', url: 'https://maps.google.com/?cid=fixture',
+      fact: 'Un avis sur un, publié en octobre 2026, valorise le soin apporté aux clients.',
+      quote: 'Accueil attentif.',
+    });
+    reply.output.priorities[2] = {
+      topic: 'LOCAL', title: 'Repérer ce que les clients apprécient à l’arrivée',
+      observationIds: ['web-source-2', 'google-review-1'], confidence: 'SUPPORTED',
+      consequence: 'Une attente bien comprise aide à choisir les détails à mettre en avant.',
+      correction: 'Vérifiez auprès de l’équipe ce qui est proposé aux clients à leur arrivée.',
+      verification: 'Comparez avec les prochains retours spontanés.',
+      limitation: 'Un seul témoignage est disponible.',
+    };
+    return reply;
+  } });
   const input = { ...observationInput, idempotencyKey: 'observation-replay' };
   const result = await app.publicAudits.create(input);
   assert.equal(result.status, 'SUCCEEDED');
@@ -39,15 +57,21 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
   assert.equal(result.budget.reserved, 0);
   assert.equal(result.modules.gmb.candidates[0].reviewCount, 123);
   const localReport = (await app.publicAudits.readReport(result.id, 'gmb')).value;
-  assert.match(localReport, /Accueil attentif/);
-  assert.match(localReport, /lundi: 12:00/);
-  assert.match(localReport, /ne représente pas tous les avis/);
+  const localPdf = (await app.publicAudits.readReport(result.id, 'gmb', 'pdf')).value;
+  assert.equal(result.modules.observation.priorities[2].confidence, 'TO_VERIFY');
+  assert.match(localReport, /À confirmer/);
+  assert.match(localReport, /Un avis sur un, publié en octobre 2026/);
+  assert.match(localPdf, /Confirmer|confirmer/);
+  assert.doesNotMatch(localReport + localPdf, /Accueil attentif|lundi: 12:00/);
   const html = (await app.publicAudits.readReport(result.id)).value;
   assert.match(html, /ne justifient pas une refonte/);
   assert.match(html, /https:\/\/voisin.example\/menu/);
   assert.doesNotMatch(html, /Audit partiel|Volume pays|SEO pays|DATAFORSEO_/);
+  assert.doesNotMatch(html, /Accueil attentif/);
+  assert.match(html, /Pour vérifier.*Ouvrez la page sur un téléphone/);
   const pdf = (await app.publicAudits.readReport(result.id, 'final', 'pdf')).value;
-  assert.match(pdf, /Faciliter le contact/); assert.match(pdf, /Pour vos clients/); assert.match(pdf, /voisin.example/);
+  assert.match(pdf, /Faciliter le contact/); assert.match(pdf, /Ouvrez la page sur un/); assert.match(pdf, /voisin.example/);
+  assert.doesNotMatch(pdf, /Accueil attentif/);
   assert.equal((await app.publicAudits.create(input)).id, result.id);
   assert.equal((await app.publicAudits.resume(result.id)).id, result.id);
   assert.equal(calls(), 1);

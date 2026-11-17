@@ -50,6 +50,28 @@ test('crawl HTML uniquement sur le même origin et respecte la borne de pages', 
   assert.equal(result.summary.pagesSkipped, 0);
 });
 
+test('adopte le seul alias www HTTPS à l’entrée du crawl après validation DNS', async () => {
+  const start = 'http://fixture.example.test/';
+  const canonical = 'https://www.fixture.example.test/';
+  const calls = [];
+  const fetchImpl = async url => {
+    calls.push(url);
+    if (url === start) return response('', { status: 301, location: canonical });
+    if (url === canonical) return response('<a href="/">Accueil</a><a href="/menu">Menu</a>');
+    return response('', { status: 302, location: 'https://fixture.example.test/menu' });
+  };
+  const fetched = await crawlSite({ target: start, lookup: lookupPublic, fetchImpl });
+  assert.deepEqual(calls, [start, canonical, canonical + 'menu']);
+  assert.equal(fetched.target, canonical);
+  assert.equal(fetched.pages[0].crawlStatus, 'complete');
+  assert.equal(fetched.pages[1].errorCode, 'REDIRECT_OUT_OF_ORIGIN');
+
+  calls.length = 0;
+  const refused = await crawlSite({ target: start, fetchImpl, lookup: hostname => hostname.startsWith('www.') ? ['10.0.0.1'] : lookupPublic(hostname) });
+  assert.deepEqual(calls, [start]);
+  assert.equal(refused.pages[0].errorCode, 'TARGET_NOT_PUBLIC');
+});
+
 test('refuse les cibles privées et les credentials URL', async () => {
   await assert.rejects(
     () => crawlSite({ target: 'http://127.0.0.1/', lookup: lookupPublic, fetchImpl: async () => response('', { url: 'http://127.0.0.1/' }) }),

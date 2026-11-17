@@ -76,7 +76,22 @@ test('un audit partiel conserve des actions techniques, sans prétendre à une v
   const html = renderAuditDocumentHtml(buildPublicAuditDocument(run));
   assert.match(html, /Titre de page absent/);
   assert.match(html, /n’ont pas été testés dans un navigateur/);
+  assert.match(html, /Pour vérifier.*Relancez les contrôles/);
   assert.doesNotMatch(html, /site absent|Données structurées non observées/);
+});
+
+test('une page trouvée par recherche publique ne compte pas comme contrôle technique', async () => {
+  const run = await fixture();
+  run.modules.seo = { pages: [], findings: [] };
+  run.modules.observation = {
+    observations: [{ id: 'web-1', url: 'https://fixture.example/menu', fact: 'La carte datée facilite le choix avant la visite.', sourceKind: 'web-search', usefulOnItsOwn: true }],
+  };
+  const document = buildPublicAuditDocument(run);
+  const html = renderAuditDocumentHtml(document);
+  assert.match(html, /Aucune page collectée pour les contrôles techniques/);
+  assert.match(html, /Recherche publique.*La carte datée/);
+  assert.doesNotMatch(html, /Contrôles techniques sur [1-9]/);
+  assert.match(renderAuditDocumentPdf(document), /Aucune page collect/);
 });
 
 test('les caractères français et les liens sont préservés dans le PDF', async () => {
@@ -142,12 +157,13 @@ test('le démarrage migre les anciennes consignes standard et préserve un promp
 test('un point fort sourcé reste visible sans priorité associée en HTML et PDF', async () => {
   const run = await fixture();
   run.modules.observation = {
-    observations: [{ id: 'web-1', fact: 'La carte propose un menu enfant.', url: 'https://fixture.example/carte' }],
+    observations: [{ id: 'web-1', fact: 'La carte propose un menu enfant. ([[1]](https://fixture.example/carte))', url: 'https://fixture.example/carte', usefulOnItsOwn: true }],
     priorities: [], competitors: [], queries: [], limitations: [], conclusion: null,
   };
   const document = buildPublicAuditDocument(run);
   assert.match(renderAuditDocumentHtml(document), /La carte propose un menu enfant/);
   assert.match(renderAuditDocumentPdf(document), /La carte propose un menu enfant/);
+  assert.doesNotMatch(renderAuditDocumentHtml(document), /\[\[1\]\]/);
   assert.ok(document.sections.flatMap(section => section.blocks).some(block => block.type === 'source' && block.url === 'https://fixture.example/carte'));
 });
 
@@ -158,7 +174,10 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const current = await app.contracts.get('public-observation-analysis');
   const old = structuredClone(current.schema);
   delete old.properties.observations.items.properties.topic;
+  delete old.properties.observations.items.properties.usefulOnItsOwn;
   delete old.properties.priorities.items.properties.topic;
+  delete old.properties.priorities.items.properties.verification;
+  delete old.properties.priorities.items.properties.confidence;
   old.properties.observations.items.properties.fact.maxLength = 320;
   old.properties.observations.items.properties.quote.maxLength = 240;
   old.properties.observations.maxItems = 12; old.properties.priorities.maxItems = 3; old.properties.queries.maxItems = 3;
@@ -168,6 +187,7 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const migrated = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await migrated.ready;
   const active = await migrated.contracts.getActiveVersion(current.id);
   assert.equal(active.schema.properties.observations.maxItems, 32);
+  assert.equal(active.schema.properties.priorities.items.properties.verification.type, 'string');
   assert.deepEqual(active.schema.properties.priorities.items.properties.topic.enum, ['LOCAL', 'SITE', 'MARKET']);
   const custom = structuredClone(active.schema); custom.title = 'Contrat personnalisé';
   const next = await migrated.contracts.save(current.id, { schema: custom }, { expectedHash: (await migrated.contracts.get(current.id)).draftHash });

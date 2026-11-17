@@ -211,9 +211,20 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
       try {
         let current = parseTarget(url);
         let response;
+        let followedWwwRedirect = false;
         for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
           await assertPublic(current, lookup, signal);
-          if (root.protocol === 'http:' && current.protocol === 'https:' && current.hostname === root.hostname && !current.port) root.protocol = 'https:';
+          const httpsDefault = current.protocol === 'https:' && !current.port;
+          const sameHostUpgrade = root.protocol === 'http:' && current.hostname === root.hostname;
+          const initialWwwRedirect = pages.length === 0 && redirects > 0 && !followedWwwRedirect && !root.port
+            && current.hostname !== root.hostname
+            && current.hostname.replace(/^www\./, '') === root.hostname.replace(/^www\./, '');
+          if (httpsDefault && (sameHostUpgrade || initialWwwRedirect)) {
+            root.protocol = 'https:';
+            root.hostname = current.hostname;
+            root.port = '';
+            followedWwwRedirect ||= initialWwwRedirect;
+          }
           if (current.origin !== root.origin) throw crawlerError('Redirection hors origin.', 'REDIRECT_OUT_OF_ORIGIN');
           response = await awaitWithSignal(fetchImpl(current.href, { redirect: 'manual', signal }), signal);
           const status = Number(response.status ?? 200);
@@ -234,6 +245,7 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
         const contentType = header(response, 'content-type');
         if (contentType && !contentType.toLowerCase().includes('text/html')) throw crawlerError('Ressource non HTML.', 'NOT_HTML');
         const html = await readHtml(response, { signal, remainingBytes: () => maxBytes - usedBytes, consumeBytes: size => { usedBytes += size; } });
+        visited.add(current.href);
         pages.push({ url: current.href, status, crawlStatus: 'complete', html });
         for (const link of links(html, current.href, root.origin)) if (!visited.has(link) && !queue.includes(link)) queue.push(link);
         if (prioritizeClientPages) {

@@ -92,18 +92,31 @@ export function renderAuditDocumentPdf(document) {
   paragraph(document.title, { size: 11, font: 'F2', gap: 12 });
   rule(y); y -= 12;
   for (const [sectionIndex, section] of document.sections.entries()) {
+    if (!section.blocks.length) continue;
     if (section.blocks[0]?.type === 'table') ensure(140);
     heading(section.title);
     for (const block of section.blocks) {
-      if (block.type === 'paragraph') paragraph(block.text, sectionIndex === 3 ? { size: 9.5, color: '.32 .38 .34' } : {});
+      if (block.type === 'paragraph') {
+        const references = block.sources?.length ? ` [${block.sources.join(', ')}]` : '';
+        paragraph(block.text + references, sectionIndex === 3 ? { size: 9.5, color: '.32 .38 .34' } : sectionIndex === 0 ? { size: 13 } : {});
+      }
       if (block.type === 'facts') facts(block.items);
       if (block.type === 'action') {
-        const estimated = wrap(block.title, 495, 12).length * 18 + (block.facts ?? []).reduce((sum, fact) => sum + wrap(fact.text, 485, 10.5).length * 16 + 6, 0) + wrap(block.impact, 495, 10.5).length * 16 + wrap(block.action, 495, 10.5).length * 16 + 70;
+        const estimated = wrap(block.title, 495, 12).length * 18
+          + (block.facts ?? []).reduce((sum, fact) => sum + wrap(fact.text, 485, 10.5).length * 16 + 6, 0)
+          + [block.confidence, block.impact, block.action, block.verification, block.limitation].filter(Boolean)
+            .reduce((sum, value) => sum + wrap(value, 475, 10.5).length * 16 + 7, 0) + 34;
         if (estimated < 640) ensure(estimated);
-        heading(`${block.title}${!block.facts?.length && block.sources?.length ? ` [${block.sources.join(', ')}]` : ''}`, 3); facts(block.facts);
-        paragraph(`Pour vos clients : ${block.impact}`);
-        paragraph(`À faire : ${block.action}`, { gap: block.limitation ? 7 : 14 });
-        if (block.limitation) paragraph(`Limite : ${block.limitation}`, { size: 9.5, color: '.32 .38 .34', gap: 14 });
+        heading(block.title, 3);
+        if (block.confidence) paragraph(block.confidence, { size: 9, font: 'F2', color: '.21 .34 .24' });
+        paragraph(block.impact);
+        paragraph(`À faire · ${block.action}`);
+        if (block.verification) paragraph(`Pour vérifier · ${block.verification}`);
+        if (block.limitation) paragraph(block.limitation, { size: 9.5, color: '.32 .38 .34' });
+        facts(block.facts);
+        const otherSources = (block.sources ?? []).filter(number => !block.facts?.some(fact => fact.source === number));
+        if (otherSources.length) paragraph(`Sources [${otherSources.join(', ')}]`, { size: 9.5, color: '.32 .38 .34' });
+        y -= 6;
       }
       if (block.type === 'comparison') { heading(block.title, 3); paragraph(`${block.text}${block.source ? ` [${block.source}]` : ''}`); }
       if (block.type === 'coverage') {

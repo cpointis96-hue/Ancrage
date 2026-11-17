@@ -41,6 +41,9 @@
             "minLength": 1,
             "maxLength": 480
           },
+          "usefulOnItsOwn": {
+            "type": "boolean"
+          },
           "topic": {
             "type": "string",
             "enum": [
@@ -94,6 +97,15 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["SUPPORTED", "TO_VERIFY"]
           },
           "topic": {
             "type": "string",

@@ -1,6 +1,8 @@
 const form = document.querySelector('#demo-form');
 const state = document.querySelector('#demo-state');
 const result = document.querySelector('#demo-result');
+const intro = document.querySelector('#demo-intro');
+const newAudit = document.querySelector('#new-audit');
 const name = form.elements.name;
 const manualPanel = document.querySelector('#manual-panel');
 const manualToggle = document.querySelector('#manual-toggle');
@@ -12,9 +14,8 @@ const cities = { FR: ['Nantes', 'Paris', 'Lyon'], LK: ['Colombo', 'Galle', 'Kand
 const publicFlow = document.querySelector('#public-flow');
 const publicFlowState = document.querySelector('#public-flow-state');
 const finalProgress = document.querySelector('#final-progress');
-const finalProgressFill = document.querySelector('#final-progress-fill');
-const finalProgressLabel = document.querySelector('#final-progress-label');
 const publicReports = document.querySelector('#public-reports');
+const sitePreparation = document.querySelector('#site-preparation');
 const preparationForm = document.querySelector('#preparation-form');
 const intakeForm = document.querySelector('#intake-form');
 const publicDemo = document.querySelector('#public-demo');
@@ -50,6 +51,7 @@ let activeSuggestionIndex = -1;
 let publicRequest = null;
 let demoRequest = null;
 let detectedEstablishment = null;
+let renderedReports = '';
 const intakeParams = new URLSearchParams(window.location.search);
 if (intakeParams.get('placeId')) {
   name.value = intakeParams.get('name') || '';
@@ -63,20 +65,25 @@ async function jsonRequest(url, options = {}) {
   return body;
 }
 function reportLinks(request) {
+  const final = (request.reports ?? []).find(report => report.kind === 'final');
+  const google = (request.reports ?? []).find(report => report.kind === 'gmb');
+  finalProgress.hidden = Boolean(final) || request.status === 'BLOCKED';
+  const signature = JSON.stringify([request.id, final?.id, google?.id]);
+  if (signature === renderedReports) return;
+  renderedReports = signature;
   publicReports.replaceChildren();
-  for (const report of request.reports ?? []) {
-    const link = document.createElement('a'); link.className = 'public-report'; link.target = '_blank'; link.rel = 'noopener'; link.href = `/api/public/requests/${encodeURIComponent(request.id)}/reports/${encodeURIComponent(report.id)}`; link.textContent = report.kind === 'gmb' ? 'Voir le rapport GMB' : 'Voir le rapport final'; publicReports.append(link);
+  for (const report of [final, google].filter(Boolean)) {
+    const link = document.createElement('a');
+    link.className = report.kind === 'final' ? 'public-report public-report-primary' : 'public-report';
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.href = `/api/public/requests/${encodeURIComponent(request.id)}/reports/${encodeURIComponent(report.id)}`;
+    link.textContent = report.kind === 'final' ? 'Lire votre audit' : 'Consulter le volet Google';
+    if (report.kind === 'final') link.addEventListener('click', () => {
+      if (publicRequest.state === 'FINAL_REPORT_READY' && !demoRequest) sitePreparation.hidden = false;
+    });
+    publicReports.append(link);
   }
-  preparationForm.hidden = request.state !== 'FINAL_REPORT_READY';
-  updateFinalProgress(request);
-}
-function updateFinalProgress(request) {
-  const checkpoints = request.checkpoints ?? [];
-  const isReady = checkpoints.some(item => item.key === 'final-report' && item.status === 'SUCCEEDED');
-  const isFinalRunning = checkpoints.some(item => item.key === 'gmb-report' && item.status === 'SUCCEEDED') && !isReady && request.audit?.status === 'RUNNING';
-  finalProgress.hidden = !isFinalRunning && !isReady;
-  finalProgressFill.style.width = `${isReady ? 100 : 50}%`;
-  finalProgressLabel.textContent = isReady ? 'Rapport final prêt.' : 'Rapport final en cours.';
 }
 function parseMenu(value) { return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...price] = line.split('—'); return { name: name.trim(), price: price.join('—').trim() }; }); }
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -112,6 +119,19 @@ function setManual(open) { manualPanel.hidden = !open; manualToggle.setAttribute
 function cityId() { return `demo-${country.value.toLowerCase()}-${city.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`; }
 
 manualToggle.addEventListener('click', () => setManual(manualPanel.hidden));
+newAudit.addEventListener('click', () => {
+  newAudit.hidden = result.hidden = publicFlow.hidden = sitePreparation.hidden = intakeForm.hidden = publicDemo.hidden = true;
+  form.hidden = intro.hidden = false;
+  sitePreparation.open = false;
+  form.reset();
+  preparationForm.reset();
+  intakeForm.reset();
+  setManual(false);
+  publicRequest = demoRequest = detectedEstablishment = selectedEstablishment = null;
+  suggestedEstablishments = [];
+  closeSuggestions(establishmentOptions, name);
+  name.focus();
+});
 country.addEventListener('change', () => { city.value = ''; selectedCity = null; suggestedCities = []; closeSuggestions(cityOptions, city); city.disabled = !country.value; });
 
 name.addEventListener('input', () => {
@@ -153,10 +173,32 @@ form.addEventListener('submit', async event => {
     }
     publicRequest = await jsonRequest('/api/public/requests', { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('public-request') }, body: JSON.stringify({ name: payload.name, city: payload.city, domain: payload.domain ?? null, identity: payload.identity }) });
     publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/match-decision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision: manualMode() ? 'LOCAL_PREVIEW_WITHOUT_GMB' : 'CONFIRM' }) });
-    state.hidden = true; result.replaceChildren(); const title = document.createElement('h2'); title.textContent = publicRequest.input.name; const summary = document.createElement('p'); summary.textContent = publicRequest.input.city.label; result.append(title, summary); result.hidden = false; publicFlow.hidden = false; publicFlowState.hidden = true; reportLinks(publicRequest);
-    for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && attempt < 180; attempt += 1) { await wait(1000); publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`); reportLinks(publicRequest); if (publicRequest.state === 'FINAL_REPORT_READY') break; }
+    state.hidden = form.hidden = intro.hidden = true;
+    const title = document.createElement('h1');
+    title.textContent = publicRequest.input.name;
+    title.tabIndex = -1;
+    const location = document.createElement('p');
+    location.textContent = publicRequest.input.city.label;
+    result.replaceChildren(title, location);
+    result.hidden = publicFlow.hidden = false;
+    publicFlowState.hidden = true;
+    title.focus();
+    reportLinks(publicRequest);
+    for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && publicRequest.status !== 'BLOCKED' && attempt < 180; attempt += 1) {
+      await wait(1000);
+      publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`);
+      reportLinks(publicRequest);
+    }
     if (publicRequest.state !== 'FINAL_REPORT_READY') { finalProgress.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'Le rapport final n’a pas pu être terminé.'; }
-  } catch (error) { state.hidden = false; state.textContent = error.message; } finally { button.disabled = false; }
+  } catch (error) {
+    const errorState = form.hidden ? publicFlowState : state;
+    if (form.hidden) finalProgress.hidden = true;
+    errorState.hidden = false;
+    errorState.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    newAudit.hidden = form.hidden === false;
+  }
 });
 
 function showDemoPreparation() {
@@ -190,9 +232,9 @@ function showDemoPreparation() {
 }
 
 preparationForm.addEventListener('submit', async event => {
-  event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = true;
+  event.preventDefault(); const button = preparationForm.querySelector('button'); button.disabled = newAudit.disabled = true;
   try { const body = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}/preparation`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': requestKey('demo-request') }, body: JSON.stringify({ email: new FormData(preparationForm).get('email') }) }); demoRequest = body;
-    preparationForm.hidden = true;
+    sitePreparation.hidden = true;
     if (demoRequest.pipelineRunId) return showDemoPreparation();
     intakeForm.hidden = false; if (detectedEstablishment) { intakeForm.elements.address.value = detectedEstablishment.formattedAddress || ''; intakeForm.elements.locale.value = detectedEstablishment.countryCode === 'FR' ? 'fr-FR' : 'en-GB'; }
     const saved = demoRequest.intake ?? {};
@@ -205,11 +247,11 @@ preparationForm.addEventListener('submit', async event => {
       intakeForm.elements[`${item.day}-closes`].value = item.closes;
     }
     syncIntakeFields();
-    publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+    publicFlowState.hidden = false; publicFlowState.textContent = 'Préparation enregistrée. Complétez les éléments nécessaires à la démo.'; } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = newAudit.disabled = false; }
 });
 
 intakeForm.addEventListener('submit', async event => {
-  event.preventDefault(); const button = intakeForm.querySelector('button'); button.disabled = true;
+  event.preventDefault(); const button = intakeForm.querySelector('button'); button.disabled = newAudit.disabled = true;
   try {
     const data = new FormData(intakeForm);
     const menu = parseMenu(String(data.get('menu') ?? ''));
@@ -231,5 +273,5 @@ intakeForm.addEventListener('submit', async event => {
       syncIntakeFields();
     }
     demoRequest = await jsonRequest(`/api/public/demo-requests/${encodeURIComponent(demoRequest.id)}/start`, { method: 'POST' }); showDemoPreparation();
-  } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = false; }
+  } catch (error) { publicFlowState.hidden = false; publicFlowState.textContent = error.message; } finally { button.disabled = newAudit.disabled = false; }
 });
