@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { createRouter } from './router.mjs';
+import { createRouter, prospectRequest } from './router.mjs';
 import { readJsonBody, sendJson } from './json.mjs';
 import { createOperatorAuth } from './operator-auth.mjs';
 
@@ -85,12 +85,12 @@ export function createHostedHandler({ getApp, sessionSecret, workerSecret, opera
         const app = await getApp();
         const created = await app.publicControlPlane.createRequest({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] });
         grant(response, created.id);
-        return sendJson(response, 201, created);
+        return sendJson(response, 201, prospectRequest(created));
       }
       const match = url.pathname.match(/^\/api\/public\/requests\/([a-z0-9-]+)(.*)$/);
       const demo = url.pathname.match(/^\/api\/public\/demo-requests\/([a-z0-9-]+)(.*)$/);
       const places = ['/api/places/autocomplete', '/api/places/details'].includes(url.pathname) && method === 'GET';
-      const allowed = match && ((method === 'GET' && /^($|\/reports(?:\/[a-z0-9-]+(?:\/pdf)?)?)$/.test(match[2])) || (method === 'POST' && ['/match-decision', '/preparation'].includes(match[2]))) || demo && ((method === 'GET' && !demo[2]) || (method === 'PUT' && demo[2] === '/intake') || (method === 'POST' && ['/assets', '/start'].includes(demo[2])));
+      const allowed = match && ((method === 'GET' && !match[2]) || (method === 'POST' && ['/match-decision', '/preparation'].includes(match[2]))) || demo && ((method === 'GET' && !demo[2]) || (method === 'PUT' && demo[2] === '/intake') || (method === 'POST' && ['/assets', '/start'].includes(demo[2])));
       if (!places && !allowed) return sendJson(response, operator.configured ? 401 : 404, { error: { code: operator.configured ? 'UNAUTHORIZED' : 'NOT_FOUND' } });
       if (!places && !authorize(request, (match ?? demo)[1])) return sendJson(response, 403, { error: { code: 'FORBIDDEN' } });
       const app = await getApp();
@@ -100,7 +100,7 @@ export function createHostedHandler({ getApp, sessionSecret, workerSecret, opera
         grant(response, prepared.id);
         return sendJson(response, 201, prepared);
       }
-      await createRouter(app)(request, response, url);
+      await createRouter(app, { prospectOnly: true })(request, response, url);
       if (match && response.statusCode < 400) waitUntil(app.workPublicAudits().catch(() => {}));
     } catch (error) {
       if (!response.headersSent) sendJson(response, error.status >= 400 && error.status < 500 ? error.status : 503, { error: { code: error.status < 500 ? error.code : 'SERVICE_UNAVAILABLE', message: error.status < 500 ? error.message : 'Service temporairement indisponible.' } });

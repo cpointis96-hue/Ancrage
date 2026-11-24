@@ -39,7 +39,9 @@ test('isole les demandes publiques et bloque les routes privées avant initialis
   let initialized = 0; let worked = 0;
   const demoHref = '/demo/' + 'a'.repeat(43);
   let demoReady = false;
-  const app = { publicControlPlane: { createRequest: async () => ({ id: 'request-fixture' }), getRequest: async id => ({ id }), createPreparation: async () => ({ id: 'preparation-fixture' }), getDemoRequest: async id => ({ id, status: demoReady ? 'READY_FOR_PROSPECT' : 'READY_FOR_OWNER_REVIEW', presentation: { href: demoHref } }) }, demos: { read: async () => ({ value: '<html><head></head><body>Démo validée</body></html>', contentType: 'text/html' }) }, workPublicAudits: async () => { worked++; return []; } };
+  const preview = { finding: 'Constat établi.', improvement: 'Amélioration proposée.', benefit: 'Bénéfice attendu.' };
+  const completed = { id: 'request-fixture', state: 'FINAL_REPORT_READY', status: 'PARTIAL', audit: { preview, packet: { market: 'données internes' } }, reports: [{ id: 'report-fixture' }] };
+  const app = { publicControlPlane: { createRequest: async () => completed, getRequest: async () => completed, decideMatch: async () => completed, createPreparation: async () => ({ id: 'preparation-fixture' }), getDemoRequest: async id => ({ id, status: demoReady ? 'READY_FOR_PROSPECT' : 'READY_FOR_OWNER_REVIEW', presentation: { href: demoHref } }) }, demos: { read: async () => ({ value: '<html><head></head><body>Démo validée</body></html>', contentType: 'text/html' }) }, workPublicAudits: async () => { worked++; return []; } };
   const background = [];
   const handler = createHostedHandler({ origin: 'https://fixture.example', sessionSecret: 'x'.repeat(32), workerSecret: 'worker-secret', getApp: async () => { initialized++; return app; }, waitUntil: promise => background.push(promise) });
   const invoke = async (url, method = 'GET', headers = {}, body = '') => {
@@ -56,7 +58,16 @@ test('isole les demandes publiques et bloque les routes privées avant initialis
   assert.equal(created.statusCode, 201);
   const cookie = created.headers['set-cookie'].split(';')[0];
   assert.match(created.headers['set-cookie'], /HttpOnly; Secure; SameSite=Lax/);
-  assert.equal((await invoke('/api/public/requests/request-fixture', 'GET', { cookie })).statusCode, 200);
+  const get = await invoke('/api/public/requests/request-fixture', 'GET', { cookie });
+  assert.equal(get.statusCode, 200);
+  const match = await invoke('/api/public/requests/request-fixture/match-decision', 'POST', { cookie }, '{"decision":"CONFIRM"}');
+  assert.equal(match.statusCode, 200);
+  for (const response of [created, get, match]) {
+    assert.deepEqual(JSON.parse(response.body), { id: completed.id, state: completed.state, status: completed.status, preview });
+  }
+  for (const path of ['/reports', '/reports/report-fixture', '/reports/report-fixture/pdf']) {
+    assert.equal((await invoke(`/api/public/requests/request-fixture${path}`, 'GET', { cookie })).statusCode, 404);
+  }
   assert.equal((await invoke('/api/public/requests/another-request', 'GET', { cookie })).statusCode, 403);
   assert.equal((await invoke('/api/public/requests/request-fixture', 'GET', { cookie: `${cookie}tampered` })).statusCode, 403);
   const prep = await invoke('/api/public/requests/request-fixture/preparation', 'POST', { cookie }, '{}');
@@ -78,7 +89,7 @@ test('isole les demandes publiques et bloque les routes privées avant initialis
   await Promise.all(background);
   assert.ok(worked >= 2);
   assert.match((await invoke('/')).body, /Ancrage/i);
-  assert.match((await invoke('/demo.html')).body, /public-reports/);
+  assert.match((await invoke('/demo.html')).body, /prospect-preview/);
   assert.equal((await invoke('/demo.mjs')).statusCode, 200);
   assert.equal((await invoke('/demo.css')).statusCode, 200);
   assert.equal((await invoke('/assets/JetBrainsMono%5Bwght%5D.woff2')).statusCode, 200);

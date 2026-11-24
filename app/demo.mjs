@@ -14,7 +14,7 @@ const cities = { FR: ['Nantes', 'Paris', 'Lyon'], LK: ['Colombo', 'Galle', 'Kand
 const publicFlow = document.querySelector('#public-flow');
 const publicFlowState = document.querySelector('#public-flow-state');
 const finalProgress = document.querySelector('#final-progress');
-const publicReports = document.querySelector('#public-reports');
+const prospectPreview = document.querySelector('#prospect-preview');
 const sitePreparation = document.querySelector('#site-preparation');
 const preparationForm = document.querySelector('#preparation-form');
 const intakeForm = document.querySelector('#intake-form');
@@ -51,7 +51,6 @@ let activeSuggestionIndex = -1;
 let publicRequest = null;
 let demoRequest = null;
 let detectedEstablishment = null;
-let renderedReports = '';
 const intakeParams = new URLSearchParams(window.location.search);
 if (intakeParams.get('placeId')) {
   name.value = intakeParams.get('name') || '';
@@ -64,26 +63,38 @@ async function jsonRequest(url, options = {}) {
   if (!response.ok) throw new Error(body.error?.message ?? 'La demande n’a pas pu aboutir.');
   return body;
 }
-function reportLinks(request) {
-  const final = (request.reports ?? []).find(report => report.kind === 'final');
-  const google = (request.reports ?? []).find(report => report.kind === 'gmb');
-  finalProgress.hidden = Boolean(final) || request.status === 'BLOCKED';
-  const signature = JSON.stringify([request.id, final?.id, google?.id]);
-  if (signature === renderedReports) return;
-  renderedReports = signature;
-  publicReports.replaceChildren();
-  for (const report of [final, google].filter(Boolean)) {
-    const link = document.createElement('a');
-    link.className = report.kind === 'final' ? 'public-report public-report-primary' : 'public-report';
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.href = `/api/public/requests/${encodeURIComponent(request.id)}/reports/${encodeURIComponent(report.id)}`;
-    link.textContent = report.kind === 'final' ? 'Lire votre audit' : 'Consulter le volet Google';
-    if (report.kind === 'final') link.addEventListener('click', () => {
-      if (publicRequest.state === 'FINAL_REPORT_READY' && !demoRequest) sitePreparation.hidden = false;
-    });
-    publicReports.append(link);
+function renderPreview(request) {
+  const { preview } = request;
+  const ready = request.state === 'FINAL_REPORT_READY' && request.status !== 'BLOCKED';
+  finalProgress.hidden = ready || request.status === 'BLOCKED';
+  if (!ready) return;
+
+  if (preview) {
+    const finding = document.createElement('p');
+    finding.textContent = preview.finding;
+    const card = document.createElement('article');
+    card.className = 'preview-proposal';
+    const heading = document.createElement('h2');
+    heading.textContent = 'Ce que l’on changerait';
+    const improvement = document.createElement('p');
+    improvement.textContent = preview.improvement;
+    const benefit = document.createElement('p');
+    benefit.textContent = preview.benefit;
+    card.append(heading, improvement, benefit);
+    prospectPreview.append(finding);
+    if (preview.image) {
+      const image = document.createElement('img');
+      image.src = `data:image/jpeg;base64,${preview.image.jpeg}`;
+      image.alt = preview.image.caption;
+      prospectPreview.append(image);
+    }
+    prospectPreview.append(card);
+  } else {
+    const notice = document.createElement('p');
+    notice.textContent = 'Les éléments disponibles ne permettent pas de montrer une amélioration précise. Vous pouvez demander une démo à partir des informations de votre établissement.';
+    prospectPreview.append(notice);
   }
+  sitePreparation.hidden = false;
 }
 function parseMenu(value) { return value.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...price] = line.split('—'); return { name: name.trim(), price: price.join('—').trim() }; }); }
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -123,6 +134,7 @@ newAudit.addEventListener('click', () => {
   newAudit.hidden = result.hidden = publicFlow.hidden = sitePreparation.hidden = intakeForm.hidden = publicDemo.hidden = true;
   form.hidden = intro.hidden = false;
   sitePreparation.open = false;
+  prospectPreview.replaceChildren();
   form.reset();
   preparationForm.reset();
   intakeForm.reset();
@@ -160,7 +172,7 @@ city.addEventListener('keydown', event => handleSuggestionKeys(event, city, city
 city.addEventListener('blur', () => setTimeout(() => closeSuggestions(cityOptions, city), 120));
 
 form.addEventListener('submit', async event => {
-  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; state.hidden = false; state.textContent = 'Audit en cours…'; result.hidden = true; publicFlow.hidden = true;
+  event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); button.disabled = true; state.hidden = false; state.textContent = 'Préparation de votre aperçu…'; result.hidden = true; publicFlow.hidden = true;
   try {
     let payload;
     if (manualMode()) {
@@ -183,13 +195,13 @@ form.addEventListener('submit', async event => {
     result.hidden = publicFlow.hidden = false;
     publicFlowState.hidden = true;
     title.focus();
-    reportLinks(publicRequest);
+    finalProgress.hidden = publicRequest.state === 'FINAL_REPORT_READY' || publicRequest.status === 'BLOCKED';
     for (let attempt = 0; publicRequest.state !== 'FINAL_REPORT_READY' && publicRequest.status !== 'BLOCKED' && attempt < 180; attempt += 1) {
       await wait(1000);
       publicRequest = await jsonRequest(`/api/public/requests/${encodeURIComponent(publicRequest.id)}`);
-      reportLinks(publicRequest);
     }
-    if (publicRequest.state !== 'FINAL_REPORT_READY') { finalProgress.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'Le rapport final n’a pas pu être terminé.'; }
+    renderPreview(publicRequest);
+    if (publicRequest.state !== 'FINAL_REPORT_READY' || publicRequest.status === 'BLOCKED') { finalProgress.hidden = true; publicFlowState.hidden = false; publicFlowState.textContent = 'L’aperçu n’a pas pu être préparé.'; }
   } catch (error) {
     const errorState = form.hidden ? publicFlowState : state;
     if (form.hidden) finalProgress.hidden = true;

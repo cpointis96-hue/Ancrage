@@ -1,18 +1,19 @@
 # Parcours et règles produit
 
-## Audit
+## Aperçu gratuit
 
 1. Recueillir le nom et la ville ; confirmer l’identité sélectionnée ou demander l’adresse si aucune correspondance fiable n’existe.
 2. Collecter uniquement les sources autorisées et corroborer le domaine avant crawl.
-3. Livrer le rapport de présence locale disponible, puis le rapport final avec HTML/PDF et limites.
-4. Proposer la préparation du site après le rapport final ; demander alors l’e-mail et les informations métier nécessaires.
+3. Utiliser l’audit interne pour repérer une friction qui compte pour l’établissement. Examiner d’abord le parcours mobile vers la commande, la réservation ou le contact. Si les données SEO le permettent, relier la requête et son intention à une page existante ou à une page à créer. Vérifier les liens qui donnent accès à cette page. Distinguer demande locale mesurée, hypothèse et données indisponibles.
+4. Dès que l’analyse est terminée, montrer un constat étayé, une correction et son bénéfice. Ajouter la capture correspondante du site audité si elle est disponible. Si les preuves sont insuffisantes, le dire. Réserver les rapports HTML/PDF, le benchmark et le plan détaillé au cockpit.
+5. Proposer la démo après l’aperçu. Demander l’e-mail à cette étape et les informations métier au formulaire suivant.
 
 La sélection Google Places ne prouve ni la propriété d’une fiche ni sa corroboration par un fournisseur d’audit. Aucun domaine, établissement, concurrent, chiffre ou défaut SEO n’est inventé. Une branche indisponible porte sa cause ; l’autre peut continuer si les preuves l’autorisent.
 
 | Données disponibles | Comportement |
 |---|---|
 | Identité et site confirmés | Analyser présence locale et site dans le périmètre autorisé. |
-| Présence locale sans site confirmé | Restituer les observations disponibles ; aucun défaut SEO supposé. |
+| Présence locale sans site confirmé | Proposer une démo à partir des informations de l’établissement si l’analyse aboutit. |
 | Site confirmé sans fiche corroborée | Analyser le site ; expliciter la limite de présence locale. |
 | Aucune identité fiable | Demander l’adresse ; ne pas choisir silencieusement une entreprise. |
 
@@ -22,7 +23,7 @@ Les budgets et limites du programme font foi : profil dans `src/audit/audit-prof
 
 La cible initiale est l’entreprise locale, avec les restaurants indépendants comme premier segment. L’objectif est de montrer une démo personnalisée avant achat ; aucun classement SEO n’est garanti.
 
-Après le rapport final, un e-mail valide crée ou reprend une préparation même incomplète. Le lancement de génération exige : identité et coordonnées, histoire/offre, menu et prix si concernés, horaires, langue choisie, confirmation et droits sur les photos. Les catégories attendues sont façade, deux plats signature, intérieur/terrasse et équipe/service.
+Après l’aperçu, un e-mail valide crée ou reprend une préparation même incomplète. Le lancement de génération exige : identité et coordonnées, histoire/offre, menu et prix si concernés, horaires, langue choisie, confirmation et droits sur les photos. Les catégories attendues sont façade, deux plats signature, intérieur/terrasse et équipe/service.
 
 Le pipeline respecte : dossier confirmé → plan de contenu → construction → contrôles qualité → validation opérateur → présentation. Le site de démonstration présente identité, offre/menu, horaires, adresse, photos et contact dans une langue choisie. Une traduction doit être validée avant publication. Les intégrations complexes et le multilingue visiteur ne font pas partie de la première promesse.
 

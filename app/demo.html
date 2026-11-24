@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Audit local · Ancrage</title>
+  <title>Aperçu de votre site · Ancrage</title>
   <link rel="stylesheet" href="/demo.css">
 </head>
 <body>
   <main class="demo-shell">
-    <header class="demo-header"><a href="/">ANCRAGE</a><button type="button" id="new-audit" hidden>Nouvel audit</button></header>
-    <section class="demo-intro" id="demo-intro"><h1>Auditer votre établissement</h1></section>
+    <header class="demo-header"><a href="/">ANCRAGE</a><button type="button" id="new-audit" hidden>Autre établissement</button></header>
+    <section class="demo-intro" id="demo-intro"><h1>Imaginez votre futur site</h1></section>
     <form id="demo-form" class="demo-form">
       <label class="autocomplete-field">Nom de l’établissement<input name="name" required maxlength="160" autocomplete="off" placeholder="Commencer à taper" aria-autocomplete="list" aria-controls="establishment-options" aria-expanded="false"><div id="establishment-options" class="suggestions" role="listbox" hidden></div></label>
       <button class="fallback-toggle" type="button" id="manual-toggle" aria-expanded="false">Mon établissement n’est pas présent</button>
@@ -20,16 +20,16 @@
         <div class="field-grid"><label>Code postal<input name="postalCode" autocomplete="postal-code"></label><label>Pays<select name="countryCode" autocomplete="country"><option value="">Sélectionner</option><option value="FR">France</option><option value="LK">Sri Lanka</option></select></label></div>
         <label class="autocomplete-field">Ville<input name="cityLabel" required disabled autocomplete="off" placeholder="Commencer à taper" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false"><div id="city-options" class="suggestions" role="listbox" hidden></div></label>
       </section>
-      <button type="submit">Lancer l’audit</button>
+      <button type="submit">Voir mon aperçu</button>
       <p id="demo-state" role="status" aria-live="polite"></p>
     </form>
     <section id="demo-result" class="demo-result" hidden></section>
     <section id="public-flow" class="public-flow" hidden>
       <p id="public-flow-state" role="status" aria-live="polite" hidden></p>
-      <p id="final-progress" class="report-progress" role="status" hidden>Audit en cours…</p>
-      <div id="public-reports" aria-live="polite"></div>
+      <p id="final-progress" class="report-progress" role="status" hidden>Préparation de votre aperçu…</p>
+      <div id="prospect-preview" aria-live="polite"></div>
       <details id="site-preparation" hidden>
-        <summary>Préparer un site</summary>
+        <summary>Demander ma démo</summary>
         <form id="preparation-form">
           <label>Votre e-mail<input name="email" type="email" autocomplete="email" required></label>
           <button type="submit">Continuer</button>

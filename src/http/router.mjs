@@ -4,7 +4,12 @@ import { AppError, NotFoundError, ValidationError } from '../core/errors.mjs';
 const id = value => { if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(value)) throw new ValidationError('Identifiant invalide.'); return value; };
 const REPORT_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'";
 
-export function createRouter({ artifacts = null, audits = null, publicAudits = null, publicControlPlane = null, demoWorkbench = null, demos = null, dossiers = null, googlePlacesAutocomplete = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }) {
+export function prospectRequest(request) {
+  return { id: request.id, input: request.input, state: request.state, status: request.status, preview: request.audit?.preview ?? null };
+}
+
+export function createRouter({ artifacts = null, audits = null, publicAudits = null, publicControlPlane = null, demoWorkbench = null, demos = null, dossiers = null, googlePlacesAutocomplete = null, providers, prompts, contracts = null, cliProfiles = null, ready = Promise.resolve(), templates = null, workflows, runs, simulation = null, internet = null }, { prospectOnly = false } = {}) {
+  const requestView = prospectOnly ? prospectRequest : request => ({ ...request, preview: request.audit?.preview ?? null });
   return async function route(request, response, url) {
     const parts = url.pathname.split('/').filter(Boolean); const method = request.method ?? 'GET';
     try {
@@ -22,11 +27,11 @@ export function createRouter({ artifacts = null, audits = null, publicAudits = n
       if (parts[1] === 'public' && publicControlPlane) {
         if (parts[2] === 'requests' && parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listRequests());
         if (parts[2] === 'demo-requests' && parts.length === 3 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listDemoRequests());
-        if (parts[2] === 'requests' && parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, await publicControlPlane.createRequest({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] })); }
+        if (parts[2] === 'requests' && parts.length === 3 && method === 'POST') { const body = await readJsonBody(request); return sendJson(response, 201, requestView(await publicControlPlane.createRequest({ ...body, idempotencyKey: body.idempotencyKey ?? request.headers['idempotency-key'] }))); }
         if (parts[2] === 'requests' && parts.length >= 4) {
           const requestId = id(parts[3]);
-          if (parts.length === 4 && method === 'GET') return sendJson(response, 200, await publicControlPlane.getRequest(requestId));
-          if (parts[4] === 'match-decision' && parts.length === 5 && method === 'POST') return sendJson(response, 200, await publicControlPlane.decideMatch(requestId, await readJsonBody(request)));
+          if (parts.length === 4 && method === 'GET') return sendJson(response, 200, requestView(await publicControlPlane.getRequest(requestId)));
+          if (parts[4] === 'match-decision' && parts.length === 5 && method === 'POST') return sendJson(response, 200, requestView(await publicControlPlane.decideMatch(requestId, await readJsonBody(request))));
           if (parts[4] === 'reports' && parts.length === 5 && method === 'GET') return sendJson(response, 200, await publicControlPlane.listReports(requestId));
           if (parts[4] === 'reports' && parts.length >= 6 && method === 'GET') {
             const reportId = id(parts[5]); const format = parts[6] === 'pdf' ? 'pdf' : 'html';

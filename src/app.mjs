@@ -21,6 +21,7 @@ import { createDefaultProviderAdapters } from './providers/http-adapters.mjs';
 import { createSeoAuditRegistry } from './audit/audit-registry.mjs';
 import { runSeoAudit } from './audit/seo-audit-service.mjs';
 import { createPublicAuditWorkflow } from './audit/public-audit-workflow.mjs';
+import { buildProspectPreview } from './audit/prospect-preview.mjs';
 import { createSeoResearchPlanner } from './audit/seo-research-planner.mjs';
 import { createObservationAnalyst } from './audit/observation-analyst.mjs';
 import { createDemoRegistry } from './demos/demo-registry.mjs';
@@ -185,7 +186,11 @@ export function createApp({ store: providedStore = null, dataDir = process.env.A
         identity: request.input.identity ?? undefined,
         idempotencyKey: `public-control-plane-${request.id}`,
       }, { mode: decision, waitFor: decision === 'CONFIRM' ? 'gmb' : undefined, defer: Boolean(store.withLease) });
-      const summary = async value => ({ id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet: value.auditPacket ? (await publicAudits.readPacket(value.id)).packet : null });
+      const summary = async value => {
+        const packet = value.auditPacket ? (await publicAudits.readPacket(value.id)).packet : null;
+        const preview = packet && value.reports?.some(report => report.kind === 'final') ? buildProspectPreview(value, packet) : null;
+        return { id: value.id, status: value.status, stages: value.stages, provider: value.provider, auditPacket: value.auditPacket, auditProjection: value.auditProjection, packet, preview };
+      };
       const reports = { audit: await summary(audit), deferred: Boolean(store.withLease) && audit.status === 'RUNNING' };
       for (const kind of ['gmb', 'final']) {
         const report = audit.reports?.find(item => item.kind === kind);
