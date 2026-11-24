@@ -65,6 +65,11 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
     classification: item.classification ?? null,
     evidenceRefs: unique([item.evidence?.id]),
   }));
+  const seoFindingsByUrl = Map.groupBy(seoFindings, item => item.url);
+  const seoPages = (auditRun.modules?.seo?.pages ?? []).filter(page => page.onPage).map(page => ({
+    url: page.url, status: page.status, onPage: page.onPage,
+    checks: (seoFindingsByUrl.get(page.url) ?? []).map(({ code, detail }) => ({ code, detail })),
+  }));
   const gmbCandidates = auditRun.modules?.gmb?.candidates ?? [];
   const keywordIdeas = auditRun.modules?.keywords?.ideas ?? [];
   const selectedCompetitors = auditRun.modules?.keywords?.competitors ?? [];
@@ -76,9 +81,8 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
   const countryCode = String(input.city?.country ?? '').toUpperCase();
   const languageCode = String(auditRun.modules?.keywords?.location?.language_code ?? (countryCode === 'FR' ? 'fr' : 'en')).toLowerCase();
   const ruleVersions = unique([
-    auditRun.modules?.seo?.ruleVersion,
+    auditRun.modules?.seo?.ruleVersion ?? 'seo-rules-v1',
     ...(auditRun.evidence ?? []).map(item => item?.ruleVersion),
-    'seo-rules-v1',
   ]);
   const plannerProvenanceRefs = unique([
     plannerSource.workflowVersionId && `workflow:${plannerSource.workflowVersionId}`,
@@ -119,12 +123,13 @@ export function assembleAuditPacket({ auditRun, revision = 1, artifacts = {}, pa
     findings: [
       { ref: 'finding:GMB_CANDIDATES_OBSERVED', code: 'GMB_CANDIDATES_OBSERVED', count: gmbCandidates.length, items: gmbCandidates.map(item => ({ title: item?.title ?? null, address: item?.address ?? null, phone: item?.phone ?? null, category: item?.category ?? null, rating: item?.rating ?? null, reviewCount: item?.reviewCount ?? null, hours: item?.hours ?? [], currentHours: item?.currentHours ?? [], reviews: item?.reviews ?? [], reviewScope: item?.reviewScope ?? null, url: item?.url ?? null, businessStatus: item?.businessStatus ?? null, observedAt: item?.observedAt ?? null })), evidenceRefs },
       { ref: 'finding:SEO_PAGES_ANALYZED', code: 'SEO_PAGES_ANALYZED', count: auditRun.modules?.seo?.pages ? auditRun.modules.seo.pages.filter(item => item.crawlStatus === 'complete').length : auditRun.modules?.seo?.summary?.pagesAnalyzed ?? 0, evidenceRefs },
+      ...(seoPages.length ? [{ ref: 'finding:SEO_PAGE_CHECKS', code: 'SEO_PAGE_CHECKS', items: seoPages, evidenceRefs }] : []),
       { ref: 'finding:STAGES', code: 'STAGES', items: (auditRun.stages ?? []).map(item => ({ id: item.id, status: item.status, cause: item.cause ?? null })), evidenceRefs: [] },
       { ref: 'finding:EVIDENCE', code: 'EVIDENCE', items: evidence.slice(0, 200).map(item => ({ ref: item.id, provider: item.provider ?? 'crawl HTML', canonicalUrl: item.canonicalUrl ?? null })), evidenceRefs },
       { ref: 'finding:SEO_RANKINGS', code: 'SEO_RANKINGS', items: auditRun.modules?.keywords?.rankedKeywords ?? [], cause: auditRun.modules?.keywords?.rankings?.cause ?? null, evidenceRefs },
       { ref: 'finding:SEO_RESEARCH_QUERIES', code: 'SEO_RESEARCH_QUERIES', items: auditRun.modules?.keywords?.researchPlan?.queries?.length ? auditRun.modules.keywords.researchPlan.queries : auditRun.modules?.keywords?.researchPlan?.seeds ?? [], evidenceRefs: [] },
       ...(auditRun.modules?.observation ? [{ ref: 'finding:PUBLIC_OBSERVATIONS', code: 'PUBLIC_OBSERVATIONS', items: [auditRun.modules.observation], evidenceRefs }] : []),
-      ...seoFindings.slice(0, auditRun.modules?.observation ? 193 : 194),
+      ...seoFindings.slice(0, 194 - Number(Boolean(auditRun.modules?.observation)) - Number(seoPages.length > 0)),
     ],
     market: {
       searchMarket: { engine: 'google', countryCode, languageCode, location: input.city?.label ?? 'Inconnue', device: 'desktop' },
@@ -198,6 +203,7 @@ export function projectAuditPacket(packet) {
       limitations: packet.limitations,
       aiContributions: packet.aiContributions,
       technicalFindings: packet.findings.filter(item => item.classification === 'CALCULATED'),
+      seoPages: items('SEO_PAGE_CHECKS'),
       rankedKeywords: items('SEO_RANKINGS'),
       researchQueries: items('SEO_RESEARCH_QUERIES'),
       observation: items('PUBLIC_OBSERVATIONS')[0] ?? null,

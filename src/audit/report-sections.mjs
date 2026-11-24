@@ -1,7 +1,12 @@
 const corrections = {
+  BROKEN_CONTACT_LINK: ['Rétablir un lien de contact ou de réservation', 'Corrigez le lien cité pour qu’il ouvre la page de contact ou de réservation effectivement utilisée.', 'Le client qui choisit de vous contacter doit pouvoir atteindre la destination attendue.'],
   HTTP_ERROR: ['Page en erreur', 'Rétablir la page à cette adresse si elle doit rester accessible. Si elle a été remplacée, mettre à jour les liens qui y renvoient.', 'Permettre aux clients et aux moteurs d’accéder aux pages utiles.'],
+  BROKEN_INTERNAL_LINK: ['Corriger les liens internes en erreur', 'Remplacez chaque lien cité par l’URL actuelle ou retirez-le si la destination a disparu.', 'Permettre aux lecteurs de poursuivre leur navigation.'],
+  CANONICAL_TO_UNAVAILABLE_PAGE: ['Vérifier la destination canonique', 'Confirmez l’URL représentative de ce contenu et dirigez la balise canonique vers une page accessible et prévue pour l’indexation.', 'Éviter de proposer aux moteurs une URL représentative indisponible ou en noindex.'],
+  OFFER_CALL_ONLY_IN_LAYOUT: ['Vérifier l’accès à l’appel depuis l’offre', 'Sur un téléphone, lisez l’offre comme un client qui vient de faire son choix. Si l’appel impose de chercher le numéro dans la navigation, ajoutez « Appeler » près de l’offre, relié au numéro publié.', 'Le client doit pouvoir appeler au moment où il choisit son offre.'],
   NOINDEX_OBSERVED: ['Directive de non-indexation observée', 'Vérifier si cette page doit être visible dans Google avant de modifier la directive noindex.', 'Distinguer les pages privées ou inutiles des pages commerciales à rendre découvrables.'],
   MISSING_TITLE: ['Titre de page absent', 'Rédiger un titre unique décrivant la page, l’activité et la localité si elles sont pertinentes.', 'Faciliter la compréhension de la page dans les résultats de recherche.'],
+  DUPLICATE_TITLE: ['Différencier les titles des pages', 'Comparez les pages citées. Si leurs besoins diffèrent, décrivez l’offre ou la tâche propre à chacune dans son title.', 'Aider les lecteurs à reconnaître la bonne page lorsqu’elle apparaît dans les résultats.'],
   MISSING_META_DESCRIPTION: ['Description absente', 'Ajouter une description propre à cette page, fondée sur son offre réelle.', 'Donner envie de consulter la page sans promettre un meilleur classement.'],
   MISSING_VIEWPORT: ['Affichage mobile à vérifier', 'Ajouter une déclaration viewport et tester les éléments au format mobile.', 'Permettre la lecture et les actions sur téléphone.'],
   MISSING_HTML_LANG: ['Langue non déclarée', 'Déclarer la langue du document avec html lang.', 'Aider les technologies d’assistance à prononcer le contenu.'],
@@ -9,7 +14,7 @@ const corrections = {
 };
 
 export function technicalActions(findings) {
-  const order = ['HTTP_ERROR', 'NOINDEX_OBSERVED', 'MISSING_TITLE', 'MISSING_VIEWPORT', 'MISSING_IMAGE_ALT', 'MISSING_HTML_LANG', 'MISSING_META_DESCRIPTION'];
+  const order = ['BROKEN_CONTACT_LINK', 'HTTP_ERROR', 'CANONICAL_TO_UNAVAILABLE_PAGE', 'BROKEN_INTERNAL_LINK', 'OFFER_CALL_ONLY_IN_LAYOUT', 'NOINDEX_OBSERVED', 'MISSING_TITLE', 'DUPLICATE_TITLE', 'MISSING_VIEWPORT', 'MISSING_IMAGE_ALT', 'MISSING_HTML_LANG', 'MISSING_META_DESCRIPTION'];
   return [...Map.groupBy(findings.filter(item => {
     if (!order.includes(item.code)) return false;
     // A missing description on a legal/support page is not a commercial priority.
@@ -21,10 +26,17 @@ export function technicalActions(findings) {
     .sort(([left], [right]) => order.indexOf(left) - order.indexOf(right))
     .map(([code, rows]) => {
       const [title, action, impact] = corrections[code];
-      const verification = code === 'HTTP_ERROR'
+      const verification = code === 'BROKEN_CONTACT_LINK'
+        ? 'Depuis la page citée, touchez le lien sur un téléphone et vérifiez que la page attendue s’ouvre.'
+        : code === 'HTTP_ERROR'
         ? 'Ouvrez l’adresse concernée dans une fenêtre privée et vérifiez que la page attendue s’affiche.'
-        : 'Relancez les contrôles du site après la mise en ligne et vérifiez que ce constat a disparu pour la page concernée.';
-      return { type: 'action', code, title, action, impact, verification, detail: [...new Set(rows.map(item => item.detail).filter(Boolean))].join(' ') || title, urls: [...new Set(rows.map(item => item.url).filter(Boolean))] };
+        : code === 'OFFER_CALL_ONLY_IN_LAYOUT'
+          ? 'Ouvrez la page sur un téléphone, repérez le bouton près de l’offre, puis touchez-le et vérifiez le numéro dans l’application Téléphone.'
+          : 'Relancez les contrôles du site après la mise en ligne et vérifiez que ce constat a disparu pour la page concernée.';
+      const needsBrowser = code === 'OFFER_CALL_ONLY_IN_LAYOUT';
+      return { type: 'action', code, title, action, impact, verification,
+        ...(needsBrowser && { confidence: 'À confirmer sur mobile', effort: 'Diagnostic', owner: 'Webmaster' }),
+        detail: [...new Set(rows.map(item => item.detail).filter(Boolean))].join(' ') || title, urls: [...new Set(rows.map(item => item.url).filter(Boolean))] };
     });
 }
 

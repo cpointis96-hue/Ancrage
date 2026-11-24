@@ -23,7 +23,7 @@ test('analyse une page saine avec une preuve datée', () => {
   const audit = analyzeSeoAudit({ target, pages: [{ url: target, status: 200, html: healthyPage }], observedAt });
 
   assert.equal(audit.status, 'SUCCEEDED');
-  assert.equal(audit.ruleVersion, 'seo-rules-v1');
+  assert.equal(audit.ruleVersion, 'seo-rules-v3');
   assert.equal(audit.pages[0].findingsCount, 0);
   assert.equal(audit.findings.length, 0);
   assert.equal(audit.observedAt, observedAt);
@@ -94,4 +94,78 @@ test('rend un rapport échappé avec ses preuves sans script', () => {
   assert.match(report, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(report, /<script/);
   assert.doesNotMatch(report, /promesse de classement/);
+});
+
+test('signale le téléphone cantonné à la navigation d’une page d’offre', () => {
+  const menu = new URL('/menu/', target).href;
+  const nav = '<header><nav><a href="tel:+33123456789">Réservation</a></nav></header>';
+  const html = healthyPage.replace('<h1>Restaurant Exemple</h1>', nav + '<main><h1>Menu</h1><p>Formule du midi</p></main>');
+  const audit = analyzeSeoAudit({ target, observedAt, pages: [
+    { url: menu, html },
+    { url: new URL('/prestations/', target).href, html: html.replace('</main>', '<a href="/contact/">Nous contacter</a></main>') },
+    { url: new URL('/tarifs/', target).href, html: html.replace('</main>', '<iframe src="/reservation/"></iframe></main>') },
+    { url: new URL('/tarifs-abonnement/', target).href, html: html.replace('</main>', '<a href="/souscription/">Souscrire</a></main>') },
+    { url: new URL('/mentions-legales/', target).href, html },
+  ] });
+  const matches = audit.findings.filter(item => item.code === 'OFFER_CALL_ONLY_IN_LAYOUT');
+  assert.deepEqual(matches.map(item => item.evidence.url), [menu]);
+  assert.match(matches[0].detail, /Réservation/);
+  assert.match(renderSeoAuditReport(audit), /Vérifier l’accès à l’appel depuis l’offre/);
+});
+
+test('une directive HTTP applicable à Google est relevée sans confondre les autres robots', () => {
+  const pages = [
+    { url: new URL('/carte/', target).href, html: healthyPage, robotsHeader: 'noindex, nofollow' },
+    { url: new URL('/service/', target).href, html: healthyPage, robotsHeader: 'otherbot: noindex' },
+  ];
+  const audit = analyzeSeoAudit({ target, observedAt, pages });
+  const findings = audit.findings.filter(item => item.code === 'NOINDEX_OBSERVED');
+  assert.deepEqual(findings.map(item => item.evidence.canonicalUrl), [pages[0].url]);
+  assert.match(findings[0].detail, /X-Robots-Tag/);
+});
+
+test('relève les métadonnées et titres réels, puis compare les pages et leurs liens', () => {
+  const index = new URL('/', target).href;
+  const offer = new URL('/offre/', target).href;
+  const gone = new URL('/indisponible/', target).href;
+  const html = `<!doctype html><html lang=fr><head>
+    <title>Offre &amp; tarifs</title><meta name=description content="Voir les formules">
+    <link rel=canonical href="/indisponible/">
+    <script>const fake = '<h2>Intitulé inventé</h2>';</script>
+    <script type="application/ld+json">{"@graph":[{"@type":"Restaurant"}]}</script>
+    </head><body><header><h2>Hors contenu</h2></header><main>
+    <h1>La carte</h1><h3>Plats et desserts</h3><h2 hidden>Masqué</h2><h2> </h2>
+    <a href="/offre/">Voir l’offre</a><a href="/indisponible/">Ancienne formule</a>
+    </main></body></html>`;
+  const audit = analyzeSeoAudit({target,observedAt,pages:[
+    {url:index,html},{url:offer,html},{url:gone,status:404,crawlStatus:'blocked'},
+  ]});
+  const [home,next] = audit.pages;
+  assert.equal(home.title,'Offre & tarifs');
+  assert.deepEqual(home.onPage.headingCounts,[1,1,1,0,0,0]);
+  assert.deepEqual(home.onPage.headingJumps,[{from:1,to:3,text:'Plats et desserts'}]);
+  assert.deepEqual(home.onPage.jsonLd.types,['Restaurant']);
+  assert.deepEqual(next.onPage.inbound,[{url:index,inContent:true}]);
+  for (const code of ['EMPTY_HEADINGS','HEADING_HIERARCHY','DUPLICATE_TITLE','DUPLICATE_META_DESCRIPTION','DUPLICATE_H1','BROKEN_INTERNAL_LINK','CANONICAL_TO_UNAVAILABLE_PAGE']) {
+    assert.ok(audit.findings.some(item=>item.code===code && item.evidence.canonicalUrl===index),code);
+  }
+  const htmlReport=renderSeoAuditReport(audit);
+  assert.match(htmlReport,/SEO page par page/);
+  assert.match(htmlReport,/Offre &amp; tarifs/);
+  assert.doesNotMatch(htmlReport,/Intitulé inventé|Hors contenu|Masqué/);
+});
+
+test('relie un lien de réservation cassé à la page où le client le trouve', () => {
+  const menu = new URL('/menu/', target).href;
+  const reservation = new URL('/reservation/', target).href;
+  const other = new URL('/contact/', target).href;
+  const html = healthyPage.replace('</body>', '<a href="/reservation/#table">Réserver une table</a><a href="/contact/">Contact</a></body>');
+  const audit = analyzeSeoAudit({ target, observedAt, pages: [
+    { url: menu, html },
+    { url: reservation, status: 404, crawlStatus: 'blocked' },
+    { url: other, status: 403, crawlStatus: 'blocked' },
+  ] });
+  const matches = audit.findings.filter(item => item.code === 'BROKEN_CONTACT_LINK');
+  assert.deepEqual(matches.map(item => item.evidence.url), [menu]);
+  assert.match(matches[0].detail, /Réserver une table.*\/reservation\/.*HTTP 404/);
 });

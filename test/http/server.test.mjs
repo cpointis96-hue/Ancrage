@@ -246,7 +246,8 @@ test('expose un audit SEO local, son rapport, puis le recharge', async () => {
     assert.match(report.headers['content-type'], /^text\/html/);
     const reportBody = await report.text();
     assert.match(reportBody, /https:\/\/example\.com\//);
-    assert.equal(reportBody.includes('Maison Sillage'), false);
+    assert.match(reportBody, /Balise title<\/dt><dd>Maison Sillage/);
+    assert.doesNotMatch(reportBody, /<h1>Maison Sillage<\/h1>/);
   } finally {
     await server.close();
   }

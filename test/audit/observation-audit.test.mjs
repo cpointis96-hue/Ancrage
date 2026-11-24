@@ -9,12 +9,12 @@ import { createMemorySecretStore } from '../../src/providers/memory-secret-store
 import { createDefaultProviderAdapters } from '../../src/providers/http-adapters.mjs';
 import { observationInput, observationOutput, observationResponse, fixtureHtml } from '../fixtures/observation-audit.mjs';
 
-async function setup(t, { research = async () => observationResponse(), configured = true, fetchImpl = fixtureHtml } = {}) {
+async function setup(t, { research = async () => observationResponse(), configured = true, fetchImpl = fixtureHtml, websiteUri } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'ancrage-observations-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   let calls = 0;
   const openai = Object.assign(async () => ({}), { research: async input => { calls += 1; return research(input); } });
-  const googlePlaces = Object.assign(async () => ({}), { auditDetails: async ({ placeId }) => ({ id: placeId, displayName: { text: 'Maison Sauge' }, formattedAddress: '12 rue Fixture, Nantes', googleMapsUri: 'https://maps.google.com/?cid=fixture', regularOpeningHours: { weekdayDescriptions: ['lundi: 12:00–14:00'] }, rating: 4.5, userRatingCount: 123, reviews: [{ rating: 4, originalText: { text: 'Accueil attentif.' }, publishTime: '2026-10-01T12:00:00Z' }] }) });
+  const googlePlaces = Object.assign(async () => ({}), { auditDetails: async ({ placeId }) => ({ id: placeId, displayName: { text: 'Maison Sauge' }, formattedAddress: '12 rue Fixture, Nantes', websiteUri, googleMapsUri: 'https://maps.google.com/?cid=fixture', regularOpeningHours: { weekdayDescriptions: ['lundi: 12:00–14:00'] }, rating: 4.5, userRatingCount: 123, reviews: [{ rating: 4, originalText: { text: 'Accueil attentif.' }, publishTime: '2026-10-01T12:00:00Z' }] }) });
   const dataforseo = new Proxy(() => {}, { get() { throw new Error('Aucune capacité DataForSEO autorisée'); } });
   const app = createApp({ dataDir: root, secretStore: createMemorySecretStore(), adapters: { openai, dataforseo, googlePlaces, 'google-places': googlePlaces }, auditFetchImpl: fetchImpl, auditLookup: async () => ['93.184.216.34'] });
   await app.ready;
@@ -65,12 +65,14 @@ test('audit complet sans DataForSEO, preuves, trois priorités et site conservé
   assert.doesNotMatch(localReport + localPdf, /Accueil attentif|lundi: 12:00/);
   const html = (await app.publicAudits.readReport(result.id)).value;
   assert.match(html, /ne justifient pas une refonte/);
-  assert.match(html, /https:\/\/voisin.example\/menu/);
+  assert.doesNotMatch(html, /voisin\.example/);
   assert.doesNotMatch(html, /Audit partiel|Volume pays|SEO pays|DATAFORSEO_/);
   assert.doesNotMatch(html, /Accueil attentif/);
   assert.match(html, /Pour vérifier.*Ouvrez la page sur un téléphone/);
   const pdf = (await app.publicAudits.readReport(result.id, 'final', 'pdf')).value;
-  assert.match(pdf, /Faciliter le contact/); assert.match(pdf, /Ouvrez la page sur un/); assert.match(pdf, /voisin.example/);
+  assert.match(pdf, /Faciliter le contact/); assert.match(pdf, /Ouvrez la page sur un/);
+  assert.doesNotMatch(pdf, /voisin\.example/);
+  assert.equal(result.modules.observation.competitors[0].url, 'https://voisin.example/menu');
   assert.doesNotMatch(pdf, /Accueil attentif/);
   assert.equal((await app.publicAudits.create(input)).id, result.id);
   assert.equal((await app.publicAudits.resume(result.id)).id, result.id);
@@ -186,8 +188,64 @@ test('sans site fourni, conserve une décision étayée sans inventer de contrô
   const html = (await app.publicAudits.readReport(result.id)).value;
   assert.match(html, /Actions prioritaires/);
   assert.match(html, /Aucun site officiel n’a été confirmé/);
-  assert.match(html, /Aucun site confirmé/);
+  assert.doesNotMatch(html, /Aucun site confirmé/);
   assert.doesNotMatch(html, /Aucune anomalie remontée/);
+});
+
+test('sans site confirmé, propose un premier parcours fondé sur la fiche et compare une offre directe', async t => {
+  const rival = 'https://bistrot-voisin.example/menu';
+  const reply = observationResponse();
+  reply.sources = [{ url: rival }];
+  reply.output.observations = [{ id: 'web-source-1', url: rival, fact: 'Le bistrot voisin présente sa formule déjeuner avant le lien de réservation.', quote: 'Formule déjeuner' }];
+  reply.output.pageImprovements = [];
+  reply.output.siteProposal = '';
+  reply.output.priorities = [];
+  reply.output.competitors = [{ name: 'Bistrot voisin', url: rival, comparison: 'La carte du bistrot renseigne les formules avant la réservation. La donnée Google examinée pour votre établissement couvre le service du midi.', application: 'Présentez les formules du midi avant l’action de réservation.', comparisonObservationIds: ['google-hours', 'web-source-1'] }];
+  reply.output.withoutSiteJourney = [
+    { stage: 'CHOOSE', observed: 'La fiche indique un service le lundi midi.', gap: 'Les formules restent à préciser.', observationIds: ['google-hours'] },
+    { stage: 'VISIT', observed: 'Adresse du voisin.', gap: '', observationIds: ['web-source-1'] },
+  ];
+  reply.output.firstSitePlan = [
+    { page: 'Le déjeuner', question: 'Puis-je choisir la formule avant de venir ?', content: 'Présentez les formules réellement servies le midi et validez leurs tarifs avant publication.', callToAction: 'Voir la carte du midi', verification: 'Depuis l’accueil, ouvrez la carte et repérez le prix de chaque formule.', observationIds: ['google-hours'] },
+    { page: 'Service concurrent', question: 'Que propose le voisin ?', content: 'Reprendre ses tarifs.', callToAction: 'Voir ses prix', verification: 'Vérifier chez le voisin.', observationIds: ['web-source-1'] },
+  ];
+  reply.output.conclusion = { decision: 'SITE_USEFUL', reason: 'Un premier site permettrait de consulter les formules avant le service du midi.', observationIds: ['google-hours'] };
+  const { app } = await setup(t, { research: async () => reply, fetchImpl: async () => { throw new Error('Aucun crawl sans domaine'); } });
+  const result = await app.publicAudits.create({ ...observationInput, domain: undefined });
+  assert.equal(result.status, 'SUCCEEDED');
+  assert.equal(result.modules.seo.execution, 'not-run');
+  assert.equal(result.modules.observation.firstSitePlan.length, 1);
+  assert.equal(result.modules.observation.withoutSiteJourney.length, 1);
+  assert.deepEqual(result.modules.observation.competitors.map(item => item.title), ['Bistrot voisin']);
+  const html = (await app.publicAudits.readReport(result.id)).value;
+  assert.match(html, /Votre premier site/);
+  assert.match(html, /Voir la carte du midi/);
+  assert.match(html, /La fiche indique un service le lundi midi/);
+  assert.doesNotMatch(html, /Bistrot voisin|bistrot-voisin\.example|Service concurrent|Contrôles techniques sur/);
+  const pdf = (await app.publicAudits.readReport(result.id, 'final', 'pdf')).value;
+  assert.match(pdf, /Voir la carte du midi/);
+  assert.doesNotMatch(pdf, /Bistrot voisin|bistrot-voisin\.example/);
+  assert.doesNotMatch((await app.publicAudits.readReport(result.id, 'gmb')).value, /Votre premier site/);
+});
+
+test('un site signalé par Google suspend la proposition de création et reste consultable', async t => {
+  const websiteUri = 'https://restaurant-signale.example/';
+  const reply = observationResponse();
+  reply.output.pageImprovements = [];
+  reply.output.priorities = [];
+  reply.output.firstSitePlan = [{ page: 'Contact', question: 'Comment vous joindre ?', content: 'Publiez le numéro.', callToAction: 'Appeler', verification: 'Vérifiez le lien.', observationIds: ['google-contact'] }];
+  reply.output.conclusion = { decision: 'SITE_USEFUL', reason: 'Créez un site.', observationIds: ['google-contact'] };
+  const { app } = await setup(t, { websiteUri, research: async ({ input }) => {
+    assert.equal(input.subject.websiteCandidate, websiteUri);
+    return reply;
+  }, fetchImpl: async () => { throw new Error('Aucun crawl avant confirmation'); } });
+  const result = await app.publicAudits.create({ ...observationInput, domain: undefined });
+  assert.equal(result.modules.observation.conclusion, null);
+  assert.deepEqual(result.modules.observation.firstSitePlan, []);
+  const html = (await app.publicAudits.readReport(result.id)).value;
+  assert.match(html, /Google signale une adresse de site/);
+  assert.match(html, /restaurant-signale.example/);
+  assert.doesNotMatch(html, /Votre premier site|Créez un site/);
 });
 
 test('timeout et coût inconnu conservent la réservation, budget insuffisant empêche l’appel', async t => {

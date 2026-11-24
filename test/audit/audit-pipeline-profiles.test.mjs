@@ -44,7 +44,9 @@ test('le même pipeline et le même template produisent des diagnostics distinct
     assert.equal(run.modules.seo.pages.length, 1);
     assert.equal(run.modules.observation.priorities.length, scenario.issue ? 1 : 0);
     const html = (await app.publicAudits.readReport(run.id)).value;
-    assert.deepEqual([...html.matchAll(/<h2[^>]*>(.*?)<\/h2>/g)].map(match => match[1]), REPORT_SECTIONS);
+    assert.deepEqual([...html.matchAll(/<h2[^>]*>(.*?)<\/h2>/g)].map(match => match[1]), [
+      ...REPORT_SECTIONS.slice(0, 2), ...(scenario.issue ? ['SEO page par page'] : []), REPORT_SECTIONS.at(-1),
+    ]);
     styles.push(html.match(/<style>(.*?)<\/style>/s)[1]);
     assert.ok(html.includes(scenario.issue ?? 'ne justifient pas une refonte'));
     assert.doesNotMatch(html, /page-menu|page-reservation|Restaurant|Nantes|Maison Sillage/);

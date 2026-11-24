@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crawlSite } from '../../src/audit/site-crawler.mjs';
+import { runSeoAudit } from '../../src/audit/seo-audit-service.mjs';
 
 function response(body, { url, status = 200, contentType = 'text/html; charset=utf-8', location = null, contentLength = undefined, stream = null } = {}) {
   const responseBody = stream ?? new ReadableStream({ start(controller) { controller.enqueue(Buffer.from(body)); controller.close(); } });
@@ -48,6 +49,32 @@ test('crawl HTML uniquement sur le même origin et respecte la borne de pages', 
   assert.equal(result.pages.length, 2);
   assert.equal(result.pages.every(page => page.crawlStatus === 'complete'), true);
   assert.equal(result.summary.pagesSkipped, 0);
+});
+
+test('une carte PDF reste hors du contrôle HTML sans rendre le crawl incomplet', async () => {
+  const target = 'https://fixture.example.test/';
+  const audit = await runSeoAudit({
+    target, observedAt: '2026-11-23T10:00:00Z', lookup: lookupPublic,
+    fetchImpl: async url => url.endsWith('.pdf')
+      ? response('%PDF', { contentType: 'application/pdf' })
+      : response('<title>Menu</title><a href="/menu.pdf">Télécharger la carte</a>'),
+  });
+  assert.equal(audit.status, 'SUCCEEDED');
+  assert.deepEqual(audit.pages.map(page => page.crawlStatus), ['complete', 'skipped']);
+  assert.equal(audit.summary.pagesAnalyzed, 1);
+  assert.equal(audit.crawlSummary.pagesBlocked, 0);
+});
+
+test('des URL de sitemap explicitement fournies restent bornées au site confirmé', async () => {
+  const calls = [];
+  const target = 'https://fixture.example.test/';
+  const audit = await runSeoAudit({
+    target, observedAt: '2026-11-23T10:00:00Z', lookup: lookupPublic,
+    entryUrls: ['/galerie/', 'https://other.example.test/offre/', '/galerie/#photos'],
+    fetchImpl: async url => { calls.push(url); return response('<title>Page</title><h1>Accueil</h1>'); },
+  });
+  assert.deepEqual(calls, [target, target + 'galerie/']);
+  assert.equal(audit.summary.pagesAnalyzed, 2);
 });
 
 test('adopte le seul alias www HTTPS à l’entrée du crawl après validation DNS', async () => {

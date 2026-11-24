@@ -185,8 +185,9 @@ function redirectTarget(response, base) {
   catch (error) { if (error?.code) throw error; throw crawlerError('Redirection invalide.', 'REDIRECT_INVALID'); }
 }
 
-export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup = hostname => dnsLookup(hostname, { all: true, verbatim: true }), maxPages = DEFAULT_MAX_PAGES, maxBytes = DEFAULT_MAX_BYTES, timeoutMs = DEFAULT_TIMEOUT_MS, prioritizeClientPages = false } = {}) {
+export async function crawlSite({ target, entryUrls = [], fetchImpl = globalThis.fetch, lookup = hostname => dnsLookup(hostname, { all: true, verbatim: true }), maxPages = DEFAULT_MAX_PAGES, maxBytes = DEFAULT_MAX_BYTES, timeoutMs = DEFAULT_TIMEOUT_MS, prioritizeClientPages = false } = {}) {
   if (typeof fetchImpl !== 'function') throw new ValidationError('fetchImpl est requis.');
+  if (!Array.isArray(entryUrls)) throw new ValidationError('entryUrls doit être une liste.');
   if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > DEFAULT_MAX_PAGES) throw new ValidationError('maxPages est invalide.', { field: 'maxPages' });
   if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BYTES) throw new ValidationError('maxBytes est invalide.', { field: 'maxBytes' });
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) throw new ValidationError('timeoutMs est invalide.', { field: 'timeoutMs' });
@@ -243,11 +244,25 @@ export async function crawlSite({ target, fetchImpl = globalThis.fetch, lookup =
           continue;
         }
         const contentType = header(response, 'content-type');
-        if (contentType && !contentType.toLowerCase().includes('text/html')) throw crawlerError('Ressource non HTML.', 'NOT_HTML');
+        if (contentType && !contentType.toLowerCase().includes('text/html')) {
+          await cancelBody(response, signal);
+          pages.push({ url: current.href, status, crawlStatus: 'skipped', contentType });
+          continue;
+        }
         const html = await readHtml(response, { signal, remainingBytes: () => maxBytes - usedBytes, consumeBytes: size => { usedBytes += size; } });
         visited.add(current.href);
-        pages.push({ url: current.href, status, crawlStatus: 'complete', html });
+        const robotsHeader = header(response, 'x-robots-tag');
+        pages.push({ url: current.href, status, crawlStatus: 'complete', html, ...(robotsHeader && { robotsHeader }) });
         for (const link of links(html, current.href, root.origin)) if (!visited.has(link) && !queue.includes(link)) queue.push(link);
+        if (pages.length === 1) {
+          for (const value of entryUrls.slice(0, maxPages)) {
+            try {
+              const entry = parseTarget(new URL(value, current).href);
+              entry.hash = '';
+              if (entry.origin === root.origin && !visited.has(entry.href) && !queue.includes(entry.href)) queue.push(entry.href);
+            } catch { /* A seed outside the allowed target cannot enter the crawl. */ }
+          }
+        }
         if (prioritizeClientPages) {
           const important = value => /contact|reserv|booking|menu|carte|service|horaire|acces/i.test(new URL(value).pathname) ? 0 : 1;
           queue.sort((left, right) => important(left) - important(right));

@@ -51,6 +51,13 @@
               "SITE",
               "MARKET"
             ]
+          },
+          "reportStatus": {
+            "type": "string",
+            "enum": [
+              "ISSUE",
+              "CHECK"
+            ]
           }
         },
         "additionalProperties": false
@@ -93,10 +100,23 @@
             "minLength": 1,
             "maxLength": 240
           },
+          "applicationBasis": {
+            "type": "string",
+            "enum": [
+              "USABILITY",
+              "SEO",
+              "BUSINESS"
+            ]
+          },
           "limitation": {
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "targetUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
           },
           "verification": {
             "type": "string",
@@ -105,7 +125,10 @@
           },
           "confidence": {
             "type": "string",
-            "enum": ["SUPPORTED", "TO_VERIFY"]
+            "enum": [
+              "SUPPORTED",
+              "TO_VERIFY"
+            ]
           },
           "topic": {
             "type": "string",
@@ -114,6 +137,48 @@
               "SITE",
               "MARKET"
             ]
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 70
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "CONTENT",
+              "IMPLEMENTATION",
+              "DIAGNOSIS"
+            ]
+          },
+          "visualElements": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "required": [
+                "observationId",
+                "element"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "observationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "element": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            }
           }
         },
         "additionalProperties": false
@@ -144,6 +209,62 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 320
+          },
+          "comparisonObservationIds": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "criterion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "application": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "applicationReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 270
+          },
+          "applicationBasis": {
+            "type": "string",
+            "enum": [
+              "USABILITY",
+              "SEO",
+              "BUSINESS"
+            ]
+          },
+          "visualElements": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "required": [
+                "observationId",
+                "element"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "observationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "element": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            }
           }
         },
         "additionalProperties": false
@@ -216,6 +337,11 @@
             "minLength": 1,
             "maxLength": 80
           }
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 210
         }
       },
       "additionalProperties": false
@@ -227,6 +353,273 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 240
+      }
+    },
+    "pageImprovements": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": [
+          "observationId",
+          "evidenceExcerpt",
+          "friction",
+          "change",
+          "copyExample",
+          "verification"
+        ],
+        "properties": {
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "evidenceExcerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "friction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "copyExample": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "siteProposal": {
+      "type": "string",
+      "maxLength": 440
+    },
+    "firstSitePlan": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "page",
+          "question",
+          "content",
+          "callToAction",
+          "verification",
+          "observationIds"
+        ],
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 170
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "callToAction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          },
+          "observationIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "withoutSiteJourney": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "observed",
+          "gap",
+          "observationIds"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "CHOOSE",
+              "CONTACT",
+              "VISIT"
+            ]
+          },
+          "observed": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 220
+          },
+          "gap": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "observationIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "siteJourney": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "task",
+          "observed",
+          "nextCheck",
+          "observationIds"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "DISCOVER",
+              "CHOOSE",
+              "CONTACT",
+              "VISIT"
+            ]
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 130
+          },
+          "observed": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "nextCheck": {
+            "type": "string",
+            "maxLength": 180
+          },
+          "observationIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "seoReviews": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "observationId",
+          "intent",
+          "assessment",
+          "edits"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "observationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 110
+          },
+          "assessment": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 420
+          },
+          "edits": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": [
+                "field",
+                "proposal",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "TITLE",
+                    "DESCRIPTION",
+                    "HEADINGS",
+                    "CONTENT",
+                    "INTERNAL_LINKS"
+                  ]
+                },
+                "proposal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 220
+                }
+              }
+            }
+          },
+          "reportNote": {
+            "type": "string",
+            "maxLength": 260
+          }
+        }
       }
     }
   },

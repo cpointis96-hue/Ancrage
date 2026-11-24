@@ -9,6 +9,7 @@ import { renderAuditDocumentPdf } from '../../src/audit/report-pdf.mjs';
 import { qualifyObservationResearch } from '../../src/audit/observation-analyst.mjs';
 import { technicalActions } from '../../src/audit/report-sections.mjs';
 import { analyzeSeoAudit } from '../../src/audit/seo-audit.mjs';
+import { assembleAuditPacket, projectAuditPacket } from '../../src/audit/audit-packet.mjs';
 import { createApp } from '../../src/app.mjs';
 import { createMemorySecretStore } from '../../src/providers/memory-secret-store.mjs';
 import { createAtomicStore } from '../../src/core/atomic-store.mjs';
@@ -84,12 +85,12 @@ test('une page trouvée par recherche publique ne compte pas comme contrôle tec
   const run = await fixture();
   run.modules.seo = { pages: [], findings: [] };
   run.modules.observation = {
-    observations: [{ id: 'web-1', url: 'https://fixture.example/menu', fact: 'La carte datée facilite le choix avant la visite.', sourceKind: 'web-search', usefulOnItsOwn: true }],
+    observations: [{ id: 'web-1', url: 'https://fixture.example/menu', fact: 'La période de validité de la carte est à vérifier.', sourceKind: 'web-search', usefulOnItsOwn: true, reportStatus: 'CHECK' }],
   };
   const document = buildPublicAuditDocument(run);
   const html = renderAuditDocumentHtml(document);
   assert.match(html, /Aucune page collectée pour les contrôles techniques/);
-  assert.match(html, /Recherche publique.*La carte datée/);
+  assert.match(html, /Recherche publique.*La période de validité/);
   assert.doesNotMatch(html, /Contrôles techniques sur [1-9]/);
   assert.match(renderAuditDocumentPdf(document), /Aucune page collect/);
 });
@@ -153,18 +154,62 @@ test('le démarrage migre les anciennes consignes standard et préserve un promp
   assert.equal(await preserved.prompts.resolveRevision('audit-analyst', prompt.activeVersionId), custom);
 });
 
-// Regression: useful verified facts were omitted unless attached to a correction.
-test('un point fort sourcé reste visible sans priorité associée en HTML et PDF', async () => {
+test('le rapport final garde les remarques sourcées et laisse les points forts dans les données', async () => {
   const run = await fixture();
   run.modules.observation = {
-    observations: [{ id: 'web-1', fact: 'La carte propose un menu enfant. ([[1]](https://fixture.example/carte))', url: 'https://fixture.example/carte', usefulOnItsOwn: true }],
+    observations: [
+      { id: 'web-1', fact: 'La carte propose un menu enfant.', url: 'https://fixture.example/carte', usefulOnItsOwn: true },
+      { id: 'web-2', fact: 'Les jours de service divergent. ([[1]](https://fixture.example/contact))', url: 'https://fixture.example/contact', usefulOnItsOwn: true, reportStatus: 'ISSUE' },
+    ],
     priorities: [], competitors: [], queries: [], limitations: [], conclusion: null,
   };
   const document = buildPublicAuditDocument(run);
-  assert.match(renderAuditDocumentHtml(document), /La carte propose un menu enfant/);
-  assert.match(renderAuditDocumentPdf(document), /La carte propose un menu enfant/);
+  assert.doesNotMatch(renderAuditDocumentHtml(document), /La carte propose un menu enfant/);
+  assert.doesNotMatch(renderAuditDocumentPdf(document), /La carte propose un menu enfant/);
+  assert.match(renderAuditDocumentHtml(document), /Les jours de service divergent/);
+  assert.match(renderAuditDocumentPdf(document), /Les jours de service divergent/);
   assert.doesNotMatch(renderAuditDocumentHtml(document), /\[\[1\]\]/);
-  assert.ok(document.sections.flatMap(section => section.blocks).some(block => block.type === 'source' && block.url === 'https://fixture.example/carte'));
+  assert.ok(document.sections.flatMap(section => section.blocks).some(block => block.type === 'source' && block.url === 'https://fixture.example/contact'));
+  assert.equal(run.modules.observation.observations.length, 2);
+});
+
+test('le rapport final affiche seulement les pages et mesures SEO qui appellent une remarque', async () => {
+  const run = await fixture();
+  const target = run.input.domain;
+  const healthyUrl = new URL('/accueil/', target).href;
+  const offerUrl = new URL('/offre/', target).href;
+  const markup = (url, description, title) => `<html lang="fr"><head><title>${title}</title>
+    <meta name="description" content="${description}"><meta name="viewport" content="width=device-width">
+    <link rel="canonical" href="${url}"><script type="application/ld+json">{"@type":"WebPage"}</script>
+    </head><body><h1>${title}</h1></body></html>`;
+  run.modules.seo = analyzeSeoAudit({ target, observedAt: run.updatedAt, pages: [
+    { url: healthyUrl, html: markup(healthyUrl, 'Accueil du site', 'Accueil conforme') },
+    { url: offerUrl, html: markup(offerUrl, 'Description trop imprécise', 'Offre de départ') },
+  ] });
+  run.modules.observation = {
+    seoReviews: [
+      { url: healthyUrl, assessment: 'Page conforme.', edits: [] },
+      {
+        url: offerUrl, assessment: 'Appréciation interne', reportNote: 'Le contenu du forfait reste à préciser.',
+        edits: [{ field: 'DESCRIPTION', proposal: 'Présentation du forfait sur devis.', reason: 'Préciser les conditions.' }],
+      },
+    ],
+    mobilePerformance: { status: 'MEASURED', pages: [
+      { url: healthyUrl, lcpMs: 1500, cls: 0, tbtMs: 0, hints: [] },
+      { url: offerUrl, lcpMs: 3100, cls: 0, tbtMs: 70, hints: [] },
+    ] },
+  };
+  const document = buildPublicAuditDocument(run);
+  const html = renderAuditDocumentHtml(document);
+  assert.doesNotMatch(html, /Accueil conforme|Page conforme|Appréciation interne|Liens entrants|Données structurées|70 ms|1,5 s/);
+  assert.match(html, /Meta description actuelle.*Description trop imprécise/);
+  assert.match(html, /href="#seo">SEO page par page/);
+  assert.match(html, /class="report-seo" aria-labelledby="seo"/);
+  assert.match(renderAuditDocumentPdf(document), /\/Dest \[\d+ 0 R \/XYZ/);
+  assert.match(html, /Le contenu du forfait reste à préciser/);
+  assert.match(html, /3,1 s/);
+  assert.equal(run.modules.seo.pages.length, 2);
+  assert.equal(run.modules.observation.mobilePerformance.pages.length, 2);
 });
 
 test('le démarrage active le nouveau contrat standard sans écraser un contrat personnalisé', async t => {
@@ -173,11 +218,30 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const app = createApp({ dataDir: root, secretStore: createMemorySecretStore() }); await app.ready;
   const current = await app.contracts.get('public-observation-analysis');
   const old = structuredClone(current.schema);
+  delete old.properties.pageImprovements;
+  delete old.properties.siteProposal;
+  delete old.properties.firstSitePlan;
+  delete old.properties.withoutSiteJourney;
+  delete old.properties.siteJourney;
+  delete old.properties.seoReviews;
+  delete old.properties.conclusion.properties.details;
+  delete old.properties.competitors.items.properties.comparisonObservationIds;
+  delete old.properties.competitors.items.properties.criterion;
+  delete old.properties.competitors.items.properties.application;
+  delete old.properties.competitors.items.properties.applicationReason;
+  delete old.properties.competitors.items.properties.applicationBasis;
+  delete old.properties.competitors.items.properties.visualElements;
+  delete old.properties.priorities.items.properties.visualElements;
+  delete old.properties.priorities.items.properties.targetUrl;
+  delete old.properties.priorities.items.properties.applicationBasis;
   delete old.properties.observations.items.properties.topic;
   delete old.properties.observations.items.properties.usefulOnItsOwn;
+  delete old.properties.observations.items.properties.reportStatus;
   delete old.properties.priorities.items.properties.topic;
   delete old.properties.priorities.items.properties.verification;
   delete old.properties.priorities.items.properties.confidence;
+  delete old.properties.priorities.items.properties.owner;
+  delete old.properties.priorities.items.properties.effort;
   old.properties.observations.items.properties.fact.maxLength = 320;
   old.properties.observations.items.properties.quote.maxLength = 240;
   old.properties.observations.maxItems = 12; old.properties.priorities.maxItems = 3; old.properties.queries.maxItems = 3;
@@ -188,6 +252,8 @@ test('le démarrage active le nouveau contrat standard sans écraser un contrat 
   const active = await migrated.contracts.getActiveVersion(current.id);
   assert.equal(active.schema.properties.observations.maxItems, 32);
   assert.equal(active.schema.properties.priorities.items.properties.verification.type, 'string');
+  assert.deepEqual(active.schema.properties.priorities.items.properties.applicationBasis.enum, ['USABILITY', 'SEO', 'BUSINESS']);
+  assert.equal(active.schema.properties.priorities.items.properties.visualElements.items.properties.state.type, 'string');
   assert.deepEqual(active.schema.properties.priorities.items.properties.topic.enum, ['LOCAL', 'SITE', 'MARKET']);
   const custom = structuredClone(active.schema); custom.title = 'Contrat personnalisé';
   const next = await migrated.contracts.save(current.id, { schema: custom }, { expectedHash: (await migrated.contracts.get(current.id)).draftHash });
@@ -200,4 +266,155 @@ test('une description manquante sur la page accessibilité ne devient pas une pr
   const findings = ['https://fixture.example/accessibilite/', 'https://fixture.example/menu/'].map(url => ({ code: 'MISSING_META_DESCRIPTION', url, detail: 'Description absente' }));
   const actions = technicalActions(findings);
   assert.equal(actions.length, 1); assert.deepEqual(actions[0].urls, ['https://fixture.example/menu/']);
+});
+
+test('l’audit du parcours retient les modifications du site, les preuves par page et les concurrents comparables', async () => {
+  const run = await fixture();
+  const domain = run.input.domain;
+  const site = new URL('/menu', domain).href;
+  const rival = 'https://restaurant-voisin.example/menu';
+  const directory = 'https://tripadvisor.fr/restaurant';
+  const observations = [{ id: 'local-page-1', url: site, fact: 'Formules de déjeuner et de dîner.', heading: 'Menu', callsToAction: [{ label: 'Nous joindre' }] }];
+  const reply = observationResponse();
+  reply.sources = [{ url: rival }, { url: directory }];
+  reply.output.observations = [
+    { id: 'web-source-1', url: rival, fact: 'Le menu renvoie à la réservation.', quote: 'Réserver' },
+    { id: 'web-source-2', url: directory, fact: 'La fiche de l’annuaire mentionne un autre tarif.', quote: '16 €' },
+  ];
+  reply.output.priorities = [
+    { title: 'Modifier l’annuaire', targetUrl: directory, observationIds: ['web-source-2', 'local-page-1'], consequence: 'Comparaison de prix', correction: 'Écrire à l’annuaire', limitation: 'À confirmer', topic: 'MARKET' },
+    { title: 'Clarifier l’action sur la carte', targetUrl: site, observationIds: ['local-page-1'], consequence: 'Le lecteur peut réserver depuis le menu.', correction: 'Clarifiez le lien sur la carte.', limitation: 'Aucune', topic: 'SITE', owner: 'Webmaster', effort: 'CONTENT' },
+  ];
+  reply.output.siteJourney = [
+    { stage: 'CHOOSE', task: 'Choisir une formule', observed: 'La carte présente deux services.', nextCheck: '', observationIds: ['local-page-1'] },
+    { stage: 'VISIT', task: 'Trouver le restaurant', observed: 'Le restaurant voisin affiche une adresse.', nextCheck: '', observationIds: ['web-source-1'] },
+  ];
+  reply.output.pageImprovements = [
+    { observationId: 'local-page-1', evidenceExcerpt: 'Lien inventé', friction: 'Preuve absente.', change: 'À rejeter.', copyExample: '', verification: 'Vérifier.' },
+    { observationId: 'local-page-1', evidenceExcerpt: 'Nous joindre', friction: 'Le libellé ne précise pas qu’il permet de réserver.', change: 'Précisez le geste près des formules.', copyExample: 'Réserver une table par téléphone', verification: 'Ouvrez la carte et repérez la réservation.' },
+  ];
+  reply.output.siteProposal = 'Une carte et un parcours de réservation reliés dès le menu.';
+  reply.output.competitors = [
+    { name: 'Restaurant Voisin', url: rival, criterion: 'Réserver depuis la carte', comparison: 'Sa carte relie le menu à la réservation.', application: 'Ajouter une action explicite près de la formule.', comparisonObservationIds: ['local-page-1', 'web-source-1'] },
+    { name: 'Annuaire', url: directory, comparison: 'Fiche tierce.', comparisonObservationIds: ['local-page-1', 'web-source-2'] },
+  ];
+  reply.output.conclusion = { decision: 'IMPROVE_SITE', reason: 'Clarifiez la réservation sur la carte.', observationIds: ['local-page-1'] };
+  const qualified = qualifyObservationResearch({ result: reply, subject: { name: run.input.name, city: 'Nantes', domain }, observations, observedAt: run.updatedAt, provider: 'fixture', execution: 'adapter-call-no-network', source: {} });
+  assert.deepEqual(qualified.priorities.map(item => item.title), ['Clarifier l’action sur la carte']);
+  assert.deepEqual(qualified.competitors.map(item => item.title), ['Restaurant Voisin']);
+  assert.equal(qualified.pageImprovements.length, 1);
+  assert.deepEqual(qualified.siteJourney.map(item => item.stage), ['CHOOSE']);
+  run.modules.observation = { ...qualified, observations: [...observations, ...qualified.observations], mobilePerformance: { status: 'MEASURED', pages: [{ url: site, lcpMs: 3100, hints: ['Alléger les images'] }] } };
+  const doc = buildPublicAuditDocument(run);
+  const html = renderAuditDocumentHtml(doc);
+  assert.doesNotMatch(html, /Choisir une formule/);
+  assert.match(html, /Ouvrir la page concernée/);
+  assert.match(html, /Webmaster · Contenu/);
+  assert.match(html, /Réserver une table par téléphone/);
+  assert.match(html, /3,1 s/);
+  assert.doesNotMatch(html, /Restaurant Voisin|restaurant-voisin\.example|À retenir pour votre site/);
+  assert.doesNotMatch(html, /Ancrage vous livrerait/);
+  assert.doesNotMatch(html, /Modifier l’annuaire|Lien inventé/);
+  assert.match(renderAuditDocumentPdf(doc), /3,1 s/);
+});
+
+
+test('la navigation HTML déclenche une vérification sans annoncer un défaut mobile', async () => {
+  const run = await fixture();
+  const url = new URL('/menu/', run.input.domain).href;
+  run.modules.seo = analyzeSeoAudit({
+    target: run.input.domain, observedAt: run.updatedAt,
+    pages: [{ url, html: '<html><body><nav><a href="tel:+33123456789">Réserver par téléphone</a></nav><main><h1>Notre carte</h1></main></body></html>' }],
+  });
+  run.modules.observation = {
+    priorities: [{ title: 'Confirmer un tarif tiers', correction: 'Relisez les tarifs de la fiche.', consequence: 'Préparer sa visite.', observationIds: [] }],
+    conclusion: null,
+  };
+  const doc = buildPublicAuditDocument(run);
+  assert.match(doc.sections[0].blocks[0].text, /Vérifiez l’accès à l’appel depuis la page d’offre/);
+  assert.equal(doc.sections[1].blocks[0].code, 'OFFER_CALL_ONLY_IN_LAYOUT');
+  const html = renderAuditDocumentHtml(doc);
+  assert.doesNotMatch(html, /Ce qu’Ancrage vous livrerait/);
+  assert.match(html, /Réserver par téléphone/);
+  assert.match(html, /À confirmer sur mobile/);
+  assert.match(renderAuditDocumentPdf(doc), /V\\351rifier l/);
+});
+
+test('le benchmark complet reste interne et sa recommandation se fond dans l’action propre au site', async () => {
+  const run = await fixture();
+  const menu = new URL('/menu', run.input.domain).href;
+  const rival = 'https://maison-kermes.example/la-carte';
+  const ownJpeg = (await readFile(new URL('../../docs/screenshots/a-traiter-2026-10-11.jpg', import.meta.url))).toString('base64');
+  const rivalJpeg = (await readFile(new URL('../../docs/screenshots/dossier-menu-2026-10-11.jpg', import.meta.url))).toString('base64');
+  const quote = 'La formule du comptoir en cinq services';
+  const correction = 'Placez « Appeler pour réserver » sous les formules.';
+  const capture = (url, element, state, caption, jpeg) => ({ url, element, state, caption, jpeg, observedAt: run.updatedAt, viewport: { width: 390 } });
+  run.modules.keywords.competitors = [{ title: 'Maison Kermès', url: rival, comparison: 'La carte concurrente contient un lien et un prix.' }];
+  run.modules.observation = {
+    observations: [
+      { id: 'own', url: menu, fact: 'Le lien d’appel est dans la navigation.' },
+      { id: 'market', url: rival, quote, fact: 'Une carte de saison est affichée.', usefulOnItsOwn: true, reportStatus: 'ISSUE' },
+      { id: 'copied', url: menu, fact: quote, usefulOnItsOwn: true, reportStatus: 'ISSUE' },
+    ],
+    conclusion: { reason: 'Facilitez la réservation depuis la carte.', observationIds: ['own', 'market'] },
+    priorities: [{
+      title: 'Rendre l’appel accessible depuis la carte', targetUrl: menu, topic: 'SITE', applicationBasis: 'USABILITY', confidence: 'SUPPORTED',
+      observationIds: ['own', 'market'], consequence: 'Le client sait que le bouton ouvre le téléphone et peut appeler dès son choix.',
+      correction, verification: 'Depuis les formules, ouvrez le composeur et contrôlez le numéro.',
+      visualRequests: [
+        { url: menu, element: 'Appeler', state: 'Navigation ouverte' },
+        { url: menu, element: 'Formules', state: 'Navigation fermée' },
+        { url: rival, element: quote },
+      ],
+    }, {
+      title: 'Copier un choix tiers', correction: 'Affichez les nouveaux tarifs.', observationIds: ['market'],
+    }],
+    competitors: [{
+      title: 'Maison Kermès', url: rival, comparison: 'L’autre restaurant propose un bouton au-dessus de son offre.',
+      application: correction, applicationBasis: 'USABILITY', comparisonSources: [menu, rival],
+      visualRequests: [{ url: rival, element: quote }],
+    }],
+    pageImprovements: [
+      { url: menu, heading: 'Carte', change: correction, evidenceExcerpt: 'Le lien est dans la navigation.' },
+      { url: menu, heading: 'Choisir', change: 'Ajouter le texte.', evidenceExcerpt: quote },
+    ],
+    limitations: [`Lien à vérifier ([source](${rival})).`, 'Le formulaire était inaccessible lors du test.'],
+    visualEvidence: [
+      capture(menu, 'Appeler', 'Navigation ouverte', 'Lien publié dans la navigation', ownJpeg),
+      capture(menu, 'Formules', 'Navigation ouverte', 'État hors contexte', ownJpeg),
+      capture(rival, quote, '', 'Capture de Maison Kermès', rivalJpeg),
+      capture(menu, 'Formules', 'Navigation fermée', 'Capture réattribuée', rivalJpeg),
+    ],
+  };
+  const { packet } = assembleAuditPacket({ auditRun: run });
+  const internal = projectAuditPacket(packet).report.observation;
+  assert.equal(internal.competitors[0].application, correction);
+  assert.equal(internal.competitors[0].url, rival);
+  assert.equal(internal.observations[1].quote, quote);
+  assert.equal(internal.visualEvidence[2].jpeg, rivalJpeg);
+  const doc = buildPublicAuditDocument(run, 'final', packet);
+  const actions = doc.sections.flatMap(section => section.blocks).filter(block => block.type === 'action');
+  assert.equal(actions.filter(item => item.action === correction).length, 1);
+  const [action] = actions;
+  assert.equal(action.basis, 'Ergonomie');
+  assert.match(action.impact, /ouvre le téléphone/);
+  assert.deepEqual(action.visuals.map(visual => visual.caption ?? visual.missing), ['Lien publié dans la navigation', 'Formules · Navigation fermée']);
+  assert.ok(doc.sections.flatMap(section => section.blocks).filter(block => block.type === 'source').every(block => block.url === menu));
+
+  const html = renderAuditDocumentHtml(doc);
+  const pdf = renderAuditDocumentPdf(doc);
+  const forbidden = /maison[- ]kerm|formule du comptoir|autre restaurant|copier un choix tiers|lien à vérifier|hors contexte|réattribuée/iu;
+  assert.doesNotMatch(JSON.stringify(doc), forbidden);
+  assert.doesNotMatch(html, forbidden);
+  assert.doesNotMatch(pdf, forbidden);
+  assert.match(html, /Capture à réaliser · Formules · Navigation fermée/);
+  assert.match(pdf, /Capture .*Formules .*Navigation/);
+  assert.match(html, /Le formulaire était inaccessible/);
+  assert.equal((html.match(/data:image\/jpeg;base64,/g) ?? []).length, 1);
+  assert.equal((pdf.match(/\/Subtype \/Image/g) ?? []).length, 1);
+  assert.ok(!html.includes(rivalJpeg));
+  assert.ok(!pdf.includes(Buffer.from(rivalJpeg, 'base64').toString('hex')));
+  delete run.modules.observation;
+  const legacy = buildPublicAuditDocument(run);
+  assert.doesNotMatch(renderAuditDocumentHtml(legacy) + renderAuditDocumentPdf(legacy), forbidden);
 });
